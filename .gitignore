@@ -16,3 +16,4 @@ ffmpeg
 lib/private/*
 data/code/*
 data/README.md
+.venv
