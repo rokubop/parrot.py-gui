@@ -138,14 +138,16 @@ def plot_audio( folder ):
 
     print( "                                                                                           ", end="\r" )    
     
-    print( "Intensity ------- " )
-    print( "Average: " + str( np.average( intensities ) ) )
-    print( "Lowest: " + str( min( intensities ) ) )    
-    print( "Standard deviation: " + str( np.std( intensities ) ) )
-    print( "Frequency ------- " )
-    print( "Lowest: " + str( min( frequencies ) ) )    
-    print( "Average: " + str( np.average( frequencies ) ) )
-    print( "Standard deviation: " + str( np.std( frequencies ) ) )
+    if len(intensities) > 0:
+        print( "Intensity ------- " )
+        print( "Average: " + str( np.average( intensities ) ) )
+        print( "Lowest: " + str( min( intensities ) ) )    
+        print( "Standard deviation: " + str( np.std( intensities ) ) )
+    if len(frequencies) > 0:
+        print( "Frequency ------- " )
+        print( "Lowest: " + str( min( frequencies ) ) )    
+        print( "Average: " + str( np.average( frequencies ) ) )
+        print( "Standard deviation: " + str( np.std( frequencies ) ) )
         
 def audio_analysis( available_models ):
     print( "-------------------------" )
@@ -330,7 +332,8 @@ def test_accuracy( available_models, available_sounds ):
                         predicted_wav_file_labels.append(key)
                 if( sound in prediction and prediction[sound]['winner'] and prediction[sound]['percent'] >= threshold ):
                     i_correct += 1
-            print( "Accuracy above threshold %0d - %0.1f " % ( threshold, round((i_correct / i) * 100.0) ), end="\n" )
+            if i > 0:
+                print( "Accuracy above threshold %0d - %0.1f " % ( threshold, round((i_correct / i) * 100.0) ), end="\n" )
     
     total_metrics = precision_recall_fscore_support( true_wav_file_labels, predicted_wav_file_labels, average=None, labels=classifier.classes_, beta=0.5 )
     print("Output label".ljust(30) + " P       R       F0.5    Samples")
