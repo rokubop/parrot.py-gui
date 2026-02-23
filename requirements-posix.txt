@@ -1,4 +1,4 @@
-pyaudio
+sounddevice
 numpy
 pandas
 matplotlib
@@ -8,3 +8,5 @@ pyautogui
 joblib
 torch
 audiomentations
+PyQt6
+pyqtgraph

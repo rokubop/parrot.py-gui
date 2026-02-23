@@ -111,7 +111,7 @@ class AudioNetTrainer:
             self.train_loaders.append(torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, sampler=train_sampler, pin_memory=False, num_workers=0))
             self.validation_loaders.append(torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, sampler=valid_sampler, pin_memory=False, num_workers=0))
         
-    def train(self, filename):
+    def train(self, filename, progress_callback=None, stop_check=None):
         best_accuracy = []
         combined_classifier_map = {}
         for i in range(self.net_count):
@@ -120,15 +120,21 @@ class AudioNetTrainer:
             best_accuracy.append(0)
         starttime = int(time.time())
         combined_model = TinyAudioNetEnsemble(self.nets).to(self.device)
-        
+
         input_size = 120
-        
-        with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:	
+
+        with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:
             headers = ['epoch', 'loss', 'avg_validation_accuracy']
             headers.extend(self.dataset_labels)
             writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
             writer.writeheader()
             for epoch in range(self.max_epochs):
+                # Check for external stop request
+                if stop_check is not None and stop_check():
+                    print("External stop requested - Stopped training loop")
+                    print( "------------------------------------------------------")
+                    return
+
                 # Training
                 self.dataset.set_training(True)
                 epoch_loss = 0.0
@@ -136,43 +142,43 @@ class AudioNetTrainer:
                 for j in range(self.net_count):
                     running_loss.append(0.0)
                     self.nets[j].train(True)
-                    
+
                     i = 0
                     with torch.set_grad_enabled(True):
                         st_batch= time.time()
                         for local_batch, local_labels in self.train_loaders[j]:
                             # Transfer to GPU
                             local_batch, local_labels = local_batch.to(self.device), local_labels.to(self.device)
-                            
+
                             # Zero the gradients for this batch
-                            i += 1                        
+                            i += 1
                             net = self.nets[j]
                             optimizer = self.optimizers[j]
                             optimizer.zero_grad()
-                        
+
                             # Calculating loss
                             output = net(local_batch)
                             loss = self.criterion(output, local_labels)
                             loss.backward()
-                                    
+
                             # Prevent exploding weights
                             torch.nn.utils.clip_grad_norm_(net.parameters(),4)
                             optimizer.step()
-                        
+
                             running_loss[j] += loss.item()
                             epoch_loss += output.shape[0] * loss.item()
-                            
+
                             if( i % 10 == 0 ):
                                 correct_in_minibatch = ( local_labels == output.max(dim = 1)[1] ).sum()
                                 print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/self.batch_size))
                                 running_loss[j] = 0.0
-                    
+
                 epoch_loss = epoch_loss / ( self.dataset_size * (1 - self.validation_split) )
                 print('Training loss: {:.4f}'.format(epoch_loss))
                 print( "Validating..." )
                 for j in range(self.net_count):
                     self.nets[j].train(False)
-                
+
                 # Validation
                 self.dataset.set_training(False)
                 epoch_validation_loss = []
@@ -183,34 +189,34 @@ class AudioNetTrainer:
                 for j in range(self.net_count):
                     epoch_validation_loss.append(0.0)
                     correct.append(0)
-                
+
                     with torch.set_grad_enabled(False):
                         accuracy_batch = {'total': {}, 'correct': {}, 'percent': {}}
                         for dataset_label in self.dataset_labels:
                             accuracy_batch['total'][dataset_label] = 0
                             accuracy_batch['correct'][dataset_label] = 0
                             accuracy_batch['percent'][dataset_label] = 0
-                    
+
                         for local_batch, local_labels in self.validation_loaders[j]:
                             # Transfer to GPU
                             local_batch, local_labels = local_batch.to(self.device), local_labels.to(self.device)
-                            
+
                             # Zero the gradients for this batch
                             optimizer = self.optimizers[j]
                             net = self.nets[j]
                             optimizer.zero_grad()
-                            
+
                             # Calculating loss
                             output = net(local_batch)
                             correct[j] += ( local_labels == output.max(dim = 1)[1] ).sum().item()
                             loss = self.criterion(output, local_labels)
                             epoch_validation_loss[j] += output.shape[0] * loss.item()
-                            
+
                             # Calculate combined accuracy on last validation pass
                             if (j + 1 == self.net_count):
                                 combined_output = combined_model(local_batch)
                                 combined_correct += ( local_labels == combined_output.max(dim = 1)[1] ).sum().item()
-                            
+
                             # Calculate the percentages
                             for index, label in enumerate(local_labels):
                                 local_label_string = self.dataset_labels[label]
@@ -218,21 +224,21 @@ class AudioNetTrainer:
                                 if( output[index].argmax() == label ):
                                     accuracy_batch['correct'][local_label_string] += 1
                                 accuracy_batch['percent'][local_label_string] = accuracy_batch['correct'][local_label_string] / accuracy_batch['total'][local_label_string]
-                
-                
+
+
                 for j in range(self.net_count):
                     epoch_loss.append(epoch_validation_loss[j] / ( self.dataset_size * self.validation_split ) )
                     accuracy.append( correct[j] / ( self.dataset_size * self.validation_split ) )
                     print('[Net: %d] Validation loss: %.4f accuracy %.3f' % (j + 1, epoch_loss[j], accuracy[j]))
 
                 print('[Combined] Sum validation loss: %.4f average accuracy %.3f' % (np.sum(epoch_loss), combined_correct / ( self.dataset_size * self.validation_split )))
-                
+
                 csv_row = { 'epoch': epoch, 'loss': np.sum(epoch_loss), 'avg_validation_accuracy': np.average(accuracy) }
                 for dataset_label in self.dataset_labels:
                     csv_row[dataset_label] = accuracy_batch['percent'][dataset_label]
                 writer.writerow( csv_row )
                 csvfile.flush()
-                                
+
                 new_best = False
                 for j in range(self.net_count):
                     current_filename = filename + '_' + str(j+1)
@@ -240,8 +246,8 @@ class AudioNetTrainer:
                         best_accuracy[j] = accuracy[j]
                         current_filename = filename + '_' + str(j+1) + '-BEST'
                         new_best = True
-                        
-                    torch.save({'state_dict': self.nets[j].state_dict(), 
+
+                    torch.save({'state_dict': self.nets[j].state_dict(),
                         'input_size': self.input_size,
                         'labels': self.dataset_labels,
                         'accuracy': accuracy[j],
@@ -250,14 +256,24 @@ class AudioNetTrainer:
                         'epoch': epoch,
                         'random_seed': self.random_seeds[j],
                         }, os.path.join(CLASSIFIER_FOLDER, current_filename) + '-weights.pth.tar')
-                
+
                 # Persist a new combined model with the best weights if new best weights are given
                 if (new_best == True):
                     print( "------------------------------------------------------")
                     print( "Persisting new combined best in " + filename )
-                    print( "------------------------------------------------------")                    
+                    print( "------------------------------------------------------")
                     connect_model( filename, combined_classifier_map, "ensemble_torch", True, self.audio_settings )
-                
+
+                # Notify progress callback if provided (GUI)
+                if progress_callback is not None:
+                    progress_callback(epoch, np.sum(epoch_loss), np.average(accuracy), accuracy_batch['percent'], new_best)
+
+                # Check for stop via KeyPoller (CLI) or external stop_check (GUI)
+                if stop_check is not None and stop_check():
+                    print("External stop requested - Stopped training loop")
+                    print( "------------------------------------------------------")
+                    return
+
                 with KeyPoller() as key_poller:
                     ESCAPEKEY = '\x1b'
                     character = key_poller.poll()

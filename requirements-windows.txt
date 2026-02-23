@@ -1,4 +1,4 @@
-pyaudio
+sounddevice
 numpy
 pandas
 numba
@@ -10,5 +10,7 @@ pydirectinput
 dragonfly2
 pywin32
 joblib
-audiomentations==0.40.0
+audiomentations
 torch
+PyQt6
+pyqtgraph
