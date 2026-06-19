@@ -13,35 +13,9 @@ from PyQt6.QtGui import QPalette, QColor, QFont
 
 
 THEMES = {
-    "studio_dark": {
-        "name": "Studio Dark",
-        "font": "Segoe UI",
-        "window": "#1e1e1e",
-        "base": "#1a1a1a",
-        "panel": "#252525",
-        "card": "#222222",
-        "toolbar": "#252525",
-        "text": "#dddddd",
-        "text_dim": "#888888",
-        "text_bright": "#ffffff",
-        "accent": "#4285f4",
-        "accent_text": "#ffffff",
-        "border": "#3a3a3a",
-        "button": "#353535",
-        "button_hover": "#404040",
-        "radius": "6px",
-        # plot colors
-        "plot_bg": "#1e1e1e",
-        "wave": (120, 200, 255),
-        "wave_fill": (90, 170, 230, 120),
-        "detect_brush": (0, 200, 0, 60),
-        "detect_pen": (0, 200, 0, 110),
-        "playhead": (255, 220, 60),
-        "grid_alpha": 0.2,
-    },
     "fabfilter": {
         "name": "FabFilter",
-        "font": "Segoe UI",
+        "font": "Inter",
         "window": "#23272e",
         "base": "#15181c",
         "panel": "#2d323b",
@@ -53,9 +27,9 @@ THEMES = {
         "text_bright": "#ffffff",
         "accent": "#41d97f",
         "accent_text": "#0c1f14",
-        "border": "#3c424c",
-        "button": "#363c46",
-        "button_hover": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #444b57, stop:1 #383e49)",
+        "border": "#5b6372",
+        "button": "#4c5462",
+        "button_hover": "#5c6577",
         "radius": "5px",
         # plot colors — glowing green curve on a dark analyzer, blue detection
         "plot_bg": "#15181c",
@@ -65,32 +39,6 @@ THEMES = {
         "detect_pen": (90, 175, 245, 120),
         "playhead": (255, 255, 255),
         "grid_alpha": 0.18,
-    },
-    "audio_console": {
-        "name": "Audio Console",
-        "font": "Consolas",
-        "window": "#0d0f12",
-        "base": "#0a0c0e",
-        "panel": "#12161a",
-        "card": "#12161a",
-        "toolbar": "#0a0c0e",
-        "text": "#c8d0d0",
-        "text_dim": "#6a7a7a",
-        "text_bright": "#eafff7",
-        "accent": "#1ed79f",
-        "accent_text": "#04120c",
-        "border": "#1f2a2a",
-        "button": "#16201f",
-        "button_hover": "#1d2b29",
-        "radius": "3px",
-        # plot colors
-        "plot_bg": "#0a0d10",
-        "wave": (40, 220, 150),
-        "wave_fill": (30, 200, 140, 90),
-        "detect_brush": (255, 170, 40, 45),
-        "detect_pen": (255, 170, 40, 110),
-        "playhead": (230, 255, 245),
-        "grid_alpha": 0.28,
     },
 }
 
@@ -156,6 +104,10 @@ _STYLESHEET = Template("""
     QScrollBar::handle:vertical { background-color: $border; border-radius: 5px; min-height: 20px; }
     QScrollBar::handle:vertical:hover { background-color: $accent; }
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+    QScrollBar:horizontal { background-color: $window; height: 12px; border: none; }
+    QScrollBar::handle:horizontal { background-color: $border; border-radius: 5px; min-width: 24px; }
+    QScrollBar::handle:horizontal:hover { background-color: $accent; }
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
     QStatusBar { background-color: $toolbar; color: $text_dim; border-top: 1px solid $border; font-size: 12px; }
     QSlider::groove:horizontal { height: 4px; background: $border; border-radius: 2px; }
     QSlider::handle:horizontal { background: $accent; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
