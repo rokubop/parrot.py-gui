@@ -508,23 +508,57 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
     detection_state.state = "recording"
     return frames
 
+def _stat_arrays(detection_state, detection_frames):
+    """Return (dBFS, spectral_flux) numpy arrays over all frames, maintained
+    incrementally on detection_state. A frame's dBFS/spectral_flux never change
+    after creation and frames are only appended or truncated from the end, so the
+    cached prefix always stays valid. This turns the per-call O(n) Python
+    re-iteration (which made the whole recording O(n^2)) into a one-time O(1)
+    append per frame, while producing values identical to the list comprehensions
+    it replaces."""
+    n = len(detection_frames)
+    buf = getattr(detection_state, "_stat_buf", None)
+    if buf is None:
+        buf = {"dBFS": np.empty(max(64, n), dtype=np.float64),
+               "sf": np.empty(max(64, n), dtype=np.float64), "len": 0}
+        detection_state._stat_buf = buf
+
+    valid = buf["len"]
+    if n < valid:
+        # Frames were truncated from the end (pause/clear); prefix is still valid.
+        buf["len"] = n
+    elif n > valid:
+        if n > buf["dBFS"].size:
+            cap = max(buf["dBFS"].size * 2, n)
+            for key in ("dBFS", "sf"):
+                grown = np.empty(cap, dtype=np.float64)
+                grown[:valid] = buf[key][:valid]
+                buf[key] = grown
+        for idx in range(valid, n):
+            frame = detection_frames[idx]
+            buf["dBFS"][idx] = frame.dBFS
+            buf["sf"][idx] = frame.spectral_flux
+        buf["len"] = n
+    return buf["dBFS"][:n], buf["sf"][:n]
+
+
 def determine_detection_state(detection_frames: List[DetectionFrame], detection_state: DetectionState) -> DetectionState:
-    dBFS_frames = [x.dBFS for x in detection_frames]
+    dBFS_arr, spectral_flux_arr = _stat_arrays(detection_state, detection_frames)
     threshold_confidence = 1 if THRESHOLD_DETECTION == "strict" else 0.5
-    
+
     # Calculate the onset thresholds using spectral flux
-    spectral_flux_max = np.percentile([frame.spectral_flux for frame in detection_frames], 95)
-    spectral_flux_min = np.percentile([frame.spectral_flux for frame in detection_frames], 5)
+    spectral_flux_max = np.percentile(spectral_flux_arr, 95)
+    spectral_flux_min = np.percentile(spectral_flux_arr, 5)
     detection_state.spectral_onset_threshold = (spectral_flux_max - spectral_flux_min) * 0.5
 
     # Calculate the signal variance
-    std_dBFS = np.std(dBFS_frames)
+    std_dBFS = np.std(dBFS_arr)
     detection_state.expected_snr = std_dBFS * 2
-    detection_state.expected_noise_floor = np.percentile(dBFS_frames, 10)
-    
+    detection_state.expected_noise_floor = np.percentile(dBFS_arr, 10)
+
     # Determine an error margin of about 4% of the rough dBFS range
-    dBFS_max = np.percentile([frame.dBFS for frame in detection_frames], 95)
-    dBFS_min = np.percentile([frame.dBFS for frame in detection_frames], 5)
+    dBFS_max = np.percentile(dBFS_arr, 95)
+    dBFS_min = np.percentile(dBFS_arr, 5)
     detection_state.dBFS_error_margin = abs(dBFS_min - dBFS_max) / 25
 
     # Determine a upper bound of dBFS threshold based on the known valleys determined by the onset detection
