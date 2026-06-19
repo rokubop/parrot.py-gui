@@ -27,15 +27,30 @@ def _wav_duration(path):
         wf = wave.open(path, "rb")
         rate = wf.getframerate()
         frames = wf.getnframes()
+        channels = wf.getnchannels()
+        sampwidth = wf.getsampwidth()
         wf.close()
+        # Guard against recordings whose header stores a byte count in the
+        # nframes field (which would report double the real length): cap to the
+        # frames the file can actually hold. Only kicks in when the header
+        # overcounts, so well-formed files are unaffected.
+        if channels and sampwidth:
+            data_bytes = max(0, os.path.getsize(path) - 44)  # standard PCM header
+            size_frames = data_bytes // (channels * sampwidth)
+            if size_frames and size_frames < frames:
+                frames = size_frames
         return frames / rate if rate else 0.0
     except Exception:
         return 0.0
 
 
 class SessionCard(QFrame):
-    """Read-only view of one recording session: a large waveform/spectrogram
-    preview with detection overlaid, plus play/pause and click-to-seek."""
+    """Read-only view of one recording session: a fixed-height waveform/
+    spectrogram preview with detection overlaid, plus play/pause, click- or
+    drag-to-seek, and quick fit/start/expand controls."""
+
+    NORMAL_HEIGHT = 150     # consistent preview height across all cards
+    EXPANDED_HEIGHT = 440   # height when the card is expanded in place
 
     started = pyqtSignal(object)   # emits self when playback begins
     selected = pyqtSignal(object)  # emits self when the card is interacted with
@@ -43,6 +58,7 @@ class SessionCard(QFrame):
     def __init__(self, session_name, wav_path, srt_path, thresholds_path, parent=None):
         super().__init__(parent)
         self.wav_path = wav_path
+        self._expanded = False
 
         self._audio = None
         self._sample_rate = None
@@ -64,11 +80,20 @@ class SessionCard(QFrame):
         layout.addLayout(self._build_header(session_name, thresholds_path))
 
         self.preview = AudioPreviewWidget()
-        self.preview.setMinimumHeight(125)
+        self.preview.setFixedHeight(self.NORMAL_HEIGHT)
         self.preview.load(wav_path, srt_path)
         self.preview.seeked.connect(self._on_seek)
         self.preview.pressed.connect(lambda: self.selected.emit(self))
         layout.addWidget(self.preview)
+
+    def _icon_button(self, label, tooltip, slot):
+        # No fixed width: the global 16px button padding clipped short fixed-width
+        # labels. Let the button size to its text.
+        btn = QPushButton(label)
+        btn.setToolTip(tooltip)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.clicked.connect(slot)
+        return btn
 
     def _build_header(self, session_name, thresholds_path):
         row = QHBoxLayout()
@@ -77,6 +102,9 @@ class SessionCard(QFrame):
         self.play_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
+
+        row.addWidget(self._icon_button("Fit", "Fit waveform to view (or double-click)", self.fit_view))
+        row.addWidget(self._icon_button("Go to Start", "Move the playhead back to the beginning", self.go_to_start))
 
         t = theme.colors()
         title = session_name.split("__")[0]
@@ -97,6 +125,9 @@ class SessionCard(QFrame):
             thr = QLabel(threshold_text)
             thr.setStyleSheet(f"color: {t['text_dim']}; border: none; background: transparent;")
             row.addWidget(thr)
+
+        self.expand_btn = self._icon_button("Expand", "Show a taller waveform", self.toggle_expanded)
+        row.addWidget(self.expand_btn)
         return row
 
     def _build_meta_text(self, session_name):
@@ -156,22 +187,41 @@ class SessionCard(QFrame):
     def set_normalized(self, normalized):
         self.preview.set_normalized(normalized)
 
+    # ---- quick controls ------------------------------------------------
+
+    def fit_view(self):
+        self.selected.emit(self)
+        self.preview.fit()
+
+    def go_to_start(self):
+        self.selected.emit(self)
+        if self._playing:
+            self.play(from_seconds=0.0)
+        else:
+            self._position = 0.0
+            self.preview.set_playhead(0.0)
+
+    def toggle_expanded(self):
+        self._expanded = not self._expanded
+        height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
+        self.preview.setFixedHeight(height)
+        self.expand_btn.setText("Collapse" if self._expanded else "Expand")
+        self.selected.emit(self)
+
     # ---- playback ------------------------------------------------------
 
     def _load_audio(self):
         if self._audio is not None:
             return
-        wf = wave.open(self.wav_path, "rb")
-        channels = wf.getnchannels()
-        self._sample_rate = wf.getframerate()
-        n_frames = wf.getnframes()
-        raw = wf.readframes(n_frames)
-        wf.close()
-        data = np.frombuffer(raw, dtype=np.int16)
-        if channels > 1:
-            data = data.reshape(-1, channels)
-        self._audio = data
-        self._duration = n_frames / self._sample_rate if self._sample_rate else 0.0
+        # Reuse the samples the preview already decoded for the waveform instead
+        # of re-reading the whole WAV on the UI thread (which froze the first
+        # play). These are mono float32 in [-1, 1] — sounddevice plays them as-is.
+        samples, sample_rate = self.preview.playback_audio()
+        if samples is None or sample_rate is None:
+            return
+        self._audio = samples
+        self._sample_rate = sample_rate
+        self._duration = self.preview.duration()
 
     def toggle_play(self):
         if self._playing:
@@ -235,7 +285,13 @@ class SessionCard(QFrame):
         self.play(from_seconds=pos + delta_seconds)
 
     def _on_seek(self, seconds):
-        self.play(from_seconds=seconds)
+        # Clicking/scrubbing positions the playhead; it only plays if already
+        # playing (jump and continue). Use Play / Space to start from a stop.
+        dur = self.preview.duration()
+        self._position = max(0.0, min(seconds, dur)) if dur else max(0.0, seconds)
+        self.preview.set_playhead(self._position)
+        if self._playing:
+            self.play(from_seconds=self._position)
 
     def _tick(self):
         elapsed = self._play_start + self._clock.elapsed() / 1000.0

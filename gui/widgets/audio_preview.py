@@ -4,7 +4,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer, QRectF, QVariantAnimation, QEasingCurve, pyqtSignal
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.srt import parse_srt_file
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from gui import theme
@@ -50,6 +50,22 @@ class AudioPreviewWidget(QWidget):
         self.plot.showGrid(x=True, y=False, alpha=t["grid_alpha"])
         layout.addWidget(self.plot)
 
+        # Horizontal scrollbar: appears only when zoomed in so you can pan the
+        # visible window along the clip without losing the zoom level.
+        self._scroll_scale = 1000.0  # view seconds <-> scrollbar units (ms)
+        self._updating_scroll = False
+        # Keep the scrollbar inside a fixed-height row so showing/hiding it never
+        # resizes (and shifts) the plot above.
+        self._scroll_row = QWidget()
+        self._scroll_row.setFixedHeight(14)
+        scroll_layout = QVBoxLayout(self._scroll_row)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.hscroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.hscroll.setVisible(False)
+        self.hscroll.valueChanged.connect(self._on_hscroll)
+        scroll_layout.addWidget(self.hscroll)
+        layout.addWidget(self._scroll_row)
+
         self._vb = self.plot.getViewBox()
 
         # Filled waveform (min/max envelope between two curves)
@@ -67,9 +83,15 @@ class AudioPreviewWidget(QWidget):
 
         self._regions = []
 
-        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=False,
+        # Draggable playhead: grab it to scrub. A fatter invisible hover region
+        # makes it easy to catch with the cursor.
+        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
                                         pen=pg.mkPen(QColor(*t["playhead"]), width=2))
+        self.playhead.setHoverPen(pg.mkPen(QColor(*t["playhead"]), width=4))
         self.playhead.setZValue(20)
+        self._dragging_playhead = False
+        self.playhead.sigDragged.connect(self._on_playhead_dragged)
+        self.playhead.sigPositionChangeFinished.connect(self._on_playhead_released)
         self.plot.addItem(self.playhead)
 
         # Hover crosshair + time readout
@@ -90,6 +112,7 @@ class AudioPreviewWidget(QWidget):
         self._render_timer.setInterval(15)
         self._render_timer.timeout.connect(self._render_waveform)
         self._vb.sigXRangeChanged.connect(lambda *_: self._render_timer.start())
+        self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
 
         self.plot.scene().sigMouseClicked.connect(self._on_clicked)
 
@@ -109,7 +132,10 @@ class AudioPreviewWidget(QWidget):
                 data = data.reshape(-1, channels).mean(axis=1)
             self._samples = data / 32768.0
             self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
-            self._duration = n_frames / self._sample_rate if self._sample_rate else 0.0
+            # Derive duration from the samples we actually decoded, not from the
+            # WAV header: some recordings store a byte count in the nframes field,
+            # which would double the duration and leave Fit showing half-blank.
+            self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
         except Exception:
             self._samples = None
             self._duration = 0.0
@@ -117,6 +143,7 @@ class AudioPreviewWidget(QWidget):
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
         self._vb.setXRange(0, self._duration, padding=0)
+        self.playhead.setBounds([0, self._duration])
         self._apply_y_range()
         self._load_regions(srt_path)
         self._render_waveform()
@@ -243,7 +270,29 @@ class AudioPreviewWidget(QWidget):
     # ---- playback / interaction ---------------------------------------
 
     def set_playhead(self, seconds):
+        # Don't fight the user while they're dragging the line.
+        if self._dragging_playhead:
+            return
         self.playhead.setPos(seconds)
+
+    def _on_playhead_dragged(self):
+        # Live drag: keep the readout visible at the playhead and mark us as the
+        # selected card, but defer the actual seek until the drag finishes.
+        self._dragging_playhead = True
+        x = max(0.0, min(self.playhead.value(), self._duration))
+        self.cursor.setVisible(False)
+        self.readout.setText(f"{x:.3f}s")
+        self.readout.setPos(x, self._vb.viewRange()[1][1])
+        self.readout.setVisible(True)
+        self.pressed.emit()
+
+    def _on_playhead_released(self):
+        if not self._dragging_playhead:
+            return
+        self._dragging_playhead = False
+        self.readout.setVisible(False)
+        x = max(0.0, min(self.playhead.value(), self._duration))
+        self.seeked.emit(x)
 
     def fit(self):
         if self._duration <= 0:
@@ -251,6 +300,48 @@ class AudioPreviewWidget(QWidget):
         self._animate_x_range(0.0, self._duration)
         if self._mode == "waveform":
             self._apply_y_range()
+
+    # ---- playback audio (shared with the owning card) ------------------
+
+    def playback_audio(self):
+        """Return (mono float32 samples, sample_rate) already decoded for the
+        waveform, so the card needn't re-read the file to play it."""
+        return self._samples, self._sample_rate
+
+    def duration(self):
+        return self._duration
+
+    # ---- horizontal scrollbar -----------------------------------------
+
+    def _sync_scrollbar(self):
+        """Mirror the visible X window onto the scrollbar; hide it when the whole
+        clip is in view."""
+        if self._updating_scroll or self._duration <= 0:
+            return
+        x0, x1 = self._vb.viewRange()[0]
+        span = x1 - x0
+        if span >= self._duration - 1e-6:
+            self.hscroll.setVisible(False)
+            return
+        s = self._scroll_scale
+        self._updating_scroll = True
+        self.hscroll.setMinimum(0)
+        self.hscroll.setMaximum(max(0, int((self._duration - span) * s)))
+        self.hscroll.setPageStep(max(1, int(span * s)))
+        self.hscroll.setSingleStep(max(1, int(span * s / 20)))
+        self.hscroll.setValue(int(max(0.0, x0) * s))
+        self.hscroll.setVisible(True)
+        self._updating_scroll = False
+
+    def _on_hscroll(self, value):
+        if self._updating_scroll:
+            return
+        x0, x1 = self._vb.viewRange()[0]
+        span = x1 - x0
+        new_x0 = value / self._scroll_scale
+        self._updating_scroll = True
+        self._vb.setXRange(new_x0, new_x0 + span, padding=0)
+        self._updating_scroll = False
 
     def _animate_x_range(self, target_x0, target_x1):
         """Ease the visible X range to the target instead of snapping."""
