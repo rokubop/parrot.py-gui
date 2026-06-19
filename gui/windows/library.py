@@ -8,6 +8,7 @@ from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, _wav_duration
 from gui import theme
 from lib.srt import ms_to_srt_timestring
+from lib.print_status import get_quantity_rating
 
 
 class SoundLibraryPage(QWidget):
@@ -73,6 +74,8 @@ class SoundLibraryPage(QWidget):
         header_layout.addWidget(self.sound_title)
         self.sound_stats = QLabel("")
         header_layout.addWidget(self.sound_stats)
+        self.sound_quantity = QLabel("")
+        header_layout.addWidget(self.sound_quantity)
         right_layout.addWidget(header)
 
         self.scroll = QScrollArea()
@@ -96,8 +99,12 @@ class SoundLibraryPage(QWidget):
         self.sound_title.setStyleSheet(
             f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
         self.sound_stats.setStyleSheet(f"color: {t['text_dim']};")
+        self.sound_quantity.setStyleSheet(f"color: {t['text_dim']}; margin-top: 2px;")
+        # Scope this to the bar itself: a selector-less stylesheet on an ancestor
+        # silently breaks :checked background-color on descendant QPushButtons.
         self.toolbar_bar.setStyleSheet(
-            f"background-color: {t['toolbar']}; border-bottom: 1px solid {t['border']};")
+            f"QWidget#toolbarBar {{ background-color: {t['toolbar']}; "
+            f"border-bottom: 1px solid {t['border']}; }}")
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
         self.hint_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
@@ -113,6 +120,7 @@ class SoundLibraryPage(QWidget):
 
     def _build_toolbar(self):
         bar = QWidget()
+        bar.setObjectName("toolbarBar")
         self.toolbar_bar = bar
         bar_layout = QHBoxLayout(bar)
         bar_layout.setContentsMargins(16, 8, 16, 8)
@@ -138,7 +146,7 @@ class SoundLibraryPage(QWidget):
         bar_layout.addWidget(self.normalize_btn)
 
         bar_layout.addStretch()
-        self.hint_label = QLabel("Space play/pause   ·   ← → seek   ·   ↑ ↓ session   ·   scroll waveform to zoom   ·   double-click to fit")
+        self.hint_label = QLabel("Space play/pause   ·   ← → seek   ·   drag playhead to scrub   ·   scroll to zoom   ·   double-click to fit")
         bar_layout.addWidget(self.hint_label)
         return bar
 
@@ -159,6 +167,7 @@ class SoundLibraryPage(QWidget):
         if self.label_list.count() == 0:
             self.sound_title.setText("")
             self.sound_stats.setText("")
+            self.sound_quantity.setText("")
             self._show_message("No recordings found in data/recordings/.")
         elif not had_selection:
             self.label_list.setCurrentRow(0)
@@ -196,6 +205,7 @@ class SoundLibraryPage(QWidget):
             if current is None:
                 self.sound_title.setText("")
                 self.sound_stats.setText("")
+                self.sound_quantity.setText("")
                 message.setText("Select a sound to review its recordings.")
             else:
                 label = current.data(Qt.ItemDataRole.UserRole)
@@ -261,14 +271,37 @@ class SoundLibraryPage(QWidget):
 
     # ---- selection / playback coordination -----------------------------
 
+    # Color cues for the data-quantity rating, dimmest -> best.
+    _QUANTITY_COLORS = {
+        "Not enough": "#e05a5a",
+        "Sufficient": "#e0b020",
+        "Good": "#5ac8e0",
+        "Excellent": "#41d97f",
+    }
+
     def _update_sound_header(self, label, recordings):
         self.sound_title.setText(label)
         count = len(recordings)
         recorded_s = sum(_wav_duration(r["wav_path"]) for r in recordings)
-        detected_s = self.app_state.get_label_duration_ms(label) / 1000.0
+        detected_ms = self.app_state.get_label_duration_ms(label)
+        detected_s = detected_ms / 1000.0
         noun = "recording" if count == 1 else "recordings"
         self.sound_stats.setText(
-            f"{count} {noun}   ·   {recorded_s:.1f}s recorded   ·   {detected_s:.1f}s detected"
+            f"{count} {noun}   ·   {recorded_s:.1f}s recorded   ·   {detected_s:.1f}s detected sound"
+        )
+        self._update_quantity(detected_ms)
+
+    def _update_quantity(self, detected_ms):
+        quantity, percent_to_next, next_quantity = get_quantity_rating(detected_ms)
+        color = self._QUANTITY_COLORS.get(quantity, theme.colors()["text"])
+        detected_str = ms_to_srt_timestring(int(detected_ms), False).split(",")[0]
+        if next_quantity:
+            tail = f"   ·   {round(percent_to_next)}% toward “{next_quantity}”"
+        else:
+            tail = "   ·   plenty of data for training"
+        self.sound_quantity.setText(
+            f"Data quantity:  <b style='color:{color};'>{quantity}</b>"
+            f"   ({detected_str} of detected sound){tail}"
         )
 
     def _set_mode(self, mode):
