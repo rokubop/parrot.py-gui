@@ -9,9 +9,11 @@ if sys.platform == "darwin":
     # See https://github.com/asweigart/pyautogui/issues/495#issuecomment-778241850
     import AppKit
 
-import pyautogui
-
-pyautogui.FAILSAFE = False
+try:
+    import pyautogui
+    pyautogui.FAILSAFE = False
+except Exception:
+    pyautogui = None
 
 try:
     default_audio = sd.query_devices(kind='input')

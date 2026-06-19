@@ -4,6 +4,36 @@ set -e
 PYTHON_VERSION="3.13"
 VENV_DIR=".venv"
 
+# -------------------------------------------------------
+# Git Bash / MINGW detection — redirect to run.bat
+# -------------------------------------------------------
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    echo ""
+    echo "  Detected Git Bash (MINGW). This script is for Linux/WSL/macOS."
+    echo ""
+    echo "  To run on Windows, use one of these instead:"
+    echo ""
+    echo "    From PowerShell or cmd:   run.bat"
+    echo "    From Git Bash:            cmd //c run.bat"
+    echo ""
+
+    # Check if run.bat exists and offer to launch it
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -f "$SCRIPT_DIR/run.bat" ]]; then
+        read -rp "  Launch run.bat now? [Y/n]: " choice
+        case "$choice" in
+            [nN]*)
+                exit 0
+                ;;
+            *)
+                cmd //c "$(cygpath -w "$SCRIPT_DIR/run.bat")"
+                exit $?
+                ;;
+        esac
+    fi
+    exit 1
+fi
+
 # Colors (if terminal supports them)
 if [[ -t 1 ]]; then
     BOLD="\033[1m"
@@ -65,32 +95,54 @@ check_network() {
 # -------------------------------------------------------
 # Step 2: Find or install Python 3.13
 # -------------------------------------------------------
+load_pyenv() {
+    if ! command -v pyenv &>/dev/null && [[ -d "$HOME/.pyenv" ]]; then
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
+        eval "$(pyenv init -)" 2>/dev/null || true
+    fi
+}
+
 find_python() {
+    load_pyenv
+
+    # Check pyenv versions directly by path first (most reliable)
+    if [[ -d "$HOME/.pyenv/versions" ]]; then
+        for dir in "$HOME/.pyenv/versions"/*/; do
+            for bin in "$dir/bin/python3" "$dir/bin/python"; do
+                if [[ -x "$bin" ]]; then
+                    local version
+                    version=$("$bin" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+                    if [[ "$version" == "$PYTHON_VERSION" ]]; then
+                        echo "$bin"
+                        return 0
+                    fi
+                fi
+            done
+        done
+    fi
+
+    # Check standard system commands (avoid pyenv shims — they can error)
     for cmd in "python${PYTHON_VERSION}" "python3" "python"; do
-        if command -v "$cmd" &>/dev/null; then
-            version=$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+')
-            if [[ "$version" == "$PYTHON_VERSION" ]]; then
-                echo "$cmd"
-                return 0
-            fi
+        local cmd_path
+        cmd_path=$(command -v "$cmd" 2>/dev/null) || continue
+        # Skip pyenv shims
+        [[ "$cmd_path" == *".pyenv/shims"* ]] && continue
+        local version
+        version=$("$cmd_path" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        if [[ "$version" == "$PYTHON_VERSION" ]]; then
+            echo "$cmd_path"
+            return 0
         fi
     done
-    # Also check pyenv shims
-    if command -v pyenv &>/dev/null; then
-        if pyenv versions --bare 2>/dev/null | grep -q "^${PYTHON_VERSION}"; then
-            pyenv shell "$PYTHON_VERSION" 2>/dev/null
-            cmd=$(pyenv which python 2>/dev/null) || true
-            if [[ -n "$cmd" ]]; then
-                echo "$cmd"
-                return 0
-            fi
-        fi
-    fi
+
     return 1
 }
 
 install_python_pyenv() {
-    # Install pyenv if missing
+    load_pyenv
+
+    # Install pyenv if still not available
     if ! command -v pyenv &>/dev/null; then
         info "Installing pyenv..."
         echo ""
@@ -115,23 +167,23 @@ install_python_pyenv() {
         export PYENV_ROOT="$HOME/.pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
         eval "$(pyenv init -)"
+    fi
 
-        # Persist to shell config
-        local shell_rc=""
-        if [[ -f "$HOME/.zshrc" ]]; then
-            shell_rc="$HOME/.zshrc"
-        elif [[ -f "$HOME/.bashrc" ]]; then
-            shell_rc="$HOME/.bashrc"
-        fi
+    # Persist to shell config if not already there
+    local shell_rc=""
+    if [[ -f "$HOME/.zshrc" ]]; then
+        shell_rc="$HOME/.zshrc"
+    elif [[ -f "$HOME/.bashrc" ]]; then
+        shell_rc="$HOME/.bashrc"
+    fi
 
-        if [[ -n "$shell_rc" ]] && ! grep -q 'PYENV_ROOT' "$shell_rc"; then
-            echo '' >> "$shell_rc"
-            echo '# pyenv' >> "$shell_rc"
-            echo 'export PYENV_ROOT="$HOME/.pyenv"' >> "$shell_rc"
-            echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> "$shell_rc"
-            echo 'eval "$(pyenv init -)"' >> "$shell_rc"
-            ok "  Added pyenv to $shell_rc"
-        fi
+    if [[ -n "$shell_rc" ]] && ! grep -q 'PYENV_ROOT' "$shell_rc"; then
+        echo '' >> "$shell_rc"
+        echo '# pyenv' >> "$shell_rc"
+        echo 'export PYENV_ROOT="$HOME/.pyenv"' >> "$shell_rc"
+        echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> "$shell_rc"
+        echo 'eval "$(pyenv init -)"' >> "$shell_rc"
+        ok "  Added pyenv to $shell_rc"
     fi
 
     # Install Python version
@@ -199,11 +251,25 @@ fi
 ok "  Python: $PYTHON_CMD ($($PYTHON_CMD --version))"
 
 # -------------------------------------------------------
-# Step 3: Create venv
+# Step 3: Create venv (or recreate if from a different platform)
 # -------------------------------------------------------
+if [[ -d "$VENV_DIR/Scripts" && ! -d "$VENV_DIR/bin" ]]; then
+    echo ""
+    warn "  Existing virtual environment was created on Windows and is"
+    warn "  incompatible with $(uname -s). It needs to be recreated."
+    echo ""
+    read -rp "  Recreate venv? [Y/n]: " venv_choice
+    if [[ "$venv_choice" =~ ^[nN] ]]; then
+        echo "  Aborted. Remove .venv manually or run from Windows instead."
+        exit 1
+    fi
+    info "  Recreating venv for $(uname -s)..."
+    rm -rf "$VENV_DIR"
+fi
 if [[ ! -f "$VENV_PYTHON" ]]; then
     info "  Creating virtual environment..."
     "$PYTHON_CMD" -m venv "$VENV_DIR"
+    rm -f "$MARKER"
 fi
 
 source "$VENV_ACTIVATE"
@@ -214,19 +280,45 @@ ok "  Venv: $VENV_DIR"
 # -------------------------------------------------------
 MARKER="$VENV_DIR/.deps_installed"
 if [[ ! -f "$MARKER" || "$REQUIREMENTS" -nt "$MARKER" ]]; then
-    info "  Installing dependencies from $REQUIREMENTS..."
-    pip install --upgrade pip -q
+    echo ""
+    info "  Dependencies need to be installed from $REQUIREMENTS."
+    echo ""
+    read -rp "  Install now? [Y/n]: " deps_choice
+    if [[ "$deps_choice" =~ ^[nN] ]]; then
+        echo "  Skipped. Run again when ready."
+        exit 1
+    fi
+    info "  Installing dependencies..."
 
-    # Install Qt6 system libraries on Linux (needed by PyQt6)
+    # Install system libraries on Linux
     if [[ "$PLATFORM" == "posix" ]] && command -v apt &>/dev/null; then
-        if ! dpkg -s libgl1 &>/dev/null 2>&1 || ! dpkg -s libegl1 &>/dev/null 2>&1; then
-            info "  Installing Qt6 system dependencies..."
-            sudo apt install -y -qq libgl1 libegl1 libxkbcommon0 libdbus-1-3 2>/dev/null || true
+        # Core dependencies (all Linux with apt)
+        sys_deps=()
+        for pkg in libgl1 libegl1 libxkbcommon0 libdbus-1-3 libportaudio2; do
+            if ! dpkg -s "$pkg" &>/dev/null 2>&1; then
+                sys_deps+=("$pkg")
+            fi
+        done
+
+        # Additional X11/Wayland deps needed for Qt on WSL
+        if [[ -n "$WSL_DISTRO_NAME" ]]; then
+            for pkg in libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxkbcommon-x11-0; do
+                if ! dpkg -s "$pkg" &>/dev/null 2>&1; then
+                    sys_deps+=("$pkg")
+                fi
+            done
+        fi
+
+        if [[ ${#sys_deps[@]} -gt 0 ]]; then
+            info "  Installing system dependencies: ${sys_deps[*]}"
+            sudo apt update -qq
+            sudo apt install -y -qq "${sys_deps[@]}"
         fi
     fi
 
     # Use --only-binary for PyQt6 to avoid building from source (needs qmake)
-    pip install --only-binary=PyQt6 -r "$REQUIREMENTS" -q
+    # Show progress (no -q) so the user can see what's happening
+    pip install --only-binary=PyQt6 --progress-bar on -r "$REQUIREMENTS" --disable-pip-version-check
     touch "$MARKER"
 else
     ok "  Dependencies: up to date"
@@ -235,7 +327,85 @@ fi
 # -------------------------------------------------------
 # Step 5: Launch
 # -------------------------------------------------------
+
+# Check display server on Linux
+if [[ "$PLATFORM" == "posix" ]]; then
+    if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" ]]; then
+        err "  No display server detected."
+        echo ""
+        if [[ -n "$WSL_DISTRO_NAME" ]]; then
+            echo "  WSL requires Windows 11 with WSLg for GUI apps."
+            echo "  Alternatives:"
+            echo ""
+            echo "    1. Run natively on Windows: run.bat (recommended)"
+            echo "    2. Update WSL:  wsl --update  (from PowerShell)"
+            echo "    3. Install VcXsrv on Windows and set:"
+            echo "       export DISPLAY=\$(cat /etc/resolv.conf | grep nameserver | awk '{print \$2}'):0"
+        else
+            echo "  A display server (X11 or Wayland) is required for the GUI."
+        fi
+        echo ""
+        exit 1
+    fi
+fi
+
+# Auto-select Qt platform on WSL (xcb is more reliable than wayland under WSLg)
+if [[ -n "$WSL_DISTRO_NAME" && -z "$QT_QPA_PLATFORM" ]]; then
+    if [[ -n "$DISPLAY" ]]; then
+        export QT_QPA_PLATFORM=xcb
+    elif [[ -n "$WAYLAND_DISPLAY" ]]; then
+        export QT_QPA_PLATFORM=wayland
+    fi
+fi
+
 echo ""
 ok "  Starting Parrot.py GUI..."
 echo ""
 python -m gui
+EXIT_CODE=$?
+
+if [[ $EXIT_CODE -ne 0 ]]; then
+    echo ""
+    err "  The application failed to start."
+    echo ""
+    echo "    [1] Reinstall dependencies and retry"
+    echo "    [2] Recreate venv from scratch and retry"
+    echo "    [3] Exit"
+    echo ""
+    read -rp "  Choose [1/2/3]: " err_choice
+
+    case "$err_choice" in
+        1)
+            info "  Reinstalling dependencies..."
+            echo ""
+            rm -f "$MARKER"
+            pip install --only-binary=PyQt6 --progress-bar on -r "$REQUIREMENTS" --disable-pip-version-check
+            if [[ $? -eq 0 ]]; then
+                touch "$MARKER"
+                echo ""
+                info "  Retrying launch..."
+                echo ""
+                python -m gui
+            fi
+            ;;
+        2)
+            info "  Recreating venv from scratch..."
+            rm -rf "$VENV_DIR"
+            "$PYTHON_CMD" -m venv "$VENV_DIR"
+            source "$VENV_ACTIVATE"
+            info "  Installing dependencies..."
+            echo ""
+            pip install --only-binary=PyQt6 --progress-bar on -r "$REQUIREMENTS" --disable-pip-version-check
+            if [[ $? -eq 0 ]]; then
+                touch "$MARKER"
+                echo ""
+                info "  Retrying launch..."
+                echo ""
+                python -m gui
+            fi
+            ;;
+        *)
+            exit $EXIT_CODE
+            ;;
+    esac
+fi

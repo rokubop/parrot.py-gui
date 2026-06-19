@@ -1,0 +1,220 @@
+import os
+import sys
+import re
+import json
+import filecmp
+from pathlib import Path
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class TalonDiscoveryResult:
+    talon_found: bool = False
+    talon_home: Optional[str] = None
+    talon_user_dir: Optional[str] = None
+    integration_path: Optional[str] = None
+    model_path_from_talon: Optional[str] = None
+    pattern_path_from_talon: Optional[str] = None
+    patterns: dict = field(default_factory=dict)
+    error: Optional[str] = None
+
+
+def _is_wsl() -> bool:
+    try:
+        with open("/proc/version", "r") as f:
+            return "microsoft" in f.read().lower()
+    except Exception:
+        return False
+
+
+def _get_wsl_windows_appdata() -> Optional[str]:
+    """Find Windows AppData from WSL via /mnt/c/Users/<username>/AppData/Roaming."""
+    users_dir = "/mnt/c/Users"
+    if not os.path.isdir(users_dir):
+        return None
+    for entry in os.listdir(users_dir):
+        if entry in ("Public", "Default", "Default User", "All Users"):
+            continue
+        candidate = os.path.join(users_dir, entry, "AppData", "Roaming")
+        if os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def get_talon_home() -> Optional[str]:
+    candidates = []
+
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA", "")
+        candidates.append(os.path.join(base, "talon"))
+    else:
+        candidates.append(os.path.expanduser("~/.talon"))
+        # WSL: also check the Windows filesystem
+        if _is_wsl():
+            appdata = _get_wsl_windows_appdata()
+            if appdata:
+                candidates.append(os.path.join(appdata, "talon"))
+
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def get_talon_user_dir() -> Optional[str]:
+    talon_home = get_talon_home()
+    if talon_home is None:
+        return None
+    candidate = os.path.join(talon_home, "user")
+    return candidate if os.path.isdir(candidate) else None
+
+
+def find_parrot_integration(talon_user_dir: str) -> Optional[str]:
+    for p in Path(talon_user_dir).rglob("parrot_integration.py"):
+        return str(p)
+    return None
+
+
+def parse_integration_file(integration_path: str) -> dict:
+    """Parse parrot_integration.py to extract model_path, pattern_path, and parrot_home.
+
+    Looks for lines like:
+        PARROT_HOME = TALON_HOME / 'user/roku/talon-parrot-model-roku'
+        pattern_path = str(PARROT_HOME / 'patterns.json')
+        model_path = str(PARROT_HOME / 'model.pkl')
+    """
+    result = {"model_path": None, "pattern_path": None, "parrot_home": None}
+
+    try:
+        with open(integration_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        return result
+
+    talon_home = get_talon_home()
+    if talon_home is None:
+        return result
+
+    # Find PARROT_HOME = TALON_HOME / '...'
+    parrot_home_match = re.search(
+        r'^\s*PARROT_HOME\s*=\s*TALON_HOME\s*/\s*[\'"]([^\'"]+)[\'"]',
+        content, re.MULTILINE
+    )
+    parrot_home_dir = None
+    if parrot_home_match:
+        parrot_subpath = parrot_home_match.group(1)
+        parrot_home_dir = str(Path(talon_home) / parrot_subpath)
+        result["parrot_home"] = parrot_home_dir
+
+    # Find pattern_path = str(PARROT_HOME / '...')
+    pattern_match = re.search(
+        r'^\s*pattern_path\s*=\s*str\(PARROT_HOME\s*/\s*[\'"]([^\'"]+)[\'"]\)',
+        content, re.MULTILINE
+    )
+    if pattern_match and parrot_home_dir:
+        result["pattern_path"] = str(Path(parrot_home_dir) / pattern_match.group(1))
+
+    # Find model_path = str(PARROT_HOME / '...')
+    model_match = re.search(
+        r'^\s*model_path\s*=\s*str\(PARROT_HOME\s*/\s*[\'"]([^\'"]+)[\'"]\)',
+        content, re.MULTILINE
+    )
+    if model_match and parrot_home_dir:
+        result["model_path"] = str(Path(parrot_home_dir) / model_match.group(1))
+
+    # Fallback: direct string assignments
+    if result["pattern_path"] is None:
+        direct = re.search(r'^\s*pattern_path\s*=\s*[\'"]([^\'"]+)[\'"]', content, re.MULTILINE)
+        if direct:
+            result["pattern_path"] = direct.group(1)
+
+    if result["model_path"] is None:
+        direct = re.search(r'^\s*model_path\s*=\s*[\'"]([^\'"]+)[\'"]', content, re.MULTILINE)
+        if direct:
+            result["model_path"] = direct.group(1)
+
+    return result
+
+
+def load_patterns_json(pattern_path: str) -> dict:
+    try:
+        with open(pattern_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def discover_talon() -> TalonDiscoveryResult:
+    """Full Talon discovery pipeline with 3-stage fallback for patterns.json."""
+    result = TalonDiscoveryResult()
+
+    talon_home = get_talon_home()
+    if talon_home is None:
+        result.error = "Talon home directory not found"
+        return result
+
+    result.talon_home = talon_home
+
+    talon_user_dir = get_talon_user_dir()
+    if talon_user_dir is None:
+        result.error = "Talon user directory not found"
+        return result
+
+    result.talon_user_dir = talon_user_dir
+
+    # Find parrot_integration.py
+    integration_path = find_parrot_integration(talon_user_dir)
+    if integration_path:
+        result.integration_path = integration_path
+        result.talon_found = True
+
+        # Parse it for paths
+        parsed = parse_integration_file(integration_path)
+        result.model_path_from_talon = parsed["model_path"]
+
+        # Stage 1: pattern_path from parsing integration file
+        if parsed["pattern_path"] and os.path.isfile(parsed["pattern_path"]):
+            result.pattern_path_from_talon = parsed["pattern_path"]
+            result.patterns = load_patterns_json(parsed["pattern_path"])
+            return result
+
+    # Stage 2: common location <talon_home>/parrot/patterns.json
+    common_path = os.path.join(talon_home, "parrot", "patterns.json")
+    if os.path.isfile(common_path):
+        result.talon_found = True
+        result.pattern_path_from_talon = common_path
+        result.patterns = load_patterns_json(common_path)
+        return result
+
+    # Stage 3: rglob in user directory
+    if talon_user_dir:
+        matches = list(Path(talon_user_dir).rglob("patterns.json"))
+        if matches:
+            result.talon_found = True
+            result.pattern_path_from_talon = str(matches[0])
+            result.patterns = load_patterns_json(str(matches[0]))
+            return result
+
+    if not result.talon_found:
+        result.error = "No parrot integration or patterns.json found"
+
+    return result
+
+
+def compare_model_files(local_path: str, talon_path: str) -> dict:
+    """Compare a local model file to the one referenced by Talon."""
+    result = {
+        "matches": False,
+        "talon_path": talon_path,
+        "local_exists": os.path.isfile(local_path),
+        "talon_exists": os.path.isfile(talon_path) if talon_path else False,
+    }
+
+    if result["local_exists"] and result["talon_exists"]:
+        result["local_size"] = os.path.getsize(local_path)
+        result["talon_size"] = os.path.getsize(talon_path)
+        if result["local_size"] == result["talon_size"]:
+            result["matches"] = filecmp.cmp(local_path, talon_path, shallow=False)
+
+    return result
