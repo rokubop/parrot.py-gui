@@ -18,20 +18,32 @@
 - `TrainingWorker` wraps `AudioNetTrainer.train()` with `progress_callback` and `stop_check`
 - CLI (`settings.py`, `play.py`) unchanged — callbacks are optional
 
+### Phase 4: Read-Only Sounds Library + Theming (current session)
+- **Sounds library is now the landing page** (`gui/windows/library.py`, `SoundLibraryPage`). Read-only by design — browse recorded sounds with **no** record/edit/overwrite controls (safe first page over the user's real `data/recordings/`).
+  - Left: narrow sound list with per-sound total duration.
+  - Right: per-sound header (counts / recorded / detected seconds) + a vertical stack of **session cards**, one per recording.
+- **Session card** (`gui/widgets/session_card.py`): date + length + threshold header, play/pause, click-to-seek. Loads audio lazily on first play.
+- **Audio preview** (`gui/widgets/audio_preview.py`): min/max envelope waveform ⇄ spectrogram toggle, X-locked zoom with limits, detection regions overlaid from the `.srt`, hover time readout, animated fit, visual-only **Normalize** (rescales Y to the peak, since these sounds peak ~0.3).
+- **Theme system** (`gui/theme.py`): live-switchable `fabfilter` (default, green accent) / `studio_dark` / `audio_console`. Switcher lives in the main toolbar; pages with `refresh_theme()` rebuild on switch.
+- **Critical crash fix**: `create_app()` only held a *local* reference to `MainWindow`, so Python GC could delete the whole window (and every child widget) mid-event-loop — surfacing as intermittent `wrapped C/C++ object ... has been deleted` errors on `cards_layout`/`scroll`, especially when clicking fast. Fixed by holding a strong ref: `app._main_window = window` in `gui/app.py`. **If you see "deleted C++ object" errors again, suspect a missing Python reference to a top-level widget, not teardown order.**
+
 ### Current Data
-- **16 sounds**: ah, background, background_me, cluck, ee, eh, er, guh, mm, oh, palate, pop, sh, ss, t, tut
-- **3 models**: toroto-1, totoro-2, totoro-b (each with 4-5 nets, best weights saved)
+- **20 sound directories** in `data/recordings/`
+- **6 models** (`.pkl` + weights) in `data/models/`
 
 ---
 
-## Next Session: Approachable & Action-Oriented UI
+## Next Session
 
-The current UI works but feels intimidating — it drops you into a dense recording interface with no guidance. The goal is to make it welcoming for a new user and informative for a returning user.
+### 0. Known open issues (start here)
+- **Switching sounds is slow.** Each `SessionCard.__init__` synchronously reads the full WAV and builds a pyqtgraph plot on the UI thread (`audio_preview.load()`), so selecting a sound with several recordings blocks visibly. **Fix: load waveform data off the UI thread** (a QThread/worker that reads + downsamples, then hands arrays back to the widget to render). This also structurally removes any remaining build-time jank.
+- **`gui/windows/home.py` (`HomePage`, `ActionCard`, `MetadataWorker`) is built but NOT wired into `main_window.py`.** Decide whether to wire it in as a separate "Home" page or fold its model/Talon summary into the Sounds library. It is currently dead code.
+- **`gui/widgets/duration_bar.py`** exists but verify where (if anywhere) it is used.
 
-### Priority Order
+### Priority Order (original plan — still valid)
 
-1. Home page with model/sound summary
-2. Talon discovery & status display
+1. Home page with model/sound summary (partly prototyped in `home.py`)
+2. Talon discovery & status display (`gui/services/talon_discovery.py` exists — wire its results into the UI)
 3. First-run wizard
 4. Patterns.json full editor
 
@@ -137,18 +149,26 @@ Make the recording page less overwhelming:
 gui/
 ├── __init__.py
 ├── __main__.py          # python -m gui
-├── app.py               # QApplication + Fusion theme
+├── app.py               # QApplication + Fusion + theme; HOLDS the MainWindow ref
+├── theme.py             # Live theme system (fabfilter/studio_dark/audio_console)
 ├── windows/
-│   ├── main_window.py   # QMainWindow + toolbar + QStackedWidget
+│   ├── main_window.py   # QMainWindow + toolbar + QStackedWidget (Sounds/Recording/Training)
+│   ├── library.py       # SoundLibraryPage — read-only landing page (DEFAULT)
+│   ├── home.py          # HomePage — BUILT BUT NOT WIRED IN (dead code, decide its fate)
 │   ├── recording.py     # Recording page
 │   └── training.py      # Training page
 ├── widgets/
-│   ├── waveform.py      # pyqtgraph waveform viewer
-│   ├── segment_bar.py   # pyqtgraph segment overlay
+│   ├── audio_preview.py # waveform/spectrogram preview w/ detection overlay + normalize
+│   ├── session_card.py  # one recording session (preview + play/seek)
+│   ├── duration_bar.py  # (verify usage)
+│   ├── waveform.py      # pyqtgraph waveform viewer (recording page)
+│   ├── segment_bar.py   # pyqtgraph segment overlay (recording page)
 │   └── training_plot.py # Live loss/accuracy curves
 ├── workers/
 │   ├── audio_worker.py  # QThread for recording
 │   └── training_worker.py # QThread for training
+├── services/
+│   └── talon_discovery.py # standalone Talon integration discovery (not yet surfaced in UI)
 └── models/
     └── app_state.py     # Reads data/recordings/ and data/models/
 ```

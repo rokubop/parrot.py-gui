@@ -27,11 +27,13 @@
 
 ## GUI Architecture
 
-- **Pages**: QStackedWidget in MainWindow (Home, Recording, Training)
+- **Pages**: QStackedWidget in MainWindow — **Sounds** (read-only library, default landing), Recording, Training. (`gui/windows/home.py` HomePage exists but is not wired in.)
 - **State**: AppState (QObject with signals: recordings_changed, models_changed, talon_status_changed)
-- **Widgets**: pyqtgraph-based (waveform, segment bar, duration bar, training plot)
+- **Widgets**: pyqtgraph-based (audio preview, session card, waveform, segment bar, duration bar, training plot)
 - **Workers**: QThread subclasses for recording, training, re-segmentation
 - **Services**: gui/services/talon_discovery.py — standalone Talon integration discovery
+- **Theme**: gui/theme.py — live-switchable themes; pages may implement `refresh_theme()`
+- **Lifetime gotcha**: top-level widgets need a strong Python reference or GC will delete them mid-run — the `MainWindow` is held via `app._main_window` in `gui/app.py`.
 
 ## Status & Planning
 
