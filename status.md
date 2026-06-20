@@ -125,6 +125,15 @@ the first segment, so it's always saved. (Re-detection runs on the whole take
 after each segment/edit — fine for short takes; could get slow for very long
 ones.)
 
+**Undo/redo (snapshot-based, Audacity-style):** `gui/services/undo.py`
+(`UndoHistory`) snapshots a clip's files (wav + srt/thresholds) before each
+destructive edit and restores them on undo; bounded stack, session/clip-scoped,
+temp-dir storage. Wired into the **Edit view** (trim / threshold apply / reset)
+and the **recording review** (delete selection / resume-append) with **Undo/Redo
+buttons + Ctrl+Z / Ctrl+Y**. Because in-clip audio edits are now undoable, their
+type-to-confirm dialogs were dropped — confirms remain only for the
+non-undoable whole-recording / sound / model deletes.
+
 **Open follow-ups (Phase 6):**
 - **Manual run-through on Windows** with a real mic: live recording, pause/clear,
   threshold re-detect, trim, and the device picker (87 input devices enumerated).

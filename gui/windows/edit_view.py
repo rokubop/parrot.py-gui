@@ -4,14 +4,15 @@ Two kinds of edit, both reflected immediately in the waveform + detection:
 
 * Re-detect at a chosen threshold / duration type (writes a manual override and
   regenerates a ``.MANUAL.srt``), or reset back to automatic detection.
-* Delete a selected time range from the source WAV (destructive, 2-step
-  confirm), which rewrites the file and re-detects.
+* Delete a selected time range from the source WAV, which rewrites the file and
+  re-detects. No confirm — every edit here is undoable (Ctrl+Z / Undo button).
 
 Includes lightweight playback (whole clip or the current selection) so you can
 audition before and after an edit.
 """
 import sounddevice as sd
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, pyqtSignal
+from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSlider, QComboBox,
     QGroupBox, QMessageBox
@@ -19,8 +20,8 @@ from PyQt6.QtWidgets import (
 
 from gui import theme
 from gui.widgets.audio_preview import AudioPreviewWidget
-from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
+from gui.services.undo import UndoHistory
 from gui.workers.segment_worker import (
     ReSegmentWorker, ResetWorker, TrimWorker, read_min_dbfs,
 )
@@ -36,6 +37,7 @@ class EditRecordingView(QWidget):
         self.wav_path = None
         self.label = None
         self.worker = None
+        self.history = UndoHistory()
 
         # playback
         self._audio = None
@@ -57,6 +59,7 @@ class EditRecordingView(QWidget):
         self.stop_playback()
         self.wav_path = wav_path
         self.label = library_ops.recording_label(wav_path)
+        self.history.bind(wav_path)   # resets history when switching clips
         base = library_ops.recording_base(wav_path)
         self.title.setText(f"Edit:  {self.label}  /  {base}")
         srt = self._current_srt()
@@ -71,6 +74,7 @@ class EditRecordingView(QWidget):
         self._update_slider_label()
         self.duration_combo.setCurrentIndex(0)
         self._set_busy(False)
+        self._update_undo_buttons()
         self.status.setText("")
 
     def _current_srt(self):
@@ -112,12 +116,32 @@ class EditRecordingView(QWidget):
         fit_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         fit_btn.clicked.connect(self.preview.fit)
         play_row.addWidget(fit_btn)
+        play_row.addSpacing(16)
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.undo_btn.setToolTip("Undo the last edit — Ctrl+Z")
+        self.undo_btn.clicked.connect(self._on_undo)
+        play_row.addWidget(self.undo_btn)
+        self.redo_btn = QPushButton("Redo")
+        self.redo_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.redo_btn.setToolTip("Redo — Ctrl+Y")
+        self.redo_btn.clicked.connect(self._on_redo)
+        play_row.addWidget(self.redo_btn)
         hint = QLabel("Drag on the waveform to select a range — Play plays the "
                       "selection, Fit zooms to it.")
         hint.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         play_row.addWidget(hint)
         play_row.addStretch()
         root.addLayout(play_row)
+
+        for seq in ("Ctrl+Z",):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(self._on_undo)
+        for seq in ("Ctrl+Y", "Ctrl+Shift+Z"):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(self._on_redo)
 
         # Detection (threshold) group
         det_group = QGroupBox("Detection (the blue overlay)")
@@ -184,6 +208,7 @@ class EditRecordingView(QWidget):
         if self.worker:
             return
         self.stop_playback()
+        self.history.checkpoint()
         self._set_busy(True)
         self.status.setText("Re-detecting…")
         self.worker = ReSegmentWorker(
@@ -197,6 +222,7 @@ class EditRecordingView(QWidget):
         if self.worker:
             return
         self.stop_playback()
+        self.history.checkpoint()
         self._set_busy(True)
         self.status.setText("Resetting to automatic detection…")
         self.worker = ResetWorker(self.wav_path, self.label)
@@ -209,17 +235,12 @@ class EditRecordingView(QWidget):
         if not sel or sel[1] - sel[0] <= 0:
             self.status.setText("Select a range on the waveform first.")
             return
-        start, end = sel
-        if not confirm_destructive(
-                self, title="Delete this part of the recording?",
-                body=f"This permanently removes {end - start:.2f}s "
-                     f"({start:.2f}s–{end:.2f}s) from the recording and "
-                     f"re-detects the rest.",
-                confirm_label="Delete audio"):
-            return
+        # No confirm dialog — this is undoable (Ctrl+Z). Confirms are reserved
+        # for non-undoable deletes (whole recording / sound / model).
         if self.worker:
             return
         self.stop_playback()
+        self.history.checkpoint()
         self._set_busy(True)
         self.status.setText("Trimming & re-detecting…")
         self.worker = TrimWorker(self.wav_path, self.label, [(start, end)])
@@ -233,6 +254,7 @@ class EditRecordingView(QWidget):
         self._audio = None
         self.app_state.recordings_changed.emit()
         self._set_busy(False)
+        self._update_undo_buttons()
         self.status.setText("Detection updated.")
 
     def _on_trim_done(self, srt_path):
@@ -242,13 +264,51 @@ class EditRecordingView(QWidget):
         self._audio = None
         self.app_state.recordings_changed.emit()
         self._set_busy(False)
+        self._update_undo_buttons()
         self.status.setText("Audio trimmed and re-detected.")
 
     def _on_segment_failed(self, message):
         self.worker = None
+        # The op didn't change anything, so drop the checkpoint we took for it.
+        self.history.discard_last_checkpoint()
         self._set_busy(False)
+        self._update_undo_buttons()
         self.status.setText("")
         QMessageBox.warning(self, "Couldn't update detection", message)
+
+    # ---- undo / redo ---------------------------------------------------
+
+    def _update_undo_buttons(self):
+        self.undo_btn.setEnabled(self.history.can_undo())
+        self.redo_btn.setEnabled(self.history.can_redo())
+
+    def _on_undo(self):
+        if self.worker or not self.history.can_undo():
+            return
+        self.stop_playback()
+        self.history.undo()
+        self._reload_after_history("Undone.")
+
+    def _on_redo(self):
+        if self.worker or not self.history.can_redo():
+            return
+        self.stop_playback()
+        self.history.redo()
+        self._reload_after_history("Redone.")
+
+    def _reload_after_history(self, status):
+        self.preview.load(self.wav_path, self._current_srt())
+        self.preview.fit_full()
+        self._audio = None
+        self.app_state.recordings_changed.emit()
+        # Resync the threshold slider with whatever override the restored state has.
+        existing = read_min_dbfs(self.wav_path)
+        self.slider.blockSignals(True)
+        self.slider.setValue(int(existing) if existing is not None else -40)
+        self.slider.blockSignals(False)
+        self._update_slider_label()
+        self._update_undo_buttons()
+        self.status.setText(status)
 
     # ---- playback ------------------------------------------------------
 
@@ -310,6 +370,7 @@ class EditRecordingView(QWidget):
 
     def _on_back(self):
         self.stop_playback()
+        self.history.clear()   # undo history is per-editing-session
         self.done.emit(self.label or "")
 
     def refresh_theme(self):

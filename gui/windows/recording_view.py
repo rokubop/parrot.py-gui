@@ -29,6 +29,7 @@ from gui.widgets.audio_preview import AudioPreviewWidget
 from gui.workers.audio_worker import AudioWorker
 from gui.workers.segment_worker import AppendWorker, TrimWorker
 from gui.services import library_ops, strategies
+from gui.services.undo import UndoHistory
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating
 
@@ -54,6 +55,7 @@ class RecordingView(QWidget):
         self.app_state = app_state
         self.worker = None              # AudioWorker (recording a segment)
         self._seg_worker = None         # Append/Trim worker (re-detect)
+        self.history = UndoHistory()
         self._label = None
         self._new_mode = False
         self._take_wav = None           # the growing take file, or None
@@ -193,6 +195,16 @@ class RecordingView(QWidget):
                                        "remove it — Delete")
         self.delete_sel_btn.clicked.connect(self._on_delete_selection)
         controls.addWidget(self.delete_sel_btn)
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.undo_btn.setToolTip("Undo the last edit — Ctrl+Z")
+        self.undo_btn.clicked.connect(self._on_undo)
+        controls.addWidget(self.undo_btn)
+        self.redo_btn = QPushButton("Redo")
+        self.redo_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.redo_btn.setToolTip("Redo — Ctrl+Y")
+        self.redo_btn.clicked.connect(self._on_redo)
+        controls.addWidget(self.redo_btn)
 
         controls.addStretch()
         self.hint = QLabel("")
@@ -209,6 +221,14 @@ class RecordingView(QWidget):
             sc = QShortcut(QKeySequence(k), self)
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             sc.activated.connect(self._on_delete_selection)
+        for seq in ("Ctrl+Z",):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(self._on_undo)
+        for seq in ("Ctrl+Y", "Ctrl+Shift+Z"):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(self._on_redo)
 
         self._set_state("idle")
 
@@ -267,6 +287,10 @@ class RecordingView(QWidget):
         self._take_srt = self._srt_for(take) if take else None
         self._pending_action = None
         self._audio = None
+        if take:
+            self.history.bind(take)
+        else:
+            self.history.clear()
         self.name_input.setEnabled(take is None and self._new_mode)
         for w in (self.v_time, self.v_quality, self.v_dbfs, self.v_noise,
                   self.v_snr, self.v_detected, self.v_quantity, self.v_type):
@@ -318,6 +342,10 @@ class RecordingView(QWidget):
         self.done_btn.setEnabled(state != "idle")
         self.play_btn.setVisible(reviewing)
         self.delete_sel_btn.setVisible(reviewing)
+        self.undo_btn.setVisible(reviewing)
+        self.redo_btn.setVisible(reviewing)
+        if reviewing:
+            self._update_undo_buttons()
         # Lock device/strategy/name once a take exists.
         locked = state != "idle"
         self.device_combo.setEnabled(not locked)
@@ -394,10 +422,13 @@ class RecordingView(QWidget):
             # First segment becomes the take.
             self._take_wav = seg_wav
             self._take_srt = seg_srt
+            self.history.bind(seg_wav)
             self.app_state.recordings_changed.emit()
             self._after_segment()
         else:
             # Append this segment onto the existing take, then re-detect.
+            # Checkpoint first so the resume can be undone.
+            self.history.checkpoint()
             self.hint.setText("Stitching the take together…")
             self._seg_worker = AppendWorker(self._take_wav, seg_wav, self._label)
             self._seg_worker.finished_ok.connect(
@@ -418,6 +449,8 @@ class RecordingView(QWidget):
 
     def _on_append_failed(self, msg, source_wav, source_srt):
         self._seg_worker = None
+        # The append didn't happen — drop its checkpoint.
+        self.history.discard_last_checkpoint()
         # Keep what we had; the stray segment stays as its own clip.
         self.app_state.recordings_changed.emit()
         QMessageBox.warning(self, "Couldn't stitch the take",
@@ -456,6 +489,7 @@ class RecordingView(QWidget):
             self.hint.setText("Drag-select a part of the take first, then Delete.")
             return
         self.stop_playback()
+        self.history.checkpoint()
         self.hint.setText("Deleting & re-detecting…")
         self.delete_sel_btn.setEnabled(False)
         self.record_btn.setEnabled(False)
@@ -471,13 +505,43 @@ class RecordingView(QWidget):
         self._load_preview()
         self.delete_sel_btn.setEnabled(True)
         self.record_btn.setEnabled(True)
+        self._update_undo_buttons()
         self.hint.setText("Deleted. Resume to add more, or Done.")
 
     def _on_trim_failed(self, msg):
         self._seg_worker = None
+        self.history.discard_last_checkpoint()
         self.delete_sel_btn.setEnabled(True)
         self.record_btn.setEnabled(True)
+        self._update_undo_buttons()
         QMessageBox.warning(self, "Couldn't delete", msg)
+
+    # ---- undo / redo ---------------------------------------------------
+
+    def _update_undo_buttons(self):
+        self.undo_btn.setEnabled(self.history.can_undo())
+        self.redo_btn.setEnabled(self.history.can_redo())
+
+    def _on_undo(self):
+        if self._state != "review" or self._seg_worker or not self.history.can_undo():
+            return
+        self.stop_playback()
+        self.history.undo()
+        self._reload_after_history("Undone.")
+
+    def _on_redo(self):
+        if self._state != "review" or self._seg_worker or not self.history.can_redo():
+            return
+        self.stop_playback()
+        self.history.redo()
+        self._reload_after_history("Redone.")
+
+    def _reload_after_history(self, status):
+        self._take_srt = self._srt_for(self._take_wav)
+        self.app_state.recordings_changed.emit()
+        self._load_preview()
+        self._update_undo_buttons()
+        self.hint.setText(status)
 
     def _on_seek(self, seconds):
         self._ensure_audio()
@@ -577,6 +641,7 @@ class RecordingView(QWidget):
     def _leave(self):
         self.stop_worker()
         self.stop_playback()
+        self.history.clear()
         self.done.emit(self._label or "")
 
     def stop_worker(self):
