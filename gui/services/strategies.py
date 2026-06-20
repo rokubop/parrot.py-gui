@@ -9,20 +9,20 @@ session or re-segmentation may pick a different one.
 from config.config import CURRENT_DETECTION_STRATEGY
 
 # (key, label, strategy_string, description)
+# Each strategy string is assembled from real tokens the segmenter recognizes
+# by substring match in lib/stream_processing.py (auto_dBFS, secondary_dBFS,
+# reject[_cont]_<n>ms, mend_<n>ms, repair). "Balanced" is parrot's configured
+# default (config.CURRENT_DETECTION_STRATEGY). These four are deliberately
+# distinct; the grammar has more knobs (reject_60/90ms, mend_45ms,
+# secondary_margin_dBFS, mend_dBFS) not surfaced here.
 PRESETS = [
     (
         "balanced",
         "Balanced (default)",
         "auto_dBFS_secondary_dBFS_reject_cont_45ms_repair",
-        "Good all-rounder. Rejects very short continuous blips and repairs "
-        "missed frames. Best starting point for most sounds.",
-    ),
-    (
-        "rapid",
-        "Rapid / discrete",
-        "auto_dBFS_secondary_dBFS_reject_cont_45ms_repair",
-        "For short, punchy sounds (clicks, pops) recorded back-to-back. Pair "
-        "with the 'strict' threshold mode in Settings.",
+        "Parrot's default. Rejects very short continuous blips (keeps short "
+        "discrete sounds like clicks/pops) and repairs missed frames. Best "
+        "starting point for most sounds.",
     ),
     (
         "keep_short",
@@ -35,8 +35,8 @@ PRESETS = [
         "sustained",
         "Sustained / continuous",
         "auto_dBFS_secondary_dBFS_reject_cont_45ms_mend_60ms_repair",
-        "For held sounds (vowels, hisses). Mends small gaps so one sound isn't "
-        "split into several detections.",
+        "For held sounds (vowels, hisses). Mends gaps up to 60 ms so one sound "
+        "isn't split into several detections.",
     ),
     (
         "strict_long",

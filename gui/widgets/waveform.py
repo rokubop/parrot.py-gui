@@ -8,6 +8,8 @@ class WaveformWidget(QWidget):
     MAX_DISPLAY_POINTS = 100000   # for a one-shot loaded file
     LIVE_DISPLAY_POINTS = 6000    # capped resolution for the live view
     LIVE_REDRAW_EVERY = 2         # redraw every N frames (~30 fps at 15 ms/frame)
+    LIVE_WINDOW_SECONDS = 10      # width of the scrolling live window
+    LIVE_Y_RANGE = 16000          # fixed vertical scale (int16; ~0.5 of full)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -22,6 +24,17 @@ class WaveformWidget(QWidget):
 
         self.plot_item = self.plot_widget.plot(pen=pg.mkPen(color='c', width=1))
         self._sample_rate = 48000
+
+        # Live view behaves like a DAW recorder: a *fixed* vertical scale and a
+        # fixed-width time window that scrolls to keep the record head at the
+        # right edge. Auto-ranging both axes every frame (the old behavior) made
+        # the waveform jump and constantly rescale, which was disorienting.
+        vb = self.plot_widget.getViewBox()
+        vb.disableAutoRange()
+        self.plot_widget.setMouseEnabled(x=False, y=False)
+        self.plot_widget.setYRange(-self.LIVE_Y_RANGE, self.LIVE_Y_RANGE, padding=0)
+        self.plot_widget.setXRange(0, self.LIVE_WINDOW_SECONDS, padding=0)
+
         self._reset_live()
 
     def _reset_live(self):
@@ -53,7 +66,11 @@ class WaveformWidget(QWidget):
 
             time_axis = np.arange(len(data)) / effective_rate
             self.plot_item.setData(time_axis, data)
-            self.plot_widget.setXRange(0, time_axis[-1] if len(time_axis) > 0 else 1)
+            # Auto-range is disabled for the live view, so set both ranges here.
+            self.plot_widget.setXRange(0, time_axis[-1] if len(time_axis) > 0 else 1,
+                                       padding=0)
+            peak = float(np.abs(data).max()) if len(data) else self.LIVE_Y_RANGE
+            self.plot_widget.setYRange(-peak, peak, padding=0.05)
         except Exception:
             self.plot_item.setData([], [])
 
@@ -82,20 +99,39 @@ class WaveformWidget(QWidget):
 
     def _redraw_live(self):
         buf = self._live_buf[:self._live_len]
-        if buf.size > self.LIVE_DISPLAY_POINTS:
-            factor = buf.size // self.LIVE_DISPLAY_POINTS
-            display = buf[::factor]                # strided view, cheap
-            effective_rate = self._sample_rate / factor
+        sr = self._sample_rate
+        window_samples = int(self.LIVE_WINDOW_SECONDS * sr)
+
+        # Only draw the most recent window of audio; everything older has
+        # scrolled off the left edge, so there's no point plotting it.
+        start = max(0, buf.size - window_samples)
+        seg = buf[start:]
+        if seg.size > self.LIVE_DISPLAY_POINTS:
+            factor = seg.size // self.LIVE_DISPLAY_POINTS
+            display = seg[::factor]                # strided view, cheap
+            step = factor / sr
         else:
-            display = buf
-            effective_rate = self._sample_rate
-        time_axis = np.arange(len(display)) / effective_rate
+            display = seg
+            step = 1.0 / sr
+        t0 = start / sr
+        time_axis = t0 + np.arange(len(display)) * step
         self.plot_item.setData(time_axis, display.astype(np.float32))
+
+        # Scroll the window so the newest sample stays at the right edge once we
+        # pass the window length; before that, keep the full window in view.
+        total_time = buf.size / sr
+        if total_time <= self.LIVE_WINDOW_SECONDS:
+            self.plot_widget.setXRange(0, self.LIVE_WINDOW_SECONDS, padding=0)
+        else:
+            self.plot_widget.setXRange(total_time - self.LIVE_WINDOW_SECONDS,
+                                       total_time, padding=0)
 
     def clear_display(self):
         """Clear the waveform display."""
         self._reset_live()
         self.plot_item.setData([], [])
+        self.plot_widget.setYRange(-self.LIVE_Y_RANGE, self.LIVE_Y_RANGE, padding=0)
+        self.plot_widget.setXRange(0, self.LIVE_WINDOW_SECONDS, padding=0)
 
     def get_plot_widget(self):
         """Return the internal PlotWidget for axis linking."""
