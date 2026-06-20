@@ -107,19 +107,49 @@ class SessionCard(QFrame):
 
         self._apply_border(False)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(4)
-        layout.addLayout(self._build_header(session_name, thresholds_path))
+        # Lazy preview: building a pyqtgraph plot per recording is the expensive
+        # part of switching sounds (~50-220 ms each), so we defer it. The card
+        # appears instantly with a placeholder of the same height (no layout
+        # jump); the real waveform is built on demand via load_preview(), driven
+        # by the library page (selected card first, the rest progressively).
+        self.preview = None
+        self._loaded = False
+        self._pending_mode = "waveform"
+        self._pending_normalized = False
 
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(10, 6, 10, 6)
+        self._layout.setSpacing(4)
+        self._layout.addLayout(self._build_header(session_name, thresholds_path))
+
+        self._placeholder = QLabel("…")
+        self._placeholder.setFixedHeight(self.NORMAL_HEIGHT)
+        self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._placeholder.setStyleSheet(
+            f"color: {theme.colors()['text_dim']}; border: none; background: transparent;")
+        self._layout.addWidget(self._placeholder)
+
+    def load_preview(self):
+        """Build and load the waveform preview if it hasn't been yet. Cheap to
+        call repeatedly (no-op once loaded)."""
+        if self._loaded:
+            return
+        self._loaded = True
         self.preview = AudioPreviewWidget()
-        self.preview.setFixedHeight(self.NORMAL_HEIGHT)
-        self.preview.load(wav_path, srt_path)
+        height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
+        self.preview.setFixedHeight(height)
+        self.preview.load(self.wav_path, self.srt_path)
+        self.preview.set_mode(self._pending_mode)
+        self.preview.set_normalized(self._pending_normalized)
         self.preview.seeked.connect(self._on_seek)
         self.preview.pressed.connect(lambda: self.selected.emit(self))
         self.preview.selection_changed.connect(self._on_selection_changed)
         self.preview.selection_cleared.connect(self._on_selection_cleared)
-        layout.addWidget(self.preview)
+        # Swap the placeholder out for the real preview, keeping its position.
+        self._layout.replaceWidget(self._placeholder, self.preview)
+        self._placeholder.setParent(None)
+        self._placeholder.deleteLater()
+        self._placeholder = None
 
     def _on_selection_changed(self, start, end):
         self._sel_start, self._sel_end = start, end
@@ -247,19 +277,26 @@ class SessionCard(QFrame):
         )
 
     def set_mode(self, mode):
-        self.preview.set_mode(mode)
+        # Remember the choice so a not-yet-loaded preview adopts it on load.
+        self._pending_mode = mode
+        if self.preview is not None:
+            self.preview.set_mode(mode)
 
     def set_normalized(self, normalized):
-        self.preview.set_normalized(normalized)
+        self._pending_normalized = normalized
+        if self.preview is not None:
+            self.preview.set_normalized(normalized)
 
     # ---- quick controls ------------------------------------------------
 
     def fit_view(self):
         self.selected.emit(self)
+        self.load_preview()
         self.preview.fit()
 
     def go_to_start(self):
         self.selected.emit(self)
+        self.load_preview()
         if self._playing:
             self.play(from_seconds=0.0)
         else:
@@ -269,12 +306,14 @@ class SessionCard(QFrame):
     def toggle_expanded(self):
         self._expanded = not self._expanded
         height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
+        self.load_preview()
         self.preview.setFixedHeight(height)
         self.expand_btn.setText("Collapse" if self._expanded else "Expand")
         self.selected.emit(self)
 
     def clear_selection(self):
-        self.preview._clear_selection()
+        if self.preview is not None:
+            self.preview._clear_selection()
 
     # ---- playback ------------------------------------------------------
 
@@ -284,6 +323,7 @@ class SessionCard(QFrame):
         # Reuse the samples the preview already decoded for the waveform instead
         # of re-reading the whole WAV on the UI thread (which froze the first
         # play). These are mono float32 in [-1, 1] — sounddevice plays them as-is.
+        self.load_preview()
         samples, sample_rate = self.preview.playback_audio()
         if samples is None or sample_rate is None:
             return
@@ -358,7 +398,8 @@ class SessionCard(QFrame):
     def cleanup(self):
         """Release resources before deletion."""
         self.stop()
-        self.preview.cleanup()
+        if self.preview is not None:
+            self.preview.cleanup()
 
     def seek_relative(self, delta_seconds):
         pos = self._position

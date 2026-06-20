@@ -43,6 +43,15 @@ class SoundLibraryPage(QWidget):
         self._select_timer.setInterval(60)
         self._select_timer.timeout.connect(self._build_current)
 
+        # Progressive preview loader: cards are created cheaply (placeholder),
+        # then their waveforms are built one per event-loop tick so selecting a
+        # sound feels instant instead of freezing while every plot is built.
+        self._load_timer = QTimer(self)
+        self._load_timer.setSingleShot(True)
+        self._load_timer.setInterval(0)
+        self._load_timer.timeout.connect(self._load_next_pending)
+        self._pending_loads = []
+
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._setup_ui()
         self._populate_labels()
@@ -262,6 +271,9 @@ class SoundLibraryPage(QWidget):
             self._select_timer.start()
             return
         self._rebuilding = True
+        # Cancel any in-flight progressive loads for the view we're replacing.
+        self._load_timer.stop()
+        self._pending_loads = []
         # Cards/container that are being replaced. We build the new view fully,
         # swap it in, and only THEN destroy these — so tearing down the old
         # pyqtgraph scenes can never disturb the layout we're inserting into.
@@ -314,7 +326,12 @@ class SoundLibraryPage(QWidget):
             self.scroll.setWidget(container)
 
             if self._cards:
-                self._select_card(self._cards[0])
+                # Mark the first card selected (border only — no plot build) so
+                # the swap is instant, then queue every card to load in order
+                # (selected one first) on subsequent event-loop ticks.
+                self._mark_selected(self._cards[0])
+                self._pending_loads = list(self._cards)
+                self._load_timer.start()
             self.setFocus()
         finally:
             # Now that the new view is live, dismantle the old one.
@@ -400,13 +417,39 @@ class SoundLibraryPage(QWidget):
             self._active_card.stop()
         self._active_card = card
 
+    def _mark_selected(self, card):
+        """Set the selection highlight only (no preview build) — used during a
+        rebuild so swapping in the new view never blocks on a plot."""
+        if (self._selected_card is not None
+                and not sip.isdeleted(self._selected_card)):
+            self._selected_card.set_selected(False)
+        self._selected_card = card
+        card.set_selected(True)
+
     def _select_card(self, card):
         if card is self._selected_card:
+            # Already selected; make sure it's built (a click should show it).
+            card.load_preview()
             return
         if self._selected_card is not None:
             self._selected_card.set_selected(False)
         self._selected_card = card
+        # A selected card is about to be interacted with — build it now rather
+        # than waiting for its turn in the progressive queue.
+        card.load_preview()
         card.set_selected(True)
+
+    def _load_next_pending(self):
+        """Build one queued card's waveform, then yield to the event loop and
+        re-arm for the next — so the UI stays responsive while previews fill in."""
+        while self._pending_loads:
+            card = self._pending_loads.pop(0)
+            if sip.isdeleted(card):
+                continue
+            card.load_preview()
+            if self._pending_loads:
+                self._load_timer.start()
+            return
 
     # ---- keyboard ------------------------------------------------------
 
