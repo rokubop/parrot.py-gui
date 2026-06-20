@@ -108,12 +108,22 @@ run on Windows with a mic.**
 
 **Editing & appending (refinement):** A recording is just a file when you're
 *not* live, so all real editing happens on saved clips (no risky live-stream
-splicing): the **Edit view** does arbitrary delete/trim/threshold, and
-**Append** (card ⋯ menu or the Edit view) records a take and concatenates it
-onto an existing clip + re-detects (`AppendWorker`; rate-mismatched takes are
-resampled). The live recording screen is now a clean capture monitor — its
-mark/cut UI was removed in favor of editing the saved clip. Delete-recording
+splicing). The **Edit view** does arbitrary delete/trim/threshold, and
+**Append** records a take and concatenates it onto an existing clip + re-detects
+(`AppendWorker`; rate-mismatched takes are resampled). Delete-recording
 confirmation names the sound.
+
+**Recording view = a record/review/edit loop.** The screen now supports:
+Record → make sounds → **Space/Pause** → scrub & play the take → **drag-select +
+Delete** a bad part → **Resume** (records more) → … → **Done**. Implemented
+without live-stream splicing: a "take" is one growing WAV; each Record→Pause is a
+*segment*, the first becomes the take and later ones are appended (`AppendWorker`)
+so editing always happens on a static file. While reviewing, the same interactive
+`AudioPreviewWidget` as read-only is shown (click-seek, drag-select, fit, zoom,
+playback); Delete uses `TrimWorker`. The take is a real file in the sound from
+the first segment, so it's always saved. (Re-detection runs on the whole take
+after each segment/edit — fine for short takes; could get slow for very long
+ones.)
 
 **Open follow-ups (Phase 6):**
 - **Manual run-through on Windows** with a real mic: live recording, pause/clear,
