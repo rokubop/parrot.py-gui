@@ -26,15 +26,14 @@ class WaveformWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         layout.addWidget(self.plot_widget)
 
-        # Live detection (the "blue overlay"): full-height bands where the
-        # recorder flagged the frame as sound. Preliminary — the final regions
-        # are computed after Stop. Drawn behind the trace.
-        self._det_top = self.plot_widget.plot(pen=None)
-        self._det_bot = self.plot_widget.plot(pen=None)
-        det_brush = QColor(90, 175, 245); det_brush.setAlpha(45)
-        self._det_fill = pg.FillBetweenItem(self._det_top, self._det_bot, brush=det_brush)
-        self._det_fill.setZValue(-10)
-        self.plot_widget.addItem(self._det_fill)
+        # Live detection (the "blue overlay"): full-height shaded bands where the
+        # recorder flagged the frame as sound, drawn with a recycled pool of
+        # LinearRegionItems (same as the static waveforms). Preliminary — the
+        # final regions are computed after Save.
+        self._det_brush = QColor(90, 175, 245); self._det_brush.setAlpha(55)
+        self._det_pen = pg.mkPen(QColor(90, 175, 245, 90))
+        self._det_regions = []
+        self.MAX_DET_REGIONS = 80
 
         # Cut mark: click the waveform to mark where to cut back to; everything
         # from there to the record head shades red and Backspace/Delete removes
@@ -153,15 +152,9 @@ class WaveformWidget(QWidget):
         time_axis = t0 + np.arange(len(seg)) * step
         self.plot_item.setData(time_axis, seg.astype(np.float32))
 
-        # Detection overlay: full-height bands where the frame was flagged sound.
+        # Detection overlay: shaded bands where the frame was flagged sound.
         det = self._det_buf[start:self._live_len:factor][:len(seg)]
-        if det.size:
-            top = np.where(det > 0, self.LIVE_Y_RANGE, 0).astype(np.float32)
-            self._det_top.setData(time_axis[:det.size], top)
-            self._det_bot.setData(time_axis[:det.size], -top)
-        else:
-            self._det_top.setData([], [])
-            self._det_bot.setData([], [])
+        self._draw_detection(time_axis, det)
 
         # Scroll the window so the newest sample stays at the right edge once we
         # pass the window length; before that, keep the full window in view.
@@ -175,6 +168,37 @@ class WaveformWidget(QWidget):
         # Keep the cut band stretched to the current record head.
         if self._cut_point is not None:
             self._update_cut_region()
+
+    def _draw_detection(self, time_axis, det):
+        """Shade contiguous detected runs using a recycled region pool."""
+        runs = []
+        n = len(time_axis)
+        if det.size and n:
+            d = (det > 0).astype(np.int8)
+            diffs = np.diff(np.concatenate(([0], d, [0])))
+            starts = np.where(diffs == 1)[0]
+            ends = np.where(diffs == -1)[0]
+            for s, e in zip(starts, ends):
+                if s >= n:
+                    break
+                ts, te = time_axis[s], time_axis[min(e, n - 1)]
+                if te > ts:
+                    runs.append((ts, te))
+        runs = runs[:self.MAX_DET_REGIONS]
+        for i, (ts, te) in enumerate(runs):
+            if i >= len(self._det_regions):
+                reg = pg.LinearRegionItem(movable=False, brush=self._det_brush,
+                                          pen=self._det_pen)
+                reg.setZValue(-10)
+                reg.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                for _line in getattr(reg, "lines", []):
+                    _line.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                self.plot_widget.addItem(reg)
+                self._det_regions.append(reg)
+            self._det_regions[i].setRegion((ts, te))
+            self._det_regions[i].setVisible(True)
+        for j in range(len(runs), len(self._det_regions)):
+            self._det_regions[j].setVisible(False)
 
     def drop_last_seconds(self, seconds):
         """Remove the most recent N seconds from the live view (mirrors the
@@ -191,8 +215,8 @@ class WaveformWidget(QWidget):
         """Clear the waveform display."""
         self._reset_live()
         self.plot_item.setData([], [])
-        self._det_top.setData([], [])
-        self._det_bot.setData([], [])
+        for reg in self._det_regions:
+            reg.setVisible(False)
         self.cut_region.setVisible(False)
         self.plot_widget.setYRange(-self.LIVE_Y_RANGE, self.LIVE_Y_RANGE, padding=0)
         self.plot_widget.setXRange(0, self.LIVE_WINDOW_SECONDS, padding=0)

@@ -137,39 +137,49 @@ class RecordingView(QWidget):
         center.addWidget(self._build_status_panel(), 1)
         root.addLayout(center, 1)
 
-        # Controls — one primary toggle (Record / Pause / Resume) plus Stop and
-        # Clear, instead of separate Record + Pause + Resume buttons.
+        # Controls. Left: the take itself — one toggle (Record/Pause/Resume) and
+        # Save. Right: trim — Delete after mark / Clear mark, enabled only once
+        # you've clicked the waveform to drop a mark.
         controls = QHBoxLayout()
         self.record_btn = QPushButton("● Record")
         self.record_btn.setMinimumWidth(130)
         self.record_btn.clicked.connect(self._on_primary)
         controls.addWidget(self.record_btn)
-        self.stop_btn = QPushButton("■ Stop & save")
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.clicked.connect(self._on_stop)
-        controls.addWidget(self.stop_btn)
-        self.cut_btn = QPushButton("Cut to mark")
-        self.cut_btn.setEnabled(False)
-        self.cut_btn.setToolTip("Remove everything after the marked point "
-                                "(click the waveform to mark) — Backspace/Delete")
-        self.cut_btn.clicked.connect(self._cut_to_mark)
-        controls.addWidget(self.cut_btn)
+        self.save_btn = QPushButton("Save recording")
+        self.save_btn.setEnabled(False)
+        self.save_btn.setToolTip("Finish this take and save it")
+        self.save_btn.clicked.connect(self._on_save)
+        controls.addWidget(self.save_btn)
+
+        controls.addSpacing(20)
+        self.delete_btn = QPushButton("Delete after mark")
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setToolTip("Click the waveform to mark a point, then "
+                                   "remove everything after it — Backspace/Delete")
+        self.delete_btn.clicked.connect(self._delete_after_mark)
+        controls.addWidget(self.delete_btn)
+        self.clearmark_btn = QPushButton("Clear mark")
+        self.clearmark_btn.setEnabled(False)
+        self.clearmark_btn.setToolTip("Remove the trim mark — Esc")
+        self.clearmark_btn.clicked.connect(self._clear_mark)
+        controls.addWidget(self.clearmark_btn)
+
         controls.addStretch()
         self.hint = QLabel("")
         self.hint.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         controls.addWidget(self.hint)
         root.addLayout(controls)
 
-        # Backspace/Delete cut from the mark; Esc drops the mark. Scoped to this
-        # view + its children so they fire regardless of which control has focus.
+        # Backspace/Delete remove from the mark; Esc drops the mark. Scoped to
+        # this view + children so they fire regardless of which control has focus.
         self.waveform.cut_point_changed.connect(self._on_cut_point_changed)
         for keyseq in ("Backspace", "Del"):
             sc = QShortcut(QKeySequence(keyseq), self)
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            sc.activated.connect(self._cut_to_mark)
+            sc.activated.connect(self._delete_after_mark)
         esc = QShortcut(QKeySequence("Esc"), self)
         esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        esc.activated.connect(self.waveform.clear_cut_point)
+        esc.activated.connect(self._clear_mark)
 
         self._set_state("idle")
 
@@ -256,7 +266,7 @@ class RecordingView(QWidget):
             self.record_btn.setStyleSheet("")
         self.state_label.setText(ind_text)
         self.state_label.setStyleSheet(f"color: {ind_color}; font-weight: bold;")
-        self.stop_btn.setEnabled(active)
+        self.save_btn.setEnabled(active)
         self.waveform.set_trace_color(trace)
         if not active:
             self.waveform.clear_cut_point()
@@ -315,22 +325,26 @@ class RecordingView(QWidget):
         self.worker.start()
 
         self._set_state("recording")
-        self.hint.setText("Recording… click the waveform to mark where to cut "
-                          "back to if you flub it.")
+        self.hint.setText("Recording… click the waveform to mark a point you "
+                          "want to delete back to.")
 
     def _on_cut_point_changed(self):
         has_mark = (self._state in ("recording", "paused")
                     and self.waveform.get_cut_point() is not None)
-        self.cut_btn.setEnabled(has_mark)
+        self.delete_btn.setEnabled(has_mark)
+        self.clearmark_btn.setEnabled(has_mark)
 
-    def _cut_to_mark(self):
+    def _clear_mark(self):
+        self.waveform.clear_cut_point()
+
+    def _delete_after_mark(self):
         if self._state not in ("recording", "paused"):
             return
-        cut = self.waveform.get_cut_point()
-        if cut is None:
-            self.hint.setText("Click the waveform to mark where to cut back to.")
+        mark = self.waveform.get_cut_point()
+        if mark is None:
+            self.hint.setText("Click the waveform first to mark where to delete from.")
             return
-        seconds = self.waveform.total_seconds() - cut
+        seconds = self.waveform.total_seconds() - mark
         if seconds <= 0:
             self.waveform.clear_cut_point()
             return
@@ -338,12 +352,13 @@ class RecordingView(QWidget):
             self.worker.request_clear(seconds)   # recorder trims from the end
         self.waveform.drop_last_seconds(seconds)  # mirror it in the live view
         self.waveform.clear_cut_point()
-        self.hint.setText(f"Cut {seconds:.1f}s back to the mark.")
+        self.hint.setText(f"Deleted {seconds:.1f}s after the mark.")
 
-    def _on_stop(self):
+    def _on_save(self):
         if self.worker:
-            self.cut_btn.setEnabled(False)
-            self.stop_btn.setEnabled(False)
+            self.delete_btn.setEnabled(False)
+            self.clearmark_btn.setEnabled(False)
+            self.save_btn.setEnabled(False)
             self.record_btn.setEnabled(False)
             self.waveform.clear_cut_point()
             self.hint.setText("Saving & segmenting…")
