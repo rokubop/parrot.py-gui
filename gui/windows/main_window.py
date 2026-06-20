@@ -10,6 +10,7 @@ from gui.windows.library import SoundLibraryPage
 from gui.windows.models import ModelsPage
 from gui.windows.settings import SettingsPage
 from gui.windows.about import AboutPage
+from gui.windows.recording_view import RecordingView
 
 
 class MainWindow(QMainWindow):
@@ -34,6 +35,16 @@ class MainWindow(QMainWindow):
         for page in (self.library_page, self.models_page,
                      self.settings_page, self.about_page):
             self.stack.addWidget(page)
+
+        # Full-screen sub-views of the Sounds workflow (not in the toolbar):
+        # recording capture and recording editing.
+        self.recording_view = RecordingView(self.app_state, self)
+        self.stack.addWidget(self.recording_view)
+        self.library_page.record_requested.connect(self._open_recording)
+        self.recording_view.done.connect(self._return_to_sounds)
+        # Leaving the recording view via the toolbar should stop (and save) any
+        # take in progress rather than recording in the background.
+        self.stack.currentChanged.connect(self._on_stack_changed)
 
         # Toolbar navigation — checkable actions so the current tab is obvious.
         toolbar = QToolBar("Navigation")
@@ -62,6 +73,22 @@ class MainWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self._update_status_bar()
+
+    def _open_recording(self, label):
+        if label:
+            self.recording_view.start_for(label)
+        else:
+            self.recording_view.start_new()
+        self.stack.setCurrentWidget(self.recording_view)
+
+    def _return_to_sounds(self, label):
+        self.stack.setCurrentWidget(self.library_page)
+        if label:
+            self.library_page._select_label_by_name(label)
+
+    def _on_stack_changed(self, _index):
+        if self.stack.currentWidget() is not self.recording_view:
+            self.recording_view.stop_worker()
 
     def _update_status_bar(self):
         try:

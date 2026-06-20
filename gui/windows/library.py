@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup,
     QMenu, QInputDialog, QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, _wav_duration
@@ -20,6 +20,10 @@ class SoundLibraryPage(QWidget):
     waveform/spectrogram with detection overlaid. No recording or editing."""
 
     SEEK_STEP = 2.0  # seconds for arrow-key seeking
+
+    # Requests for the full-screen sub-views, handled by MainWindow.
+    record_requested = pyqtSignal(str)   # "" = new sound, else add to this label
+    edit_requested = pyqtSignal(str)     # wav_path of the recording to edit
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -600,18 +604,11 @@ class SoundLibraryPage(QWidget):
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't open folder", str(exc))
 
-    # ---- recording / editing (wired in later steps) --------------------
+    # ---- recording / editing (full-screen sub-views) -------------------
 
     def _on_add_recording(self):
         label = self._current_label()
-        self._open_recording_view(label)
-
-    def _open_recording_view(self, label):
-        QMessageBox.information(
-            self, "Add recording",
-            "The recording view is coming up next.")
+        self.record_requested.emit(label or "")
 
     def _edit_recording(self, card):
-        QMessageBox.information(
-            self, "Edit recording",
-            "The edit view is coming up next.")
+        self.edit_requested.emit(card.wav_path)

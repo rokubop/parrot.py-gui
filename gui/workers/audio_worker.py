@@ -19,10 +19,11 @@ class AudioWorker(QThread):
     status_updated = pyqtSignal(object)  # DetectionState
     recording_finished = pyqtSignal(str, str)  # wav_path, srt_path
 
-    def __init__(self, label, mic_index=None, parent=None):
+    def __init__(self, label, mic_index=None, strategy=None, parent=None):
         super().__init__(parent)
         self.label = label
         self.mic_index = mic_index if mic_index is not None else INPUT_DEVICE_INDEX
+        self.strategy = strategy or CURRENT_DETECTION_STRATEGY
         self._stop_requested = False
         self._pause_requested = False
         self._clear_requested = False
@@ -45,7 +46,7 @@ class AudioWorker(QThread):
         ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
         detection_labels = [DetectionLabel(self.label, 0, 0, "", 0, 0, 0, 0, 0)]
         detection_state = DetectionState(
-            CURRENT_DETECTION_STRATEGY, "recording", ms_per_frame, 0, True,
+            self.strategy, "recording", ms_per_frame, 0, True,
             0, 0, 0, 0, detection_labels, None, []
         )
 
