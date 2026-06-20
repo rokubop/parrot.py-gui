@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QSplitter, QGroupBox, QLineEdit, QSpinBox, QInputDialog,
-    QMessageBox, QScrollArea, QFrame, QSizePolicy
+    QMessageBox, QScrollArea, QFrame, QSizePolicy, QDialog
 )
 
 from config.config import CLASSIFIER_FOLDER
@@ -20,6 +20,7 @@ from gui.services import library_ops
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
+from gui.workers.combine_worker import CombineWorker
 
 
 def _human_size(num_bytes):
@@ -54,6 +55,7 @@ class ModelsPage(QWidget):
         self.app_state = app_state
         self.training_worker = None
         self.inspect_worker = None
+        self.combine_worker = None
         self._current = None
 
         self._setup_ui()
@@ -81,6 +83,13 @@ class ModelsPage(QWidget):
         self.model_list = QListWidget()
         self.model_list.currentItemChanged.connect(self._on_select)
         left_layout.addWidget(self.model_list)
+
+        combine_btn = QPushButton("Combine models…")
+        combine_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        combine_btn.setToolTip("Merge two or more models into one ensemble")
+        combine_btn.clicked.connect(self._on_combine)
+        left_layout.addWidget(combine_btn)
+
         left.setMinimumWidth(240)
         splitter.addWidget(left)
 
@@ -310,6 +319,47 @@ class ModelsPage(QWidget):
             except library_ops.LibraryOpError as exc:
                 QMessageBox.warning(self, "Delete failed", str(exc))
 
+    # ---- combine -------------------------------------------------------
+
+    def _on_combine(self):
+        names = self.app_state.get_model_names()
+        if len(names) < 2:
+            QMessageBox.information(self, "Combine models",
+                                   "You need at least two models to combine.")
+            return
+        dialog = _CombineDialog(self, names)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        chosen = dialog.selected_models()
+        new_name = dialog.new_name()
+        if len(chosen) < 2:
+            QMessageBox.information(self, "Combine models",
+                                   "Pick at least two models.")
+            return
+        try:
+            new_name = library_ops.sanitize_name(new_name, kind="model name")
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Combine models", str(exc))
+            return
+        if library_ops.model_exists(new_name):
+            QMessageBox.warning(self, "Combine models",
+                                f"A model called '{new_name}' already exists.")
+            return
+        self.combine_worker = CombineWorker(new_name, chosen)
+        self.combine_worker.finished_ok.connect(self._on_combined)
+        self.combine_worker.failed.connect(self._on_combine_failed)
+        self.combine_worker.start()
+
+    def _on_combined(self, name):
+        self.combine_worker = None
+        self.app_state.models_changed.emit()
+        self._current = name
+        self._populate_models()
+
+    def _on_combine_failed(self, message):
+        self.combine_worker = None
+        QMessageBox.warning(self, "Combine failed", message)
+
     # ---- training ------------------------------------------------------
 
     def _populate_train_labels(self):
@@ -386,3 +436,51 @@ class ModelsPage(QWidget):
 
     def refresh_theme(self):
         pass
+
+
+class _CombineDialog(QDialog):
+    """Pick two or more models and a name to fuse them into one ensemble."""
+
+    def __init__(self, parent, model_names):
+        super().__init__(parent)
+        self.setWindowTitle("Combine models")
+        self.setModal(True)
+        self.setMinimumWidth(380)
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Select the models to combine into an ensemble:"))
+        self.list = QListWidget()
+        for name in model_names:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.list.addItem(item)
+        layout.addWidget(self.list)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("New model name:"))
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("combined_model")
+        name_row.addWidget(self.name_input)
+        layout.addLayout(name_row)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        ok = QPushButton("Combine")
+        ok.clicked.connect(self.accept)
+        buttons.addWidget(ok)
+        layout.addLayout(buttons)
+
+    def selected_models(self):
+        out = []
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                out.append(item.text())
+        return out
+
+    def new_name(self):
+        return self.name_input.text().strip() or "combined_model"
