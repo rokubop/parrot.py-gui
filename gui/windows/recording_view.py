@@ -10,6 +10,7 @@ detection-strategy selection.
 import time
 import sounddevice as sd
 from PyQt6.QtCore import Qt, QElapsedTimer, pyqtSignal
+from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QComboBox,
     QLineEdit, QGroupBox, QFormLayout, QMessageBox
@@ -147,16 +148,29 @@ class RecordingView(QWidget):
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._on_stop)
         controls.addWidget(self.stop_btn)
-        self.clear_btn = QPushButton("Clear last 3s")
-        self.clear_btn.setEnabled(False)
-        self.clear_btn.setToolTip("Drop the last 3 seconds (e.g. a mistake)")
-        self.clear_btn.clicked.connect(self._on_clear)
-        controls.addWidget(self.clear_btn)
+        self.cut_btn = QPushButton("Cut to mark")
+        self.cut_btn.setEnabled(False)
+        self.cut_btn.setToolTip("Remove everything after the marked point "
+                                "(click the waveform to mark) — Backspace/Delete")
+        self.cut_btn.clicked.connect(self._cut_to_mark)
+        controls.addWidget(self.cut_btn)
         controls.addStretch()
         self.hint = QLabel("")
         self.hint.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         controls.addWidget(self.hint)
         root.addLayout(controls)
+
+        # Backspace/Delete cut from the mark; Esc drops the mark. Scoped to this
+        # view + its children so they fire regardless of which control has focus.
+        self.waveform.cut_point_changed.connect(self._on_cut_point_changed)
+        for keyseq in ("Backspace", "Del"):
+            sc = QShortcut(QKeySequence(keyseq), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(self._cut_to_mark)
+        esc = QShortcut(QKeySequence("Esc"), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self.waveform.clear_cut_point)
+
         self._set_state("idle")
 
     def _build_status_panel(self):
@@ -221,7 +235,7 @@ class RecordingView(QWidget):
     # ---- state / colors -----------------------------------------------
 
     # state -> (primary button text, button color, indicator text, indicator
-    #           color, trace color, clear/stop enabled)
+    #           color, trace color, recording/paused-active)
     _STATES = {
         "idle":      ("● Record",         "#c0463f", "● Ready",      "#8b939d", (90, 230, 150), False),
         "recording": ("❚❚ Pause",         None,      "● Recording",  "#e0534f", (224, 83, 79),  True),
@@ -242,9 +256,11 @@ class RecordingView(QWidget):
             self.record_btn.setStyleSheet("")
         self.state_label.setText(ind_text)
         self.state_label.setStyleSheet(f"color: {ind_color}; font-weight: bold;")
-        self.clear_btn.setEnabled(active)
         self.stop_btn.setEnabled(active)
         self.waveform.set_trace_color(trace)
+        if not active:
+            self.waveform.clear_cut_point()
+        self._on_cut_point_changed()
 
     # ---- recording lifecycle ------------------------------------------
 
@@ -299,21 +315,37 @@ class RecordingView(QWidget):
         self.worker.start()
 
         self._set_state("recording")
-        self.hint.setText("Recording… make your sound, with silence between repeats.")
+        self.hint.setText("Recording… click the waveform to mark where to cut "
+                          "back to if you flub it.")
 
-    def _on_clear(self):
+    def _on_cut_point_changed(self):
+        has_mark = (self._state in ("recording", "paused")
+                    and self.waveform.get_cut_point() is not None)
+        self.cut_btn.setEnabled(has_mark)
+
+    def _cut_to_mark(self):
+        if self._state not in ("recording", "paused"):
+            return
+        cut = self.waveform.get_cut_point()
+        if cut is None:
+            self.hint.setText("Click the waveform to mark where to cut back to.")
+            return
+        seconds = self.waveform.total_seconds() - cut
+        if seconds <= 0:
+            self.waveform.clear_cut_point()
+            return
         if self.worker:
-            self.worker.request_clear()
-            # Mirror the cut in the live view (the recorder truncates the saved
-            # audio, but the on-screen buffer is separate).
-            self.waveform.drop_last_seconds(3)
-            self.hint.setText("Dropped the last 3 seconds.")
+            self.worker.request_clear(seconds)   # recorder trims from the end
+        self.waveform.drop_last_seconds(seconds)  # mirror it in the live view
+        self.waveform.clear_cut_point()
+        self.hint.setText(f"Cut {seconds:.1f}s back to the mark.")
 
     def _on_stop(self):
         if self.worker:
-            self.clear_btn.setEnabled(False)
+            self.cut_btn.setEnabled(False)
             self.stop_btn.setEnabled(False)
             self.record_btn.setEnabled(False)
+            self.waveform.clear_cut_point()
             self.hint.setText("Saving & segmenting…")
             self.worker.request_stop()
 

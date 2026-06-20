@@ -15,7 +15,7 @@ from lib.stream_recorder import StreamRecorder
 
 
 class AudioWorker(QThread):
-    frame_recorded = pyqtSignal(bytes)
+    frame_recorded = pyqtSignal(bytes, bool)  # raw frame, detected-as-sound?
     status_updated = pyqtSignal(object)  # DetectionState
     recording_finished = pyqtSignal(str, str)  # wav_path, srt_path
 
@@ -27,6 +27,7 @@ class AudioWorker(QThread):
         self._stop_requested = False
         self._pause_requested = False
         self._clear_requested = False
+        self._clear_seconds = 3.0
         self.recorder = None
         self.wav_path = ""
         self.srt_path = ""
@@ -70,12 +71,14 @@ class AudioWorker(QThread):
                 while not audio_queue.empty() and not self._stop_requested:
                     frame = audio_queue.get()
                     self.recorder.add_audio_frame(frame)
-                    self.frame_recorded.emit(frame)
+                    detected = bool(self.recorder.detection_frames[-1].positive) \
+                        if self.recorder.detection_frames else False
+                    self.frame_recorded.emit(frame, detected)
                     self.status_updated.emit(self.recorder.get_detection_state())
 
                 if self._clear_requested:
                     self._clear_requested = False
-                    self.recorder.clear(3)
+                    self.recorder.clear(self._clear_seconds)
                     self.recorder.resume()
 
                 if self._pause_requested:
@@ -101,5 +104,6 @@ class AudioWorker(QThread):
     def request_pause(self):
         self._pause_requested = not self._pause_requested
 
-    def request_clear(self):
+    def request_clear(self, seconds=3.0):
+        self._clear_seconds = float(seconds)
         self._clear_requested = True

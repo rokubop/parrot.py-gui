@@ -2,6 +2,8 @@ import numpy as np
 import wave
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor
 
 
 class WaveformWidget(QWidget):
@@ -10,6 +12,8 @@ class WaveformWidget(QWidget):
     LIVE_REDRAW_EVERY = 2         # redraw every N frames (~30 fps at 15 ms/frame)
     LIVE_WINDOW_SECONDS = 10      # width of the scrolling live window
     LIVE_Y_RANGE = 16000          # fixed vertical scale (int16; ~0.5 of full)
+
+    cut_point_changed = pyqtSignal()  # a cut mark was set or cleared
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -22,6 +26,30 @@ class WaveformWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         layout.addWidget(self.plot_widget)
 
+        # Live detection (the "blue overlay"): full-height bands where the
+        # recorder flagged the frame as sound. Preliminary — the final regions
+        # are computed after Stop. Drawn behind the trace.
+        self._det_top = self.plot_widget.plot(pen=None)
+        self._det_bot = self.plot_widget.plot(pen=None)
+        det_brush = QColor(90, 175, 245); det_brush.setAlpha(45)
+        self._det_fill = pg.FillBetweenItem(self._det_top, self._det_bot, brush=det_brush)
+        self._det_fill.setZValue(-10)
+        self.plot_widget.addItem(self._det_fill)
+
+        # Cut mark: click the waveform to mark where to cut back to; everything
+        # from there to the record head shades red and Backspace/Delete removes
+        # it. Drawn above detection but below the trace.
+        cut_brush = QColor(224, 83, 79); cut_brush.setAlpha(70)
+        self.cut_region = pg.LinearRegionItem(
+            values=[0, 0], movable=False, brush=cut_brush,
+            pen=pg.mkPen(QColor(224, 83, 79), width=1))
+        self.cut_region.setZValue(-3)
+        self.cut_region.setVisible(False)
+        self.cut_region.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        for _line in getattr(self.cut_region, "lines", []):
+            _line.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.plot_widget.addItem(self.cut_region)
+
         self.plot_item = self.plot_widget.plot(pen=pg.mkPen(color='c', width=1))
         self._sample_rate = 48000
 
@@ -29,20 +57,24 @@ class WaveformWidget(QWidget):
         # fixed-width time window that scrolls to keep the record head at the
         # right edge. Auto-ranging both axes every frame (the old behavior) made
         # the waveform jump and constantly rescale, which was disorienting.
-        vb = self.plot_widget.getViewBox()
-        vb.disableAutoRange()
+        self._vb = self.plot_widget.getViewBox()
+        self._vb.disableAutoRange()
         self.plot_widget.setMouseEnabled(x=False, y=False)
         self.plot_widget.setYRange(-self.LIVE_Y_RANGE, self.LIVE_Y_RANGE, padding=0)
         self.plot_widget.setXRange(0, self.LIVE_WINDOW_SECONDS, padding=0)
+        self.plot_widget.scene().sigMouseClicked.connect(self._on_click)
 
         self._reset_live()
 
     def _reset_live(self):
         # Growable int16 buffer (amortized doubling) so appending a frame is O(1)
         # and we never rebuild an array from a growing Python list per frame.
+        # A parallel uint8 buffer tracks detection (1 = sound) per sample.
         self._live_buf = np.empty(48000, dtype=np.int16)
+        self._det_buf = np.zeros(48000, dtype=np.uint8)
         self._live_len = 0
         self._frames_since_draw = 0
+        self._cut_point = None        # seconds from start, or None
 
     def load_wav(self, path):
         """Load a wav file and display its waveform."""
@@ -74,19 +106,24 @@ class WaveformWidget(QWidget):
         except Exception:
             self.plot_item.setData([], [])
 
-    def append_live_data(self, frame_bytes):
+    def append_live_data(self, frame_bytes, detected=False):
         """Append live audio data during recording. Per-frame cost is constant
-        regardless of how long the recording has run."""
+        regardless of how long the recording has run. ``detected`` flags whether
+        the recorder classified this frame as sound (drawn as the blue overlay)."""
         data = np.frombuffer(frame_bytes, dtype=np.int16)
 
-        # Grow the buffer geometrically if needed, then copy the frame in.
+        # Grow both buffers geometrically if needed, then copy the frame in.
         end = self._live_len + len(data)
         if end > self._live_buf.size:
             new_size = max(self._live_buf.size * 2, end)
             grown = np.empty(new_size, dtype=np.int16)
             grown[:self._live_len] = self._live_buf[:self._live_len]
             self._live_buf = grown
+            grown_det = np.zeros(new_size, dtype=np.uint8)
+            grown_det[:self._live_len] = self._det_buf[:self._live_len]
+            self._det_buf = grown_det
         self._live_buf[self._live_len:end] = data
+        self._det_buf[self._live_len:end] = 1 if detected else 0
         self._live_len = end
 
         # Throttle redraws; the work below is bounded by LIVE_DISPLAY_POINTS, not
@@ -116,6 +153,16 @@ class WaveformWidget(QWidget):
         time_axis = t0 + np.arange(len(seg)) * step
         self.plot_item.setData(time_axis, seg.astype(np.float32))
 
+        # Detection overlay: full-height bands where the frame was flagged sound.
+        det = self._det_buf[start:self._live_len:factor][:len(seg)]
+        if det.size:
+            top = np.where(det > 0, self.LIVE_Y_RANGE, 0).astype(np.float32)
+            self._det_top.setData(time_axis[:det.size], top)
+            self._det_bot.setData(time_axis[:det.size], -top)
+        else:
+            self._det_top.setData([], [])
+            self._det_bot.setData([], [])
+
         # Scroll the window so the newest sample stays at the right edge once we
         # pass the window length; before that, keep the full window in view.
         total_time = buf.size / sr
@@ -124,6 +171,10 @@ class WaveformWidget(QWidget):
         else:
             self.plot_widget.setXRange(total_time - self.LIVE_WINDOW_SECONDS,
                                        total_time, padding=0)
+
+        # Keep the cut band stretched to the current record head.
+        if self._cut_point is not None:
+            self._update_cut_region()
 
     def drop_last_seconds(self, seconds):
         """Remove the most recent N seconds from the live view (mirrors the
@@ -140,8 +191,46 @@ class WaveformWidget(QWidget):
         """Clear the waveform display."""
         self._reset_live()
         self.plot_item.setData([], [])
+        self._det_top.setData([], [])
+        self._det_bot.setData([], [])
+        self.cut_region.setVisible(False)
         self.plot_widget.setYRange(-self.LIVE_Y_RANGE, self.LIVE_Y_RANGE, padding=0)
         self.plot_widget.setXRange(0, self.LIVE_WINDOW_SECONDS, padding=0)
+
+    # ---- cut mark (click to mark where to cut back to) ----------------
+
+    def total_seconds(self):
+        return self._live_len / self._sample_rate if self._sample_rate else 0.0
+
+    def get_cut_point(self):
+        return self._cut_point
+
+    def set_cut_point(self, seconds):
+        total = self.total_seconds()
+        self._cut_point = max(0.0, min(seconds, total))
+        self._update_cut_region()
+        self.cut_region.setVisible(True)
+        self.cut_point_changed.emit()
+
+    def clear_cut_point(self):
+        had = self._cut_point is not None
+        self._cut_point = None
+        self.cut_region.setVisible(False)
+        if had:
+            self.cut_point_changed.emit()
+
+    def _update_cut_region(self):
+        if self._cut_point is None:
+            return
+        self.cut_region.setRegion([self._cut_point, self.total_seconds()])
+
+    def _on_click(self, event):
+        if event.button() != Qt.MouseButton.LeftButton or event.double():
+            return
+        if self._live_len == 0:
+            return
+        x = self._vb.mapSceneToView(event.scenePos()).x()
+        self.set_cut_point(x)
 
     def get_plot_widget(self):
         """Return the internal PlotWidget for axis linking."""
