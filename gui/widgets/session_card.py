@@ -6,9 +6,10 @@ import sounddevice as sd
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QPointF, QRectF, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPolygonF, QColor
 from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMenu
 )
 from gui.widgets.audio_preview import AudioPreviewWidget
+from gui.services import library_ops
 from gui import theme
 
 
@@ -78,11 +79,16 @@ class SessionCard(QFrame):
 
     started = pyqtSignal(object)   # emits self when playback begins
     selected = pyqtSignal(object)  # emits self when the card is interacted with
+    action = pyqtSignal(object, str)  # (card, action_name) for menu actions
 
     def __init__(self, session_name, wav_path, srt_path, thresholds_path, parent=None):
         super().__init__(parent)
         self.wav_path = wav_path
+        self.srt_path = srt_path
+        self.session_name = session_name
+        self.label = library_ops.recording_label(wav_path)
         self._expanded = False
+        self._edit_enabled = True  # set False to hide the Edit menu entry
 
         self._audio = None
         self._sample_rate = None
@@ -167,7 +173,27 @@ class SessionCard(QFrame):
 
         self.expand_btn = self._icon_button("Expand", "Show a taller waveform — E", self.toggle_expanded)
         row.addWidget(self.expand_btn)
+
+        self.menu_btn = self._icon_button("⋯", "Edit, rename, move, or delete this recording", self._show_menu)
+        self.menu_btn.setFixedWidth(34)
+        row.addWidget(self.menu_btn)
         return row
+
+    def _show_menu(self):
+        self.selected.emit(self)
+        menu = QMenu(self)
+        for label, name in (("Edit detection / trim…", "edit"),
+                            ("Rename…", "rename"),
+                            ("Move to another sound…", "move"),
+                            ("Open folder", "open")):
+            if name == "edit" and not self._edit_enabled:
+                continue
+            act = menu.addAction(label)
+            act.triggered.connect(lambda _checked=False, n=name: self.action.emit(self, n))
+        menu.addSeparator()
+        delete_act = menu.addAction("Delete recording")
+        delete_act.triggered.connect(lambda: self.action.emit(self, "delete"))
+        menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
 
     def _build_meta_text(self, session_name):
         parts = []

@@ -1,12 +1,15 @@
 import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
-    QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup
+    QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup,
+    QMenu, QInputDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, _wav_duration
+from gui.widgets.confirm_dialog import confirm_destructive
+from gui.services import library_ops
 from gui import theme
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating
@@ -64,7 +67,16 @@ class SoundLibraryPage(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.label_list.currentItemChanged.connect(lambda *_: self._select_timer.start())
+        self.label_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.label_list.customContextMenuRequested.connect(self._on_list_context_menu)
         left_layout.addWidget(self.label_list)
+
+        new_sound_btn = QPushButton("+ New sound")
+        new_sound_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        new_sound_btn.setToolTip("Create a new (empty) sound, then add recordings to it")
+        new_sound_btn.clicked.connect(self._on_new_sound)
+        left_layout.addWidget(new_sound_btn)
+
         left.setMinimumWidth(280)
         splitter.addWidget(left)
 
@@ -86,6 +98,28 @@ class SoundLibraryPage(QWidget):
         header_layout.addWidget(self.sound_stats)
         self.sound_quantity = QLabel("")
         header_layout.addWidget(self.sound_quantity)
+
+        # Sound-level management actions (operate on the selected sound).
+        actions_row = QHBoxLayout()
+        actions_row.setContentsMargins(0, 8, 0, 0)
+        self.add_recording_btn = QPushButton("Add recording")
+        self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.add_recording_btn.setToolTip("Record a new session for this sound")
+        self.add_recording_btn.clicked.connect(self._on_add_recording)
+        actions_row.addWidget(self.add_recording_btn)
+        for text, slot, tip in (
+                ("Rename", self._on_rename_sound, "Rename this sound"),
+                ("Clone", self._on_clone_sound, "Make a copy of this sound under a new name"),
+                ("Open folder", self._on_open_sound_folder, "Reveal this sound's folder"),
+                ("Delete", self._on_delete_sound, "Delete this sound and all its recordings")):
+            btn = QPushButton(text)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setToolTip(tip)
+            btn.clicked.connect(slot)
+            actions_row.addWidget(btn)
+        actions_row.addStretch()
+        header_layout.addLayout(actions_row)
+
         right_layout.addWidget(header)
 
         self.scroll = QScrollArea()
@@ -171,7 +205,10 @@ class SoundLibraryPage(QWidget):
     # ---- data ----------------------------------------------------------
 
     def _populate_labels(self):
-        had_selection = self.label_list.currentItem() is not None
+        # Remember the selected sound by name so an in-place change (a recording
+        # added/renamed/deleted, or a sound renamed) keeps focus and rebuilds the
+        # right-hand cards instead of leaving a stale view.
+        prev_label = self._current_label()
         self.label_list.blockSignals(True)
         self.label_list.clear()
         for label in self.app_state.get_sound_labels():
@@ -187,13 +224,29 @@ class SoundLibraryPage(QWidget):
             self.label_list.addTopLevelItem(item)
         self.label_list.blockSignals(False)
 
-        if self.label_list.topLevelItemCount() == 0:
+        count = self.label_list.topLevelItemCount()
+        if count == 0:
             self.sound_title.setText("")
             self.sound_stats.setText("")
             self.sound_quantity.setText("")
-            self._show_message("No recordings found in data/recordings/.")
-        elif not had_selection:
-            self.label_list.setCurrentItem(self.label_list.topLevelItem(0))
+            self._build_for_item(None)
+            self._show_message("No sounds yet — click “+ New sound” to start.")
+            return
+
+        # Reselect the previous sound if it still exists, else fall back to the
+        # first. Setting the current item (signals now unblocked) fires the
+        # selection handler, which rebuilds the cards for whatever is selected.
+        target = None
+        if prev_label is not None:
+            for i in range(count):
+                if self.label_list.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == prev_label:
+                    target = self.label_list.topLevelItem(i)
+                    break
+        if target is None:
+            target = self.label_list.topLevelItem(0)
+        # Force a rebuild even when the same row index ends up current.
+        self.label_list.setCurrentItem(None)
+        self.label_list.setCurrentItem(target)
 
     def _build_current(self):
         self._build_for_item(self.label_list.currentItem())
@@ -248,6 +301,7 @@ class SoundLibraryPage(QWidget):
                     card.set_normalized(self._normalized)
                     card.started.connect(self._on_card_started)
                     card.selected.connect(self._select_card)
+                    card.action.connect(self._on_card_action)
                     self._cards.append(card)
                     layout.insertWidget(layout.count() - 1, card)
 
@@ -395,3 +449,169 @@ class SoundLibraryPage(QWidget):
         card = self._cards[index]
         self._select_card(card)
         self.scroll.ensureWidgetVisible(card)
+
+    # ---- sound-level management ----------------------------------------
+
+    def _current_label(self):
+        item = self.label_list.currentItem()
+        return item.data(0, Qt.ItemDataRole.UserRole) if item else None
+
+    def _select_label_by_name(self, name):
+        for i in range(self.label_list.topLevelItemCount()):
+            item = self.label_list.topLevelItem(i)
+            if item.data(0, Qt.ItemDataRole.UserRole) == name:
+                self.label_list.setCurrentItem(item)
+                return
+
+    def _on_list_context_menu(self, pos):
+        item = self.label_list.itemAt(pos)
+        if item is None:
+            return
+        self.label_list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("Add recording…", self._on_add_recording)
+        menu.addAction("Rename…", self._on_rename_sound)
+        menu.addAction("Clone…", self._on_clone_sound)
+        menu.addAction("Open folder", self._on_open_sound_folder)
+        menu.addSeparator()
+        menu.addAction("Delete sound", self._on_delete_sound)
+        menu.exec(self.label_list.viewport().mapToGlobal(pos))
+
+    def _on_new_sound(self):
+        name, ok = QInputDialog.getText(self, "New sound", "Name for the new sound:")
+        if not ok:
+            return
+        try:
+            label = self.app_state.create_sound(name)
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Couldn't create sound", str(exc))
+            return
+        self._select_label_by_name(label)
+
+    def _on_rename_sound(self):
+        label = self._current_label()
+        if not label:
+            return
+        new, ok = QInputDialog.getText(self, "Rename sound", "New name:", text=label)
+        if not ok:
+            return
+        try:
+            new_label = self.app_state.rename_sound(label, new)
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Rename failed", str(exc))
+            return
+        self._select_label_by_name(new_label)
+
+    def _on_clone_sound(self):
+        label = self._current_label()
+        if not label:
+            return
+        new, ok = QInputDialog.getText(self, "Clone sound",
+                                       "Name for the copy:", text=f"{label}_copy")
+        if not ok:
+            return
+        try:
+            new_label = self.app_state.clone_sound(label, new)
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Clone failed", str(exc))
+            return
+        self._select_label_by_name(new_label)
+
+    def _on_open_sound_folder(self):
+        label = self._current_label()
+        if not label:
+            return
+        try:
+            library_ops.open_in_file_manager(library_ops.label_dir(label))
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Couldn't open folder", str(exc))
+
+    def _on_delete_sound(self):
+        label = self._current_label()
+        if not label:
+            return
+        count = library_ops.sound_recording_count(label)
+        body = (f"This permanently deletes the sound '{label}' and its "
+                f"{count} recording(s).")
+        if confirm_destructive(self, title=f"Delete sound '{label}'?", body=body,
+                               confirm_text=label, confirm_label="Delete sound"):
+            try:
+                self.app_state.delete_sound(label)
+            except library_ops.LibraryOpError as exc:
+                QMessageBox.warning(self, "Delete failed", str(exc))
+
+    # ---- recording-level management (from card menu) -------------------
+
+    def _on_card_action(self, card, action):
+        if action == "delete":
+            self._delete_recording(card)
+        elif action == "rename":
+            self._rename_recording(card)
+        elif action == "move":
+            self._move_recording(card)
+        elif action == "open":
+            self._open_recording_folder(card)
+        elif action == "edit":
+            self._edit_recording(card)
+
+    def _delete_recording(self, card):
+        files = library_ops.recording_sibling_files(card.wav_path)
+        detail = "\n".join(os.path.basename(f) for f in files)
+        name = os.path.basename(card.wav_path)
+        if confirm_destructive(
+                self, title="Delete this recording?",
+                body=f"This permanently deletes '{name}' and its detection data.",
+                detail=detail, confirm_label="Delete recording"):
+            try:
+                card.cleanup()
+                self.app_state.delete_recording(card.wav_path)
+            except library_ops.LibraryOpError as exc:
+                QMessageBox.warning(self, "Delete failed", str(exc))
+
+    def _rename_recording(self, card):
+        old_base = library_ops.recording_base(card.wav_path)
+        new, ok = QInputDialog.getText(self, "Rename recording",
+                                       "New name (no extension):", text=old_base)
+        if not ok:
+            return
+        try:
+            self.app_state.rename_recording(card.wav_path, new)
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Rename failed", str(exc))
+
+    def _move_recording(self, card):
+        others = [l for l in self.app_state.get_sound_labels() if l != card.label]
+        if not others:
+            QMessageBox.information(self, "Move recording",
+                                    "There's no other sound to move it to.")
+            return
+        dest, ok = QInputDialog.getItem(self, "Move recording",
+                                        "Move to sound:", others, 0, False)
+        if not ok or not dest:
+            return
+        try:
+            self.app_state.move_recording(card.wav_path, dest)
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Move failed", str(exc))
+
+    def _open_recording_folder(self, card):
+        try:
+            library_ops.open_in_file_manager(card.wav_path)
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Couldn't open folder", str(exc))
+
+    # ---- recording / editing (wired in later steps) --------------------
+
+    def _on_add_recording(self):
+        label = self._current_label()
+        self._open_recording_view(label)
+
+    def _open_recording_view(self, label):
+        QMessageBox.information(
+            self, "Add recording",
+            "The recording view is coming up next.")
+
+    def _edit_recording(self, card):
+        QMessageBox.information(
+            self, "Edit recording",
+            "The edit view is coming up next.")
