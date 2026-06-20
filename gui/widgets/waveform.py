@@ -102,20 +102,19 @@ class WaveformWidget(QWidget):
         sr = self._sample_rate
         window_samples = int(self.LIVE_WINDOW_SECONDS * sr)
 
-        # Only draw the most recent window of audio; everything older has
-        # scrolled off the left edge, so there's no point plotting it.
+        # Decimate with a CONSTANT, window-based factor and align the start to
+        # that grid, so the exact samples drawn don't shift frame-to-frame. A
+        # buffer-based factor (the old way) re-picked different samples as the
+        # buffer grew, making the whole waveform subtly wiggle while the first
+        # window filled in.
+        factor = max(1, window_samples // self.LIVE_DISPLAY_POINTS)
         start = max(0, buf.size - window_samples)
-        seg = buf[start:]
-        if seg.size > self.LIVE_DISPLAY_POINTS:
-            factor = seg.size // self.LIVE_DISPLAY_POINTS
-            display = seg[::factor]                # strided view, cheap
-            step = factor / sr
-        else:
-            display = seg
-            step = 1.0 / sr
+        start -= start % factor
+        seg = buf[start::factor]
         t0 = start / sr
-        time_axis = t0 + np.arange(len(display)) * step
-        self.plot_item.setData(time_axis, display.astype(np.float32))
+        step = factor / sr
+        time_axis = t0 + np.arange(len(seg)) * step
+        self.plot_item.setData(time_axis, seg.astype(np.float32))
 
         # Scroll the window so the newest sample stays at the right edge once we
         # pass the window length; before that, keep the full window in view.
@@ -125,6 +124,17 @@ class WaveformWidget(QWidget):
         else:
             self.plot_widget.setXRange(total_time - self.LIVE_WINDOW_SECONDS,
                                        total_time, padding=0)
+
+    def drop_last_seconds(self, seconds):
+        """Remove the most recent N seconds from the live view (mirrors the
+        recorder's 'clear last N seconds' so the waveform reflects the cut)."""
+        drop = int(seconds * self._sample_rate)
+        self._live_len = max(0, self._live_len - drop)
+        self._redraw_live()
+
+    def set_trace_color(self, color):
+        """Recolor the live trace (used to signal recording / paused / idle)."""
+        self.plot_item.setPen(pg.mkPen(color=color, width=1))
 
     def clear_display(self):
         """Clear the waveform display."""

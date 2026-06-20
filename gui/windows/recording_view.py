@@ -47,7 +47,7 @@ class RecordingView(QWidget):
         self.worker = None
         self._label = None
         self._new_mode = False
-        self._paused = False
+        self._state = "idle"
         self._last_status_draw = 0.0
         self._setup_ui()
 
@@ -88,6 +88,10 @@ class RecordingView(QWidget):
             f"font-size: 18px; font-weight: bold; color: {theme.colors()['text_bright']};")
         top.addWidget(self.title)
         top.addStretch()
+        # Colored state indicator (Ready / Recording / Paused / Saved).
+        self.state_label = QLabel("")
+        self.state_label.setStyleSheet("font-weight: bold;")
+        top.addWidget(self.state_label)
         root.addLayout(top)
 
         # New-sound name row (hidden in add-recording mode)
@@ -132,29 +136,28 @@ class RecordingView(QWidget):
         center.addWidget(self._build_status_panel(), 1)
         root.addLayout(center, 1)
 
-        # Controls
+        # Controls — one primary toggle (Record / Pause / Resume) plus Stop and
+        # Clear, instead of separate Record + Pause + Resume buttons.
         controls = QHBoxLayout()
         self.record_btn = QPushButton("● Record")
-        self.record_btn.clicked.connect(self._on_record)
+        self.record_btn.setMinimumWidth(130)
+        self.record_btn.clicked.connect(self._on_primary)
         controls.addWidget(self.record_btn)
-        self.pause_btn = QPushButton("Pause")
-        self.pause_btn.setEnabled(False)
-        self.pause_btn.clicked.connect(self._on_pause)
-        controls.addWidget(self.pause_btn)
+        self.stop_btn = QPushButton("■ Stop & save")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self._on_stop)
+        controls.addWidget(self.stop_btn)
         self.clear_btn = QPushButton("Clear last 3s")
         self.clear_btn.setEnabled(False)
         self.clear_btn.setToolTip("Drop the last 3 seconds (e.g. a mistake)")
         self.clear_btn.clicked.connect(self._on_clear)
         controls.addWidget(self.clear_btn)
-        self.stop_btn = QPushButton("■ Stop & save")
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.clicked.connect(self._on_stop)
-        controls.addWidget(self.stop_btn)
         controls.addStretch()
         self.hint = QLabel("")
         self.hint.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         controls.addWidget(self.hint)
         root.addLayout(controls)
+        self._set_state("idle")
 
     def _build_status_panel(self):
         group = QGroupBox("Live status")
@@ -209,17 +212,39 @@ class RecordingView(QWidget):
         self.waveform.clear_display()
         self.waveform.setVisible(True)
         self.result_preview.setVisible(False)
-        self._paused = False
-        self.record_btn.setEnabled(True)
-        self.record_btn.setText("● Record")
-        self.pause_btn.setEnabled(False)
-        self.pause_btn.setText("Pause")
-        self.clear_btn.setEnabled(False)
-        self.stop_btn.setEnabled(False)
         for w in (self.v_time, self.v_quality, self.v_dbfs, self.v_noise,
                   self.v_snr, self.v_detected, self.v_quantity, self.v_type):
             w.setText("—")
         self.hint.setText("")
+        self._set_state("idle")
+
+    # ---- state / colors -----------------------------------------------
+
+    # state -> (primary button text, button color, indicator text, indicator
+    #           color, trace color, clear/stop enabled)
+    _STATES = {
+        "idle":      ("● Record",         "#c0463f", "● Ready",      "#8b939d", (90, 230, 150), False),
+        "recording": ("❚❚ Pause",         None,      "● Recording",  "#e0534f", (224, 83, 79),  True),
+        "paused":    ("● Resume",         "#3a8f55", "❚❚ Paused",    "#e0b020", (224, 176, 32), True),
+        "done":      ("● Record another", "#c0463f", "✓ Saved",      "#41d97f", (90, 230, 150), False),
+    }
+
+    def _set_state(self, state):
+        self._state = state
+        btn_text, btn_color, ind_text, ind_color, trace, active = self._STATES[state]
+        self.record_btn.setText(btn_text)
+        if btn_color:
+            self.record_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {btn_color}; color: #ffffff; "
+                f"font-weight: bold; border: none; }}"
+                f" QPushButton:hover {{ background-color: {btn_color}; }}")
+        else:
+            self.record_btn.setStyleSheet("")
+        self.state_label.setText(ind_text)
+        self.state_label.setStyleSheet(f"color: {ind_color}; font-weight: bold;")
+        self.clear_btn.setEnabled(active)
+        self.stop_btn.setEnabled(active)
+        self.waveform.set_trace_color(trace)
 
     # ---- recording lifecycle ------------------------------------------
 
@@ -240,7 +265,20 @@ class RecordingView(QWidget):
             return label
         return self._label
 
-    def _on_record(self):
+    def _on_primary(self):
+        """One button drives the whole take: Record -> Pause -> Resume."""
+        if self._state in ("idle", "done"):
+            self._start_recording()
+        elif self._state == "recording":
+            self.worker.request_pause()
+            self._set_state("paused")
+            self.hint.setText("Paused — Resume to keep adding to this take.")
+        elif self._state == "paused":
+            self.worker.request_pause()
+            self._set_state("recording")
+            self.hint.setText("Recording…")
+
+    def _start_recording(self):
         label = self._resolve_label()
         if not label:
             return
@@ -260,30 +298,22 @@ class RecordingView(QWidget):
         self.worker.recording_finished.connect(self._on_finished)
         self.worker.start()
 
-        self.record_btn.setEnabled(False)
-        self.pause_btn.setEnabled(True)
-        self.clear_btn.setEnabled(True)
-        self.stop_btn.setEnabled(True)
+        self._set_state("recording")
         self.hint.setText("Recording… make your sound, with silence between repeats.")
-
-    def _on_pause(self):
-        if not self.worker:
-            return
-        self.worker.request_pause()
-        self._paused = not self._paused
-        self.pause_btn.setText("Resume" if self._paused else "Pause")
-        self.hint.setText("Paused." if self._paused else "Recording…")
 
     def _on_clear(self):
         if self.worker:
             self.worker.request_clear()
+            # Mirror the cut in the live view (the recorder truncates the saved
+            # audio, but the on-screen buffer is separate).
+            self.waveform.drop_last_seconds(3)
             self.hint.setText("Dropped the last 3 seconds.")
 
     def _on_stop(self):
         if self.worker:
-            self.stop_btn.setEnabled(False)
-            self.pause_btn.setEnabled(False)
             self.clear_btn.setEnabled(False)
+            self.stop_btn.setEnabled(False)
+            self.record_btn.setEnabled(False)
             self.hint.setText("Saving & segmenting…")
             self.worker.request_stop()
 
@@ -326,8 +356,8 @@ class RecordingView(QWidget):
         except Exception:
             pass
         self.record_btn.setEnabled(True)
-        self.record_btn.setText("● Record another")
         self.name_input.setEnabled(True)
+        self._set_state("done")
         self.hint.setText("Saved. Record another take, or go back to Sounds.")
 
     # ---- navigation ----------------------------------------------------
