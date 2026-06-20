@@ -623,8 +623,9 @@ class SoundLibraryPage(QWidget):
         detail = "\n".join(os.path.basename(f) for f in files)
         name = os.path.basename(card.wav_path)
         if confirm_destructive(
-                self, title="Delete this recording?",
-                body=f"This permanently deletes '{name}' and its detection data.",
+                self, title=f"Delete this recording from “{card.label}”?",
+                body=f"This permanently deletes the recording '{name}' from the "
+                     f"sound “{card.label}”, along with its detection data.",
                 detail=detail, confirm_label="Delete recording"):
             try:
                 card.cleanup()
