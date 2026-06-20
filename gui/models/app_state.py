@@ -8,6 +8,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from lib.srt import count_total_label_ms, ms_to_srt_timestring
 from lib.stream_processing import CURRENT_VERSION
+from gui.services import library_ops
 from gui.services.talon_discovery import discover_talon, compare_model_files, TalonDiscoveryResult
 
 NOTES_PATH = os.path.join("data", "notes.json")
@@ -228,3 +229,55 @@ class AppState(QObject):
         """Emit signals to refresh all views."""
         self.recordings_changed.emit()
         self.models_changed.emit()
+
+    # ---- mutations (thin wrappers over library_ops + signal emit) -------
+    # Each returns whatever the op returns (e.g. the new name) and emits the
+    # relevant change signal so every view rebuilds. Errors propagate as
+    # LibraryOpError for the caller to display.
+
+    def create_sound(self, name):
+        label = library_ops.create_sound(name)
+        self.recordings_changed.emit()
+        return label
+
+    def rename_sound(self, old, new):
+        label = library_ops.rename_sound(old, new)
+        self.recordings_changed.emit()
+        return label
+
+    def clone_sound(self, src, new):
+        label = library_ops.clone_sound(src, new)
+        self.recordings_changed.emit()
+        return label
+
+    def delete_sound(self, label):
+        library_ops.delete_sound(label)
+        self.recordings_changed.emit()
+
+    def delete_recording(self, wav_path):
+        library_ops.delete_recording(wav_path)
+        self.recordings_changed.emit()
+
+    def rename_recording(self, wav_path, new_base):
+        new_wav = library_ops.rename_recording(wav_path, new_base)
+        self.recordings_changed.emit()
+        return new_wav
+
+    def move_recording(self, wav_path, dest_label):
+        new_wav = library_ops.move_recording(wav_path, dest_label)
+        self.recordings_changed.emit()
+        return new_wav
+
+    def delete_model(self, name):
+        library_ops.delete_model(name)
+        self.models_changed.emit()
+
+    def rename_model(self, old, new):
+        name = library_ops.rename_model(old, new)
+        self.models_changed.emit()
+        return name
+
+    def clone_model(self, old, new):
+        name = library_ops.clone_model(old, new)
+        self.models_changed.emit()
+        return name
