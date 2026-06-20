@@ -146,7 +146,7 @@ class SoundLibraryPage(QWidget):
         bar_layout.addWidget(self.normalize_btn)
 
         bar_layout.addStretch()
-        self.hint_label = QLabel("Space play/pause   ·   ← → seek   ·   drag playhead to scrub   ·   scroll to zoom   ·   double-click to fit")
+        self.hint_label = QLabel("Space play/pause   ·   drag to select   ·   Fit zooms to selection   ·   drag playhead to scrub   ·   scroll to zoom   ·   double-click resets")
         bar_layout.addWidget(self.hint_label)
         return bar
 

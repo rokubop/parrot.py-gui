@@ -66,6 +66,9 @@ class SessionCard(QFrame):
         self._position = 0.0       # playhead position in seconds (kept across pause)
         self._play_start = 0.0     # position playback began from
         self._playing = False
+        self._sel_start = None     # selected range (seconds), or None
+        self._sel_end = None
+        self._stop_at = None       # playback stop bound for the current play
 
         self._timer = QTimer(self)
         self._timer.setInterval(16)
@@ -84,7 +87,16 @@ class SessionCard(QFrame):
         self.preview.load(wav_path, srt_path)
         self.preview.seeked.connect(self._on_seek)
         self.preview.pressed.connect(lambda: self.selected.emit(self))
+        self.preview.selection_changed.connect(self._on_selection_changed)
+        self.preview.selection_cleared.connect(self._on_selection_cleared)
         layout.addWidget(self.preview)
+
+    def _on_selection_changed(self, start, end):
+        self._sel_start, self._sel_end = start, end
+        self.selected.emit(self)
+
+    def _on_selection_cleared(self):
+        self._sel_start = self._sel_end = None
 
     def _icon_button(self, label, tooltip, slot):
         # No fixed width: the global 16px button padding clipped short fixed-width
@@ -103,7 +115,7 @@ class SessionCard(QFrame):
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
 
-        row.addWidget(self._icon_button("Fit", "Fit waveform to view (or double-click)", self.fit_view))
+        row.addWidget(self._icon_button("Fit", "Fit to selection, or the whole clip (double-click resets)", self.fit_view))
         row.addWidget(self._icon_button("Go to Start", "Move the playhead back to the beginning", self.go_to_start))
 
         t = theme.colors()
@@ -236,18 +248,29 @@ class SessionCard(QFrame):
             return
         if self._audio is None or self._sample_rate is None:
             return
+
+        # Space / Play with a selection plays just that range (resuming from the
+        # current spot if we're paused inside it). An explicit seek ignores it.
+        playing_selection = from_seconds is None and self._sel_start is not None
         if from_seconds is not None:
             self._position = from_seconds
+        elif playing_selection and not (self._sel_start <= self._position < self._sel_end):
+            self._position = self._sel_start
 
         self.selected.emit(self)
         self.started.emit(self)
 
         self._position = max(0.0, min(self._position, self._duration))
         self._play_start = self._position
+        self._stop_at = self._sel_end if playing_selection else None
         start_sample = int(self._position * self._sample_rate)
+        if self._stop_at is not None:
+            clip = self._audio[start_sample:int(self._stop_at * self._sample_rate)]
+        else:
+            clip = self._audio[start_sample:]
 
         sd.stop()
-        sd.play(self._audio[start_sample:], self._sample_rate)
+        sd.play(clip, self._sample_rate)
 
         self._playing = True
         self.play_btn.setText("⏸ Pause")
@@ -295,11 +318,13 @@ class SessionCard(QFrame):
 
     def _tick(self):
         elapsed = self._play_start + self._clock.elapsed() / 1000.0
-        if elapsed >= self._duration:
-            self.preview.set_playhead(self._duration)
+        limit = self._stop_at if self._stop_at is not None else self._duration
+        if elapsed >= limit:
+            self.preview.set_playhead(limit)
             self.stop()
-            self._position = 0.0
-            self.preview.set_playhead(0.0)
+            # Park at the selection start (loopable) or the clip start.
+            self._position = self._sel_start if self._stop_at is not None else 0.0
+            self.preview.set_playhead(self._position)
             return
         self._position = elapsed
         self.preview.set_playhead(elapsed)

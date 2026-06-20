@@ -22,8 +22,10 @@ class AudioPreviewWidget(QWidget):
     sharpens on zoom instead of aliasing.
     """
 
-    seeked = pyqtSignal(float)   # seconds — user clicked to seek
-    pressed = pyqtSignal()       # user interacted; used for selection
+    seeked = pyqtSignal(float)            # seconds — user clicked to seek
+    pressed = pyqtSignal()                # user interacted; used for selection
+    selection_changed = pyqtSignal(float, float)  # start, end (seconds)
+    selection_cleared = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +37,8 @@ class AudioPreviewWidget(QWidget):
         self._mode = "waveform"
         self._spectrogram = None  # cached (image, levels)
         self._anim = None
+        self._selection = None    # (start, end) seconds, or None
+        self._sel_anchor = None   # drag origin while painting a selection
 
         t = theme.colors()
         self._colors = t
@@ -82,6 +86,25 @@ class AudioPreviewWidget(QWidget):
         self.plot.addItem(self._image)
 
         self._regions = []
+
+        # Selection band: drag across the waveform to mark a time range. Fit
+        # zooms to it and playback can be limited to it.
+        accent = QColor(t["accent"])
+        sel_brush = QColor(accent); sel_brush.setAlpha(55)
+        self.selection_item = pg.LinearRegionItem(values=[0, 0], movable=False,
+                                                  brush=sel_brush, pen=pg.mkPen(accent, width=1))
+        self.selection_item.setZValue(5)
+        self.selection_item.setVisible(False)
+        self.plot.addItem(self.selection_item)
+        self.sel_label = pg.TextItem(color=accent, anchor=(0.5, 0))
+        self.sel_label.setZValue(17)
+        self.sel_label.setVisible(False)
+        self.plot.addItem(self.sel_label)
+
+        # Drag paints a selection instead of panning (panning is the scrollbar's
+        # job); the wheel zooms time even over the left axis (no dead zone).
+        self._vb.mouseDragEvent = self._on_vb_drag
+        self.plot.getAxis("left").wheelEvent = self._vb.wheelEvent
 
         # Draggable playhead: grab it to scrub. A fatter invisible hover region
         # makes it easy to catch with the cursor.
@@ -295,11 +318,76 @@ class AudioPreviewWidget(QWidget):
         self.seeked.emit(x)
 
     def fit(self):
+        """Fit to the selection if there is one, else to the whole clip."""
+        if self._duration <= 0:
+            return
+        if self._selection is not None:
+            a, b = self._selection
+            if b - a > 0:
+                self._animate_x_range(a, b)
+                if self._mode == "waveform":
+                    self._apply_y_range()
+                return
+        self.fit_full()
+
+    def fit_full(self):
         if self._duration <= 0:
             return
         self._animate_x_range(0.0, self._duration)
         if self._mode == "waveform":
             self._apply_y_range()
+
+    # ---- selection -----------------------------------------------------
+
+    def _min_selection(self):
+        """A drag narrower than ~4 px is treated as a click, not a selection."""
+        x0, x1 = self._vb.viewRange()[0]
+        return (x1 - x0) / max(1, self.plot.width()) * 4
+
+    def _set_selection(self, a, b):
+        a = max(0.0, min(a, self._duration))
+        b = max(0.0, min(b, self._duration))
+        self._selection = (a, b)
+        self.selection_item.setRegion((a, b))
+        self.selection_item.setVisible(True)
+        self.sel_label.setText(f"{b - a:.3f}s")
+        self.sel_label.setPos((a + b) / 2.0, self._vb.viewRange()[1][1])
+        self.sel_label.setVisible(True)
+
+    def _clear_selection(self):
+        if self._selection is None:
+            return
+        self._selection = None
+        self.selection_item.setVisible(False)
+        self.sel_label.setVisible(False)
+        self.selection_cleared.emit()
+
+    def _on_vb_drag(self, ev, axis=None):
+        if ev.button() != Qt.MouseButton.LeftButton:
+            pg.ViewBox.mouseDragEvent(self._vb, ev, axis=axis)
+            return
+        ev.accept()
+        x = max(0.0, min(self._vb.mapSceneToView(ev.scenePos()).x(), self._duration))
+        if ev.isStart():
+            self._sel_anchor = x
+            self._set_selection(x, x)
+        elif ev.isFinish():
+            anchor = self._sel_anchor
+            self._sel_anchor = None
+            if anchor is None:
+                return
+            a, b = sorted((anchor, x))
+            self.pressed.emit()
+            if (b - a) < self._min_selection():
+                # Too small to be a range — treat it as a click/seek.
+                self._clear_selection()
+                self.seeked.emit(x)
+            else:
+                self._set_selection(a, b)
+                self.selection_changed.emit(a, b)
+        elif self._sel_anchor is not None:
+            a, b = sorted((self._sel_anchor, x))
+            self._set_selection(a, b)
 
     # ---- playback audio (shared with the owning card) ------------------
 
@@ -399,7 +487,11 @@ class AudioPreviewWidget(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         if event.double():
-            self.fit()
+            # Double-click resets: clear any selection and fit the whole clip.
+            self._clear_selection()
+            self.fit_full()
             return
+        # A plain click deselects and positions the playhead.
+        self._clear_selection()
         x = self._vb.mapSceneToView(event.scenePos()).x()
         self.seeked.emit(max(0.0, min(x, self._duration)))
