@@ -74,6 +74,8 @@ class WaveformWidget(QWidget):
         self._live_len = 0
         self._frames_since_draw = 0
         self._cut_point = None        # seconds from start, or None
+        if not hasattr(self, "_cut_enabled"):
+            self._cut_enabled = False
 
     def load_wav(self, path):
         """Load a wav file and display its waveform."""
@@ -248,7 +250,14 @@ class WaveformWidget(QWidget):
             return
         self.cut_region.setRegion([self._cut_point, self.total_seconds()])
 
+    def set_cut_enabled(self, enabled):
+        """Allow/disallow click-to-mark. Off by default — the live recording
+        view is a plain monitor; editing happens on the saved clip."""
+        self._cut_enabled = enabled
+
     def _on_click(self, event):
+        if not self._cut_enabled:
+            return
         if event.button() != Qt.MouseButton.LeftButton or event.double():
             return
         if self._live_len == 0:

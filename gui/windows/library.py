@@ -24,6 +24,7 @@ class SoundLibraryPage(QWidget):
     # Requests for the full-screen sub-views, handled by MainWindow.
     record_requested = pyqtSignal(str)   # "" = new sound, else add to this label
     edit_requested = pyqtSignal(str)     # wav_path of the recording to edit
+    append_requested = pyqtSignal(str)   # wav_path to append a new take onto
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -617,6 +618,8 @@ class SoundLibraryPage(QWidget):
             self._open_recording_folder(card)
         elif action == "edit":
             self._edit_recording(card)
+        elif action == "append":
+            self.append_requested.emit(card.wav_path)
 
     def _delete_recording(self, card):
         files = library_ops.recording_sibling_files(card.wav_path)

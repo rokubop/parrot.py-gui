@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.library_page)
         self.library_page.record_requested.connect(self._open_recording)
         self.library_page.edit_requested.connect(self._open_edit)
+        self.library_page.append_requested.connect(self._open_append)
 
         self.models_page = None
         self.settings_page = None
@@ -100,6 +101,7 @@ class MainWindow(QMainWindow):
             from gui.windows.edit_view import EditRecordingView
             self.edit_view = EditRecordingView(self.app_state, self)
             self.edit_view.done.connect(self._return_to_sounds)
+            self.edit_view.append_requested.connect(self._open_append)
             self.stack.addWidget(self.edit_view)
         return self.edit_view
 
@@ -126,6 +128,11 @@ class MainWindow(QMainWindow):
     def _open_edit(self, wav_path):
         view = self._get_edit_view()
         view.start_for(wav_path)
+        self.stack.setCurrentWidget(view)
+
+    def _open_append(self, wav_path):
+        view = self._get_recording_view()
+        view.start_append(wav_path)
         self.stack.setCurrentWidget(view)
 
     def _return_to_sounds(self, label):

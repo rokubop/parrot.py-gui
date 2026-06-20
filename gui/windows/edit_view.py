@@ -27,7 +27,8 @@ from gui.workers.segment_worker import (
 
 
 class EditRecordingView(QWidget):
-    done = pyqtSignal(str)   # closed; arg = label to reselect
+    done = pyqtSignal(str)             # closed; arg = label to reselect
+    append_requested = pyqtSignal(str)  # wav_path to append a take onto
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -153,8 +154,13 @@ class EditRecordingView(QWidget):
                                    "(also updates detection). Permanent.")
         self.delete_btn.clicked.connect(self._on_delete_range)
         trim.addWidget(self.delete_btn)
-        trim_note = QLabel("Removes the selected audio from the recording and "
-                           "re-detects. This can't be undone.")
+        self.append_btn = QPushButton("Append recording…")
+        self.append_btn.setToolTip("Record a new take and add it onto the end "
+                                   "of this clip, then re-detect.")
+        self.append_btn.clicked.connect(self._on_append)
+        trim.addWidget(self.append_btn)
+        trim_note = QLabel("Delete removes the selected audio; Append records "
+                           "more onto the end. Both re-detect.")
         trim_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         trim.addWidget(trim_note)
         trim.addStretch()
@@ -296,6 +302,11 @@ class EditRecordingView(QWidget):
         self.preview.set_playhead(pos)
 
     # ---- navigation ----------------------------------------------------
+
+    def _on_append(self):
+        if self.wav_path:
+            self.stop_playback()
+            self.append_requested.emit(self.wav_path)
 
     def _on_back(self):
         self.stop_playback()

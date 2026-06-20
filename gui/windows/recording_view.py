@@ -10,7 +10,6 @@ detection-strategy selection.
 import time
 import sounddevice as sd
 from PyQt6.QtCore import Qt, QElapsedTimer, pyqtSignal
-from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QComboBox,
     QLineEdit, QGroupBox, QFormLayout, QMessageBox
@@ -21,6 +20,7 @@ from gui import theme
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui.workers.audio_worker import AudioWorker
+from gui.workers.segment_worker import AppendWorker
 from gui.services import library_ops, strategies
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating
@@ -46,8 +46,10 @@ class RecordingView(QWidget):
         super().__init__(parent)
         self.app_state = app_state
         self.worker = None
+        self._append_worker = None
         self._label = None
         self._new_mode = False
+        self._append_target = None    # wav path to append onto, or None
         self._state = "idle"
         self._last_status_draw = 0.0
         self._setup_ui()
@@ -55,20 +57,35 @@ class RecordingView(QWidget):
     # ---- entry points (called by MainWindow) --------------------------
 
     def start_for(self, label):
-        """Add a recording to an existing sound."""
+        """Add a recording to an existing sound (as a new clip)."""
         self._new_mode = False
+        self._append_target = None
         self._label = label
         self.name_row.setVisible(False)
         self.title.setText(f"Record:  {label}")
+        self.save_btn.setText("Save recording")
         self._reset()
 
     def start_new(self):
         """Create a brand-new sound by recording it."""
         self._new_mode = True
+        self._append_target = None
         self._label = None
         self.name_row.setVisible(True)
         self.name_input.clear()
         self.title.setText("New sound")
+        self.save_btn.setText("Save recording")
+        self._reset()
+
+    def start_append(self, target_wav):
+        """Record a take and append it onto an existing recording."""
+        self._new_mode = False
+        self._append_target = target_wav
+        self._label = library_ops.recording_label(target_wav)
+        base = library_ops.recording_base(target_wav)
+        self.name_row.setVisible(False)
+        self.title.setText(f"Append to:  {self._label} / {base}")
+        self.save_btn.setText("Save & append")
         self._reset()
 
     # ---- ui ------------------------------------------------------------
@@ -137,9 +154,9 @@ class RecordingView(QWidget):
         center.addWidget(self._build_status_panel(), 1)
         root.addLayout(center, 1)
 
-        # Controls. Left: the take itself — one toggle (Record/Pause/Resume) and
-        # Save. Right: trim — Delete after mark / Clear mark, enabled only once
-        # you've clicked the waveform to drop a mark.
+        # Controls: one toggle (Record/Pause/Resume) and Save. Editing/trimming
+        # is done afterwards on the saved clip in the Edit view — the live screen
+        # stays a clean capture monitor.
         controls = QHBoxLayout()
         self.record_btn = QPushButton("● Record")
         self.record_btn.setMinimumWidth(130)
@@ -151,35 +168,11 @@ class RecordingView(QWidget):
         self.save_btn.clicked.connect(self._on_save)
         controls.addWidget(self.save_btn)
 
-        controls.addSpacing(20)
-        self.delete_btn = QPushButton("Delete after mark")
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.setToolTip("Click the waveform to mark a point, then "
-                                   "remove everything after it — Backspace/Delete")
-        self.delete_btn.clicked.connect(self._delete_after_mark)
-        controls.addWidget(self.delete_btn)
-        self.clearmark_btn = QPushButton("Clear mark")
-        self.clearmark_btn.setEnabled(False)
-        self.clearmark_btn.setToolTip("Remove the trim mark — Esc")
-        self.clearmark_btn.clicked.connect(self._clear_mark)
-        controls.addWidget(self.clearmark_btn)
-
         controls.addStretch()
         self.hint = QLabel("")
         self.hint.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         controls.addWidget(self.hint)
         root.addLayout(controls)
-
-        # Backspace/Delete remove from the mark; Esc drops the mark. Scoped to
-        # this view + children so they fire regardless of which control has focus.
-        self.waveform.cut_point_changed.connect(self._on_cut_point_changed)
-        for keyseq in ("Backspace", "Del"):
-            sc = QShortcut(QKeySequence(keyseq), self)
-            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            sc.activated.connect(self._delete_after_mark)
-        esc = QShortcut(QKeySequence("Esc"), self)
-        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        esc.activated.connect(self._clear_mark)
 
         self._set_state("idle")
 
@@ -264,13 +257,14 @@ class RecordingView(QWidget):
                 f" QPushButton:hover {{ background-color: {btn_color}; }}")
         else:
             self.record_btn.setStyleSheet("")
+        # In append mode the primary button says "Record"/"Record more" (not
+        # "Record another", which implies a separate clip).
+        if self._append_target and state == "done":
+            self.record_btn.setText("● Record more to append")
         self.state_label.setText(ind_text)
         self.state_label.setStyleSheet(f"color: {ind_color}; font-weight: bold;")
         self.save_btn.setEnabled(active)
         self.waveform.set_trace_color(trace)
-        if not active:
-            self.waveform.clear_cut_point()
-        self._on_cut_point_changed()
 
     # ---- recording lifecycle ------------------------------------------
 
@@ -325,42 +319,16 @@ class RecordingView(QWidget):
         self.worker.start()
 
         self._set_state("recording")
-        self.hint.setText("Recording… click the waveform to mark a point you "
-                          "want to delete back to.")
-
-    def _on_cut_point_changed(self):
-        has_mark = (self._state in ("recording", "paused")
-                    and self.waveform.get_cut_point() is not None)
-        self.delete_btn.setEnabled(has_mark)
-        self.clearmark_btn.setEnabled(has_mark)
-
-    def _clear_mark(self):
-        self.waveform.clear_cut_point()
-
-    def _delete_after_mark(self):
-        if self._state not in ("recording", "paused"):
-            return
-        mark = self.waveform.get_cut_point()
-        if mark is None:
-            self.hint.setText("Click the waveform first to mark where to delete from.")
-            return
-        seconds = self.waveform.total_seconds() - mark
-        if seconds <= 0:
-            self.waveform.clear_cut_point()
-            return
-        if self.worker:
-            self.worker.request_clear(seconds)   # recorder trims from the end
-        self.waveform.drop_last_seconds(seconds)  # mirror it in the live view
-        self.waveform.clear_cut_point()
-        self.hint.setText(f"Deleted {seconds:.1f}s after the mark.")
+        if self._append_target:
+            self.hint.setText("Recording… this take will be appended to the clip.")
+        else:
+            self.hint.setText("Recording… make your sound, with silence between "
+                              "repeats. Trim later from the clip's Edit view.")
 
     def _on_save(self):
         if self.worker:
-            self.delete_btn.setEnabled(False)
-            self.clearmark_btn.setEnabled(False)
             self.save_btn.setEnabled(False)
             self.record_btn.setEnabled(False)
-            self.waveform.clear_cut_point()
             self.hint.setText("Saving & segmenting…")
             self.worker.request_stop()
 
@@ -393,8 +361,41 @@ class RecordingView(QWidget):
 
     def _on_finished(self, wav_path, srt_path):
         self.worker = None
-        # Surface the segmented take and let the library/list pick it up.
+        if self._append_target:
+            # Merge this fresh take onto the target clip, then re-detect.
+            self.hint.setText("Appending & re-detecting…")
+            self._append_worker = AppendWorker(self._append_target, wav_path,
+                                               self._label)
+            self._append_worker.finished_ok.connect(
+                lambda srt, src=wav_path: self._on_appended(src, srt))
+            self._append_worker.failed.connect(
+                lambda msg, src=wav_path, srt=srt_path: self._on_append_failed(msg, src, srt))
+            self._append_worker.start()
+            return
         self.app_state.recordings_changed.emit()
+        self._finish_view(wav_path, srt_path,
+                          "Saved. Record another take, or go back to Sounds.")
+
+    def _on_appended(self, source_wav, srt_path):
+        self._append_worker = None
+        # The temporary take has been merged in; remove it as a standalone clip.
+        try:
+            library_ops.delete_recording(source_wav)
+        except library_ops.LibraryOpError:
+            pass
+        self.app_state.recordings_changed.emit()
+        self._finish_view(self._append_target, srt_path,
+                          "Appended. Record more, or go back to Sounds.")
+
+    def _on_append_failed(self, msg, source_wav, source_srt):
+        self._append_worker = None
+        # Keep the take as its own clip so nothing is lost.
+        self.app_state.recordings_changed.emit()
+        self._finish_view(source_wav, source_srt, "Saved as a separate recording.")
+        QMessageBox.warning(self, "Couldn't append",
+                            f"{msg}\nKept the take as its own recording instead.")
+
+    def _finish_view(self, wav_path, srt_path, hint):
         self.waveform.setVisible(False)
         self.result_preview.setVisible(True)
         try:
@@ -405,7 +406,7 @@ class RecordingView(QWidget):
         self.record_btn.setEnabled(True)
         self.name_input.setEnabled(True)
         self._set_state("done")
-        self.hint.setText("Saved. Record another take, or go back to Sounds.")
+        self.hint.setText(hint)
 
     # ---- navigation ----------------------------------------------------
 

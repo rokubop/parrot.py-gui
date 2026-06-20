@@ -106,6 +106,15 @@ the segment/trim/reset pipeline, and ensemble-combine were each functionally
 tested. Live audio capture itself can't be exercised headless — **needs a manual
 run on Windows with a mic.**
 
+**Editing & appending (refinement):** A recording is just a file when you're
+*not* live, so all real editing happens on saved clips (no risky live-stream
+splicing): the **Edit view** does arbitrary delete/trim/threshold, and
+**Append** (card ⋯ menu or the Edit view) records a take and concatenates it
+onto an existing clip + re-detects (`AppendWorker`; rate-mismatched takes are
+resampled). The live recording screen is now a clean capture monitor — its
+mark/cut UI was removed in favor of editing the saved clip. Delete-recording
+confirmation names the sound.
+
 **Open follow-ups (Phase 6):**
 - **Manual run-through on Windows** with a real mic: live recording, pause/clear,
   threshold re-detect, trim, and the device picker (87 input devices enumerated).

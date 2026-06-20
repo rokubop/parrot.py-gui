@@ -251,6 +251,7 @@ class SessionCard(QFrame):
         self.selected.emit(self)
         menu = QMenu(self)
         for label, name in (("Edit detection / trim…", "edit"),
+                            ("Append a recording…", "append"),
                             ("Rename…", "rename"),
                             ("Move to another sound…", "move"),
                             ("Open folder", "open")):

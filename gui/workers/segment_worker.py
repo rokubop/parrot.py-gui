@@ -62,6 +62,22 @@ def read_min_dbfs(wav_path):
     return None
 
 
+def redetect(wav_path, label):
+    """Re-run detection on a wav, preserving a manual threshold override if the
+    recording has one (-> MANUAL.srt) else producing the automatic .v<N>.srt.
+    Returns the srt path written."""
+    base, _label, seg = _paths(wav_path)
+    if os.path.isfile(_thresholds(seg, base)) and os.path.isfile(_manual_srt(seg, base)):
+        srt = _manual_srt(seg, base)
+        process_wav_file(wav_path, srt, _comparison(seg, base), None, [label],
+                         override_file=_thresholds(seg, base))
+    else:
+        srt = _auto_srt(seg, base)
+        process_wav_file(wav_path, srt, _comparison(seg, base),
+                         _thresholds(seg, base), [label])
+    return srt
+
+
 class ReSegmentWorker(QThread):
     """Re-run detection with a manual threshold override -> MANUAL.srt."""
     finished_ok = pyqtSignal(str)   # srt path
@@ -135,19 +151,7 @@ class TrimWorker(QThread):
     def run(self):
         try:
             self._trim_wav()
-            base, _label, seg = _paths(self.wav_path)
-            # Preserve a manual override if the recording had one; else auto.
-            if os.path.isfile(_thresholds(seg, base)) and \
-                    os.path.isfile(_manual_srt(seg, base)):
-                srt = _manual_srt(seg, base)
-                process_wav_file(self.wav_path, srt, _comparison(seg, base), None,
-                                 [self.label],
-                                 override_file=_thresholds(seg, base))
-            else:
-                srt = _auto_srt(seg, base)
-                process_wav_file(self.wav_path, srt, _comparison(seg, base),
-                                 _thresholds(seg, base), [self.label])
-            self.finished_ok.emit(srt)
+            self.finished_ok.emit(redetect(self.wav_path, self.label))
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -178,3 +182,56 @@ class TrimWorker(QThread):
         out.setframerate(fr)
         out.writeframes(trimmed.tobytes())
         out.close()
+
+
+class AppendWorker(QThread):
+    """Concatenate one recording's audio onto another, then re-detect the
+    combined clip. Used to extend an existing recording with a fresh take.
+    Not destructive to data — it grows the target."""
+    finished_ok = pyqtSignal(str)   # srt path of the (longer) target
+    failed = pyqtSignal(str)
+
+    def __init__(self, target_wav, source_wav, label, parent=None):
+        super().__init__(parent)
+        self.target_wav = target_wav
+        self.source_wav = source_wav
+        self.label = label
+
+    def run(self):
+        try:
+            self._concat()
+            self.finished_ok.emit(redetect(self.target_wav, self.label))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    def _concat(self):
+        t_nch, t_sw, t_fr, t = self._read(self.target_wav)
+        s_nch, s_sw, s_fr, s = self._read(self.source_wav)
+        if s_nch != t_nch or s_sw != t_sw:
+            raise ValueError("Can't append: channel/sample-width mismatch.")
+        if s_fr != t_fr and len(s):
+            # Resample the new audio to the target's rate so they splice cleanly.
+            n_out = max(1, int(len(s) * t_fr / s_fr))
+            s = np.interp(np.linspace(0, len(s), n_out, endpoint=False),
+                          np.arange(len(s)), s.astype(np.float32)).astype(np.int16)
+        combined = np.concatenate([t, s])
+        out = wave.open(self.target_wav, "wb")
+        out.setnchannels(t_nch)
+        out.setsampwidth(t_sw)
+        out.setframerate(t_fr)
+        out.writeframes(combined.tobytes())
+        out.close()
+
+    @staticmethod
+    def _read(path):
+        wf = wave.open(path, "rb")
+        nch, sw, fr = wf.getnchannels(), wf.getsampwidth(), wf.getframerate()
+        raw = wf.readframes(wf.getnframes())
+        wf.close()
+        arr = np.frombuffer(raw, dtype=np.int16)
+        # Average to mono if needed so the splice is always mono int16.
+        if nch > 1:
+            usable = (len(arr) // nch) * nch
+            arr = arr[:usable].reshape(-1, nch).mean(axis=1).astype(np.int16)
+            nch = 1
+        return nch, sw, fr, arr
