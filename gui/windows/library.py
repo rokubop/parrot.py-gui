@@ -1,9 +1,10 @@
 import os
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
+    QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, _wav_duration
 from gui import theme
@@ -47,15 +48,24 @@ class SoundLibraryPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter)
 
-        # Left: narrow sound list
+        # Left: sound list — three columns (sound / data quantity / detected time)
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
         self.left_title = QLabel("Sounds")
         left_layout.addWidget(self.left_title)
-        self.label_list = QListWidget()
+        self.label_list = QTreeWidget()
+        self.label_list.setColumnCount(3)
+        self.label_list.setHeaderLabels(["Sound", "Data", "Time"])
+        self.label_list.setRootIsDecorated(False)
+        self.label_list.setUniformRowHeights(True)
+        header = self.label_list.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.label_list.currentItemChanged.connect(lambda *_: self._select_timer.start())
         left_layout.addWidget(self.label_list)
+        left.setMinimumWidth(280)
         splitter.addWidget(left)
 
         # Right: toolbar + scrollable stack of session cards
@@ -87,7 +97,9 @@ class SoundLibraryPage(QWidget):
         right_layout.addWidget(self.scroll)
         splitter.addWidget(right)
 
-        splitter.setSizes([220, 980])
+        splitter.setStretchFactor(0, 0)   # left panel keeps its width
+        splitter.setStretchFactor(1, 1)   # right side absorbs extra space
+        splitter.setSizes([300, 900])
 
         self._apply_theme_styles()
         self._show_message("Select a sound to review its recordings.")
@@ -159,18 +171,23 @@ class SoundLibraryPage(QWidget):
         for label in self.app_state.get_sound_labels():
             duration_ms = self.app_state.get_label_duration_ms(label)
             duration = ms_to_srt_timestring(duration_ms, False).split(",")[0]
-            item = QListWidgetItem(f"{label}    {duration}")
-            item.setData(Qt.ItemDataRole.UserRole, label)
-            self.label_list.addItem(item)
+            quantity, _pct, _next = get_quantity_rating(duration_ms)
+            item = QTreeWidgetItem([label, quantity, duration])
+            item.setData(0, Qt.ItemDataRole.UserRole, label)
+            color = self._QUANTITY_COLORS.get(quantity)
+            if color:
+                item.setForeground(1, QColor(color))
+            item.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.label_list.addTopLevelItem(item)
         self.label_list.blockSignals(False)
 
-        if self.label_list.count() == 0:
+        if self.label_list.topLevelItemCount() == 0:
             self.sound_title.setText("")
             self.sound_stats.setText("")
             self.sound_quantity.setText("")
             self._show_message("No recordings found in data/recordings/.")
         elif not had_selection:
-            self.label_list.setCurrentRow(0)
+            self.label_list.setCurrentItem(self.label_list.topLevelItem(0))
 
     def _build_current(self):
         self._build_for_item(self.label_list.currentItem())
@@ -208,7 +225,7 @@ class SoundLibraryPage(QWidget):
                 self.sound_quantity.setText("")
                 message.setText("Select a sound to review its recordings.")
             else:
-                label = current.data(Qt.ItemDataRole.UserRole)
+                label = current.data(0, Qt.ItemDataRole.UserRole)
                 recordings = self.app_state.get_recordings_for_label(label)
                 self._update_sound_header(label, recordings)
                 if not recordings:
