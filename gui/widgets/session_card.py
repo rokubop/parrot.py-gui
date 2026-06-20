@@ -46,6 +46,29 @@ def _media_icon(kind, color, size=13):
     return icon
 
 
+def _dots_icon(color, size=13):
+    """Three horizontal dots for the per-card actions menu, drawn (not a font
+    glyph) so it can't show up as a missing-glyph box like '⋯' does in Inter."""
+    key = ("dots", color, size)
+    cached = _ICON_CACHE.get(key)
+    if cached is not None:
+        return cached
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(color))
+    r = size * 0.11
+    cy = size / 2
+    for cx in (size * 0.24, size * 0.5, size * 0.76):
+        p.drawEllipse(QPointF(cx, cy), r, r)
+    p.end()
+    icon = QIcon(pm)
+    _ICON_CACHE[key] = icon
+    return icon
+
+
 def _parse_date(session_name):
     """Filenames end in __<unix-timestamp>; decode it to a readable date."""
     tail = session_name.rsplit("__", 1)[-1]
@@ -214,8 +237,13 @@ class SessionCard(QFrame):
         self.expand_btn = self._icon_button("Expand", "Show a taller waveform — E", self.toggle_expanded)
         row.addWidget(self.expand_btn)
 
-        self.menu_btn = self._icon_button("⋯", "Edit, rename, move, or delete this recording", self._show_menu)
-        self.menu_btn.setFixedWidth(34)
+        self.menu_btn = QPushButton()
+        self.menu_btn.setIcon(_dots_icon(t["text"]))
+        self.menu_btn.setIconSize(QSize(13, 13))
+        self.menu_btn.setToolTip("Edit, rename, move, or delete this recording")
+        self.menu_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.menu_btn.setFixedWidth(40)
+        self.menu_btn.clicked.connect(self._show_menu)
         row.addWidget(self.menu_btn)
         return row
 
