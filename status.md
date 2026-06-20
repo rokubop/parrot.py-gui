@@ -58,21 +58,80 @@
 - **20 sound directories** in `data/recordings/`
 - **6 models** (`.pkl` + weights) in `data/models/`
 
+### Phase 6: Editing, management & full 4-tab app (this session)
+
+**Branch `sounds-ux-and-recording-perf` (continued).** Turned the read-only
+library into a full editing app with four tabs: **Sounds, Models, Settings,
+About** (`main_window.py` — Recording folded into Sounds, Training into Models).
+
+- **Foundation**
+  - `gui/services/library_ops.py` — Qt-free fs ops for sounds/recordings/models
+    (create/rename/clone/delete/move + reveal-in-file-manager + name validation).
+    Unit-tested against temp dirs.
+  - `gui/widgets/confirm_dialog.py` — reusable **two-step** destructive confirm
+    (type-the-name for sounds/models, checkbox for recordings). Every delete
+    routes through it.
+  - `AppState` mutation wrappers emit `recordings_changed` / `models_changed`.
+- **Sounds tab** (`library.py`): New sound, Rename, Clone, Delete, Open folder
+  (header buttons + left-list right-click). Per-recording `…` menu on each card:
+  Edit, Rename, Move to another sound, Open folder, Delete. `_populate_labels`
+  now preserves/restores selection so in-place edits rebuild the cards.
+- **Recording view** (`recording_view.py`): Audacity-like live capture with live
+  waveform + a live readout (time, SNR-based quality, dBFS, noise floor,
+  detected time, data-quantity rating, duration type). Record / Pause /
+  Clear-last-3s / Stop; device + strategy pickers. `AudioWorker` gained a
+  `strategy` param.
+- **Edit view** (`edit_view.py` + `workers/segment_worker.py`): **redo the blue
+  overlay** for real — re-detect at a chosen dBFS threshold + duration type
+  (writes `_thresholds.txt` override → `.MANUAL.srt`), Reset to auto, and
+  **delete a selected time range** (rewrites the source WAV + re-detects).
+  Lightweight playback. Verified end-to-end on synthetic audio. **This replaces
+  the old `recording.py` dBFS slider, which never passed its value through.**
+- **Models tab** (`models.py` + `workers/combine_worker.py`): list + details +
+  Inspect (loads classes/accuracy off-thread) + Rename / Clone / Delete /
+  Open folder + Train (reuses `TrainingWorker`) + **Combine into an ensemble**.
+- **Settings** (`settings.py` + `services/user_config.py`): input device,
+  threshold mode, default strategy, default model, data folders. Persists to
+  `data/code/config.py` (applies on next launch).
+- **About** (`about.py`): explains sounds/recordings, detection + the blue
+  overlay, discrete/continuous, the **data-quantity rating** (Not enough /
+  Sufficient / Good / Excellent), SNR, models, and strategies.
+- **`strategies.py`** — curated detection-strategy presets.
+- **Cleanup**: removed dead `windows/recording.py`, `windows/home.py`,
+  `widgets/segment_bar.py`, `widgets/duration_bar.py`.
+
+**Verification:** offscreen (`QT_QPA_PLATFORM=offscreen`) smoke tests build the
+full window and navigate every tab + sub-view; `library_ops`, `user_config`,
+the segment/trim/reset pipeline, and ensemble-combine were each functionally
+tested. Live audio capture itself can't be exercised headless — **needs a manual
+run on Windows with a mic.**
+
+**Open follow-ups (Phase 6):**
+- **Manual run-through on Windows** with a real mic: live recording, pause/clear,
+  threshold re-detect, trim, and the device picker (87 input devices enumerated).
+- Switching sounds is still synchronous (see "Known open issues" below) — the new
+  edit/record flows didn't change that.
+- **Terminal-only ops not yet in the GUI:** hierarchical model combine (needs a
+  per-class tree UI), model accuracy testing (`settings.py` → [A]), file-format
+  conversion / resample (`convert_files`), and "upgrade model settings"
+  (`combine_models` [U]). All still available from `python settings.py`.
+- Recording strategy is selectable per session but **threshold mode
+  (strict/lenient) is global** (Settings, applies on restart).
+
 ---
 
 ## Next Session
 
 ### 0. Known open issues (start here)
 - **Switching sounds is slow.** Each `SessionCard.__init__` synchronously reads the full WAV and builds a pyqtgraph plot on the UI thread (`audio_preview.load()`), so selecting a sound with several recordings blocks visibly. Phase 5 removed the *duplicate* decode (playback now reuses the preview's samples), but the initial decode + plot build is still synchronous. **Fix: load waveform data off the UI thread** (a QThread/worker that reads + downsamples, then hands arrays back to the widget to render).
-- **`gui/windows/home.py` (`HomePage`, `ActionCard`, `MetadataWorker`) is built but NOT wired into `main_window.py`.** Decide whether to wire it in as a separate "Home" page or fold its model/Talon summary into the Sounds library. It is currently dead code.
-- **`gui/widgets/duration_bar.py`** exists but verify where (if anywhere) it is used.
+- **Dead code removed in Phase 6:** `windows/home.py`, `windows/recording.py`, `widgets/segment_bar.py`, `widgets/duration_bar.py` are gone. Talon discovery (`gui/services/talon_discovery.py`) is still unsurfaced in the UI.
 
-### Priority Order (original plan — still valid)
+### Priority Order
 
-1. Home page with model/sound summary (partly prototyped in `home.py`)
-2. Talon discovery & status display (`gui/services/talon_discovery.py` exists — wire its results into the UI)
-3. First-run wizard
-4. Patterns.json full editor
+1. Talon discovery & status display (`gui/services/talon_discovery.py` exists — wire its results into the UI)
+2. Move `SessionCard`/preview decode off the UI thread (the slow-switch issue above)
+3. Remaining terminal-only ops in the GUI (hierarchical combine, accuracy test, file conversion, upgrade-settings)
+4. First-run wizard / Patterns.json editor
 
 ---
 
