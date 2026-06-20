@@ -95,7 +95,17 @@ class AudioPreviewWidget(QWidget):
                                                   brush=sel_brush, pen=pg.mkPen(accent, width=1))
         self.selection_item.setZValue(5)
         self.selection_item.setVisible(False)
+        # Let clicks pass through the band to the plot so a click dismisses it.
+        self.selection_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        for _line in getattr(self.selection_item, "lines", []):
+            _line.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.plot.addItem(self.selection_item)
+
+        # Auto-scroll the view while dragging a selection past the visible edge.
+        self._drag_scene_pos = None
+        self._drag_timer = QTimer(self)
+        self._drag_timer.setInterval(20)
+        self._drag_timer.timeout.connect(self._drag_autoscroll)
         self.sel_label = pg.TextItem(color=accent, anchor=(0.5, 0))
         self.sel_label.setZValue(17)
         self.sel_label.setVisible(False)
@@ -367,17 +377,21 @@ class AudioPreviewWidget(QWidget):
             pg.ViewBox.mouseDragEvent(self._vb, ev, axis=axis)
             return
         ev.accept()
+        self._drag_scene_pos = ev.scenePos()
         x = max(0.0, min(self._vb.mapSceneToView(ev.scenePos()).x(), self._duration))
         if ev.isStart():
+            self.pressed.emit()
+            self._clear_selection()      # any new drag drops the previous range
             self._sel_anchor = x
             self._set_selection(x, x)
+            self._drag_timer.start()
         elif ev.isFinish():
+            self._drag_timer.stop()
             anchor = self._sel_anchor
             self._sel_anchor = None
             if anchor is None:
                 return
             a, b = sorted((anchor, x))
-            self.pressed.emit()
             if (b - a) < self._min_selection():
                 # Too small to be a range — treat it as a click/seek.
                 self._clear_selection()
@@ -388,6 +402,27 @@ class AudioPreviewWidget(QWidget):
         elif self._sel_anchor is not None:
             a, b = sorted((self._sel_anchor, x))
             self._set_selection(a, b)
+
+    def _drag_autoscroll(self):
+        """While dragging a selection, pan the view so it follows the cursor when
+        it runs off either edge, extending the selection to keep up."""
+        if self._sel_anchor is None or self._drag_scene_pos is None:
+            return
+        xv = self._vb.mapSceneToView(self._drag_scene_pos).x()
+        x0, x1 = self._vb.viewRange()[0]
+        step = (x1 - x0) * 0.07
+        if xv > x1 and x1 < self._duration:
+            shift = min(step, self._duration - x1)
+            self._vb.setXRange(x0 + shift, x1 + shift, padding=0)
+        elif xv < x0 and x0 > 0:
+            shift = min(step, x0)
+            self._vb.setXRange(x0 - shift, x1 - shift, padding=0)
+        else:
+            return
+        # Re-read under the (now shifted) view and extend the selection.
+        xc = max(0.0, min(self._vb.mapSceneToView(self._drag_scene_pos).x(), self._duration))
+        a, b = sorted((self._sel_anchor, xc))
+        self._set_selection(a, b)
 
     # ---- playback audio (shared with the owning card) ------------------
 
@@ -455,6 +490,7 @@ class AudioPreviewWidget(QWidget):
         """Tear down plot items before deletion so pyqtgraph doesn't paint
         an InfiniteLine whose ViewBox has already gone away."""
         self._render_timer.stop()
+        self._drag_timer.stop()
         if self._anim is not None:
             self._anim.stop()
             self._anim = None
