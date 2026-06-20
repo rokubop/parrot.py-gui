@@ -11,6 +11,7 @@ from gui.windows.models import ModelsPage
 from gui.windows.settings import SettingsPage
 from gui.windows.about import AboutPage
 from gui.windows.recording_view import RecordingView
+from gui.windows.edit_view import EditRecordingView
 
 
 class MainWindow(QMainWindow):
@@ -42,6 +43,11 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.recording_view)
         self.library_page.record_requested.connect(self._open_recording)
         self.recording_view.done.connect(self._return_to_sounds)
+
+        self.edit_view = EditRecordingView(self.app_state, self)
+        self.stack.addWidget(self.edit_view)
+        self.library_page.edit_requested.connect(self._open_edit)
+        self.edit_view.done.connect(self._return_to_sounds)
         # Leaving the recording view via the toolbar should stop (and save) any
         # take in progress rather than recording in the background.
         self.stack.currentChanged.connect(self._on_stack_changed)
@@ -81,14 +87,21 @@ class MainWindow(QMainWindow):
             self.recording_view.start_new()
         self.stack.setCurrentWidget(self.recording_view)
 
+    def _open_edit(self, wav_path):
+        self.edit_view.start_for(wav_path)
+        self.stack.setCurrentWidget(self.edit_view)
+
     def _return_to_sounds(self, label):
         self.stack.setCurrentWidget(self.library_page)
         if label:
             self.library_page._select_label_by_name(label)
 
     def _on_stack_changed(self, _index):
-        if self.stack.currentWidget() is not self.recording_view:
+        current = self.stack.currentWidget()
+        if current is not self.recording_view:
             self.recording_view.stop_worker()
+        if current is not self.edit_view:
+            self.edit_view.stop_playback()
 
     def _update_status_bar(self):
         try:

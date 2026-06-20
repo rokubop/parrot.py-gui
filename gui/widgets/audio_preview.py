@@ -434,6 +434,10 @@ class AudioPreviewWidget(QWidget):
     def duration(self):
         return self._duration
 
+    def current_selection(self):
+        """The selected (start, end) range in seconds, or None."""
+        return self._selection
+
     # ---- horizontal scrollbar -----------------------------------------
 
     def _sync_scrollbar(self):
