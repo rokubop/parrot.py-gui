@@ -140,25 +140,31 @@ class SoundLibraryPage(QWidget):
         self.view_label = QLabel("View:")
         bar_layout.addWidget(self.view_label)
         self._mode_group = QButtonGroup(self)
+        self._mode_buttons = {}
         for mode, text in (("waveform", "Waveform"), ("spectrogram", "Spectrogram")):
             btn = QPushButton(text)
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setChecked(mode == self._mode)
+            btn.setToolTip("Toggle waveform / spectrogram (V)")
             btn.clicked.connect(lambda _checked, m=mode: self._set_mode(m))
             self._mode_group.addButton(btn)
+            self._mode_buttons[mode] = btn
             bar_layout.addWidget(btn)
 
         self.normalize_btn = QPushButton("Normalize")
         self.normalize_btn.setCheckable(True)
         self.normalize_btn.setChecked(self._normalized)
         self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.normalize_btn.setToolTip("Toggle amplitude normalization (N)")
         self.normalize_btn.toggled.connect(self._set_normalized)
         bar_layout.addSpacing(16)
         bar_layout.addWidget(self.normalize_btn)
 
         bar_layout.addStretch()
-        self.hint_label = QLabel("Space play/pause   ·   drag to select   ·   Fit zooms to selection   ·   drag playhead to scrub   ·   scroll to zoom   ·   double-click resets")
+        self.hint_label = QLabel(
+            "Space play   ·   F fit   ·   E expand   ·   Home start   ·   Esc clear   ·   "
+            "N normalize   ·   V view   ·   drag to select   ·   ↑↓ session")
         bar_layout.addWidget(self.hint_label)
         return bar
 
@@ -351,8 +357,8 @@ class SoundLibraryPage(QWidget):
             super().keyPressEvent(event)
             return
         key = event.key()
+        target = self._selected_card or self._cards[0]
         if key == Qt.Key.Key_Space:
-            target = self._selected_card or self._cards[0]
             target.toggle_play()
         elif key == Qt.Key.Key_Left and self._selected_card:
             self._selected_card.seek_relative(-self.SEEK_STEP)
@@ -360,8 +366,25 @@ class SoundLibraryPage(QWidget):
             self._selected_card.seek_relative(self.SEEK_STEP)
         elif key in (Qt.Key.Key_Down, Qt.Key.Key_Up):
             self._step_selection(1 if key == Qt.Key.Key_Down else -1)
+        elif key == Qt.Key.Key_F:
+            target.fit_view()
+        elif key == Qt.Key.Key_E:
+            target.toggle_expanded()
+        elif key == Qt.Key.Key_Home:
+            target.go_to_start()
+        elif key == Qt.Key.Key_Escape:
+            target.clear_selection()
+        elif key == Qt.Key.Key_N:
+            self.normalize_btn.setChecked(not self.normalize_btn.isChecked())
+        elif key == Qt.Key.Key_V:
+            self._toggle_mode()
         else:
             super().keyPressEvent(event)
+
+    def _toggle_mode(self):
+        new_mode = "spectrogram" if self._mode == "waveform" else "waveform"
+        self._mode_buttons[new_mode].setChecked(True)
+        self._set_mode(new_mode)
 
     def _step_selection(self, delta):
         if self._selected_card in self._cards:

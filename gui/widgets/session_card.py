@@ -3,12 +3,36 @@ import wave
 from datetime import datetime
 import numpy as np
 import sounddevice as sd
-from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QPointF, QRectF, QSize, pyqtSignal
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPolygonF, QColor
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 )
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui import theme
+
+
+def _media_icon(kind, color, size=13):
+    """Draw a crisp, theme-colored play/pause glyph as a fixed-size QIcon so the
+    button never changes height when the label swaps (the old text glyphs
+    ▶/⏸ had different heights and shifted the layout)."""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(color))
+    m = size * 0.16
+    if kind == "play":
+        p.drawPolygon(QPolygonF([QPointF(m, m), QPointF(m, size - m),
+                                 QPointF(size - m, size / 2)]))
+    else:  # pause
+        bw = size * 0.24
+        gap = size * 0.18
+        p.drawRect(QRectF(size / 2 - gap / 2 - bw, m, bw, size - 2 * m))
+        p.drawRect(QRectF(size / 2 + gap / 2, m, bw, size - 2 * m))
+    p.end()
+    return QIcon(pm)
 
 
 def _parse_date(session_name):
@@ -109,16 +133,19 @@ class SessionCard(QFrame):
 
     def _build_header(self, session_name, thresholds_path):
         row = QHBoxLayout()
-        self.play_btn = QPushButton("▶ Play")
+        t = theme.colors()
+        self._play_icon = _media_icon("play", t["text_bright"])
+        self._pause_icon = _media_icon("pause", t["text_bright"])
+        self.play_btn = QPushButton(self._play_icon, " Play")
+        self.play_btn.setIconSize(QSize(13, 13))
         self.play_btn.setFixedWidth(90)
         self.play_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
 
-        row.addWidget(self._icon_button("Fit", "Fit to selection, or the whole clip (double-click resets)", self.fit_view))
-        row.addWidget(self._icon_button("Go to Start", "Move the playhead back to the beginning", self.go_to_start))
+        row.addWidget(self._icon_button("Fit", "Fit to selection, or the whole clip — F (double-click resets)", self.fit_view))
+        row.addWidget(self._icon_button("Go to Start", "Move the playhead back to the beginning — Home", self.go_to_start))
 
-        t = theme.colors()
         title = session_name.split("__")[0]
         name = QLabel(title)
         name.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")
@@ -138,7 +165,7 @@ class SessionCard(QFrame):
             thr.setStyleSheet(f"color: {t['text_dim']}; border: none; background: transparent;")
             row.addWidget(thr)
 
-        self.expand_btn = self._icon_button("Expand", "Show a taller waveform", self.toggle_expanded)
+        self.expand_btn = self._icon_button("Expand", "Show a taller waveform — E", self.toggle_expanded)
         row.addWidget(self.expand_btn)
         return row
 
@@ -220,6 +247,9 @@ class SessionCard(QFrame):
         self.expand_btn.setText("Collapse" if self._expanded else "Expand")
         self.selected.emit(self)
 
+    def clear_selection(self):
+        self.preview._clear_selection()
+
     # ---- playback ------------------------------------------------------
 
     def _load_audio(self):
@@ -273,7 +303,8 @@ class SessionCard(QFrame):
         sd.play(clip, self._sample_rate)
 
         self._playing = True
-        self.play_btn.setText("⏸ Pause")
+        self.play_btn.setIcon(self._pause_icon)
+        self.play_btn.setText(" Pause")
         self.preview.set_playhead(self._position)
         self._clock.restart()
         self._timer.start()
@@ -285,7 +316,8 @@ class SessionCard(QFrame):
             self._position = max(0.0, min(self._position, self._duration))
         self._playing = False
         self._timer.stop()
-        self.play_btn.setText("▶ Play")
+        self.play_btn.setIcon(self._play_icon)
+        self.play_btn.setText(" Play")
         self.preview.set_playhead(self._position)
 
     def stop(self):
@@ -294,7 +326,8 @@ class SessionCard(QFrame):
             sd.stop()
         self._playing = False
         self._timer.stop()
-        self.play_btn.setText("▶ Play")
+        self.play_btn.setIcon(self._play_icon)
+        self.play_btn.setText(" Play")
 
     def cleanup(self):
         """Release resources before deletion."""
