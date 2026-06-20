@@ -123,7 +123,13 @@ run on Windows with a mic.**
 ## Next Session
 
 ### 0. Known open issues (start here)
-- **Switching sounds was slow — FIXED in Phase 6.** The cost was never the WAV decode (~15 ms); it was building a pyqtgraph plot per recording **synchronously on the UI thread** (~50–220 ms each → ~1 s freeze for a 5-recording sound). Fix: `SessionCard` now builds cheaply with a same-height placeholder and a lazy `load_preview()`; the library swaps the new view in instantly (~40–100 ms) and fills previews **progressively**, one per event-loop tick (`_load_timer` / `_pending_loads`), selected card first. The pyqtgraph plot must be built on the UI thread (Qt rule), so the win is from *deferring + spreading* the work, not threading it. Verified responsive + rapid-switch-safe offscreen; **confirm the feel on Windows.** Possible further wins if needed: cache decoded audio, cap plotted points, drop antialias on dense envelopes.
+- **Switching sounds was slow — FIXED in Phase 6.** The cost was never the WAV decode (~15 ms); it was building a pyqtgraph plot per recording **synchronously on the UI thread** (~50–220 ms each → ~1 s freeze for a 5-recording sound). Fixes (pyqtgraph plots must be built on the UI thread, so the wins are from *deferring + spreading* the work):
+  - `SessionCard` builds cheaply with a same-height placeholder + lazy `load_preview()`; previews fill in **progressively**, one per event-loop tick (`_load_timer` / `_pending_loads`), selected card first.
+  - **Old view teardown is deferred** to the next tick (`_garbage` / `_collect_garbage`) — destroying the *previous* sound's loaded plots cost ~58 ms and was blocking the new view from appearing.
+  - Selection debounce dropped 60 ms → 15 ms; play/pause icons cached (`_ICON_CACHE`).
+  - Result: blocking build ~104 ms → ~14 ms; felt switch latency ~30 ms.
+  - **Startup**: only the Sounds page is built eagerly; Models/Settings/About + recording/edit views construct on first use (`main_window` lazy getters). Window build ~1031 ms → ~322 ms (the remaining ~1.1 s is the unavoidable PyQt6/sounddevice import).
+  - Verified responsive + rapid-switch-safe offscreen; **confirm the feel on Windows.** Further wins if ever needed: cache decoded audio, cap plotted points, drop antialias on dense envelopes.
 - **Dead code removed in Phase 6:** `windows/home.py`, `windows/recording.py`, `widgets/segment_bar.py`, `widgets/duration_bar.py` are gone. Talon discovery (`gui/services/talon_discovery.py`) is still unsurfaced in the UI.
 
 ### Priority Order

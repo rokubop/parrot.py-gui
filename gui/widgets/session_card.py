@@ -13,10 +13,18 @@ from gui.services import library_ops
 from gui import theme
 
 
+_ICON_CACHE = {}
+
+
 def _media_icon(kind, color, size=13):
     """Draw a crisp, theme-colored play/pause glyph as a fixed-size QIcon so the
     button never changes height when the label swaps (the old text glyphs
-    ▶/⏸ had different heights and shifted the layout)."""
+    ▶/⏸ had different heights and shifted the layout). Cached per
+    (kind, color, size) so building many cards doesn't repaint identical icons."""
+    key = (kind, color, size)
+    cached = _ICON_CACHE.get(key)
+    if cached is not None:
+        return cached
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
@@ -33,7 +41,9 @@ def _media_icon(kind, color, size=13):
         p.drawRect(QRectF(size / 2 - gap / 2 - bw, m, bw, size - 2 * m))
         p.drawRect(QRectF(size / 2 + gap / 2, m, bw, size - 2 * m))
     p.end()
-    return QIcon(pm)
+    icon = QIcon(pm)
+    _ICON_CACHE[key] = icon
+    return icon
 
 
 def _parse_date(session_name):

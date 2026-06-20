@@ -7,11 +7,6 @@ import sounddevice as sd
 from config.config import INPUT_DEVICE_INDEX
 from gui.models.app_state import AppState
 from gui.windows.library import SoundLibraryPage
-from gui.windows.models import ModelsPage
-from gui.windows.settings import SettingsPage
-from gui.windows.about import AboutPage
-from gui.windows.recording_view import RecordingView
-from gui.windows.edit_view import EditRecordingView
 
 
 class MainWindow(QMainWindow):
@@ -26,51 +21,40 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        # Four top-level pages: Sounds, Models, Settings, About.
-        # Recording and editing live inside the Sounds page; training lives
-        # inside the Models page.
+        # Only the landing page (Sounds) is built eagerly. The other tabs and
+        # the recording/edit sub-views are constructed on first use so startup
+        # shows the library as fast as possible (each of the others costs
+        # ~30-200 ms to build, incl. an audio-device query for the recording
+        # views). See _page() / the lazy getters below.
         self.library_page = SoundLibraryPage(self.app_state, self)
-        self.models_page = ModelsPage(self.app_state, self)
-        self.settings_page = SettingsPage(self.app_state, self)
-        self.about_page = AboutPage(self.app_state, self)
-        for page in (self.library_page, self.models_page,
-                     self.settings_page, self.about_page):
-            self.stack.addWidget(page)
-
-        # Full-screen sub-views of the Sounds workflow (not in the toolbar):
-        # recording capture and recording editing.
-        self.recording_view = RecordingView(self.app_state, self)
-        self.stack.addWidget(self.recording_view)
+        self.stack.addWidget(self.library_page)
         self.library_page.record_requested.connect(self._open_recording)
-        self.recording_view.done.connect(self._return_to_sounds)
-
-        self.edit_view = EditRecordingView(self.app_state, self)
-        self.stack.addWidget(self.edit_view)
         self.library_page.edit_requested.connect(self._open_edit)
-        self.edit_view.done.connect(self._return_to_sounds)
-        # Leaving the recording view via the toolbar should stop (and save) any
-        # take in progress rather than recording in the background.
+
+        self.models_page = None
+        self.settings_page = None
+        self.about_page = None
+        self.recording_view = None
+        self.edit_view = None
+
         self.stack.currentChanged.connect(self._on_stack_changed)
 
         # Toolbar navigation — checkable actions so the current tab is obvious.
         toolbar = QToolBar("Navigation")
         toolbar.setMovable(False)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
-        nav_group = QActionGroup(self)
-        nav_group.setExclusive(True)
+        self._nav_group = QActionGroup(self)
+        self._nav_group.setExclusive(True)
 
-        for text, page in (("Sounds", self.library_page),
-                           ("Models", self.models_page),
-                           ("Settings", self.settings_page),
-                           ("About", self.about_page)):
+        self.nav_actions = {}
+        for text in ("Sounds", "Models", "Settings", "About"):
             action = QAction(text, self)
             action.setCheckable(True)
-            action.triggered.connect(
-                lambda _checked, p=page: self.stack.setCurrentWidget(p))
-            nav_group.addAction(action)
+            action.triggered.connect(lambda _checked, t=text: self._show_tab(t))
+            self._nav_group.addAction(action)
             toolbar.addAction(action)
-            if page is self.library_page:
-                action.setChecked(True)
+            self.nav_actions[text] = action
+        self.nav_actions["Sounds"].setChecked(True)
 
         # Start on the Sounds library
         self.stack.setCurrentWidget(self.library_page)
@@ -80,27 +64,81 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self._update_status_bar()
 
+    # ---- lazy page construction ---------------------------------------
+
+    def _get_models_page(self):
+        if self.models_page is None:
+            from gui.windows.models import ModelsPage
+            self.models_page = ModelsPage(self.app_state, self)
+            self.stack.addWidget(self.models_page)
+        return self.models_page
+
+    def _get_settings_page(self):
+        if self.settings_page is None:
+            from gui.windows.settings import SettingsPage
+            self.settings_page = SettingsPage(self.app_state, self)
+            self.stack.addWidget(self.settings_page)
+        return self.settings_page
+
+    def _get_about_page(self):
+        if self.about_page is None:
+            from gui.windows.about import AboutPage
+            self.about_page = AboutPage(self.app_state, self)
+            self.stack.addWidget(self.about_page)
+        return self.about_page
+
+    def _get_recording_view(self):
+        if self.recording_view is None:
+            from gui.windows.recording_view import RecordingView
+            self.recording_view = RecordingView(self.app_state, self)
+            self.recording_view.done.connect(self._return_to_sounds)
+            self.stack.addWidget(self.recording_view)
+        return self.recording_view
+
+    def _get_edit_view(self):
+        if self.edit_view is None:
+            from gui.windows.edit_view import EditRecordingView
+            self.edit_view = EditRecordingView(self.app_state, self)
+            self.edit_view.done.connect(self._return_to_sounds)
+            self.stack.addWidget(self.edit_view)
+        return self.edit_view
+
+    def _show_tab(self, name):
+        if name == "Sounds":
+            self.stack.setCurrentWidget(self.library_page)
+        elif name == "Models":
+            self.stack.setCurrentWidget(self._get_models_page())
+        elif name == "Settings":
+            self.stack.setCurrentWidget(self._get_settings_page())
+        elif name == "About":
+            self.stack.setCurrentWidget(self._get_about_page())
+
+    # ---- sub-views -----------------------------------------------------
+
     def _open_recording(self, label):
+        view = self._get_recording_view()
         if label:
-            self.recording_view.start_for(label)
+            view.start_for(label)
         else:
-            self.recording_view.start_new()
-        self.stack.setCurrentWidget(self.recording_view)
+            view.start_new()
+        self.stack.setCurrentWidget(view)
 
     def _open_edit(self, wav_path):
-        self.edit_view.start_for(wav_path)
-        self.stack.setCurrentWidget(self.edit_view)
+        view = self._get_edit_view()
+        view.start_for(wav_path)
+        self.stack.setCurrentWidget(view)
 
     def _return_to_sounds(self, label):
         self.stack.setCurrentWidget(self.library_page)
+        self.nav_actions["Sounds"].setChecked(True)
         if label:
             self.library_page._select_label_by_name(label)
 
     def _on_stack_changed(self, _index):
         current = self.stack.currentWidget()
-        if current is not self.recording_view:
+        if self.recording_view is not None and current is not self.recording_view:
             self.recording_view.stop_worker()
-        if current is not self.edit_view:
+        if self.edit_view is not None and current is not self.edit_view:
             self.edit_view.stop_playback()
 
     def _update_status_bar(self):

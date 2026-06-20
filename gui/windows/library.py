@@ -40,8 +40,15 @@ class SoundLibraryPage(QWidget):
         # down) cards for every item flown past.
         self._select_timer = QTimer(self)
         self._select_timer.setSingleShot(True)
-        self._select_timer.setInterval(60)
+        # Short debounce: just enough to collapse a burst of arrow-key scrolling
+        # into one build. Builds are cheap now (placeholders), so this can be low.
+        self._select_timer.setInterval(15)
         self._select_timer.timeout.connect(self._build_current)
+
+        # Old views awaiting teardown. Destroying loaded pyqtgraph scenes costs
+        # ~10 ms each; we defer it to after the new view paints so switching
+        # never blocks on the *previous* sound's cleanup.
+        self._garbage = []
 
         # Progressive preview loader: cards are created cheaply (placeholder),
         # then their waveforms are built one per event-loop tick so selecting a
@@ -334,9 +341,19 @@ class SoundLibraryPage(QWidget):
                 self._load_timer.start()
             self.setFocus()
         finally:
-            # Now that the new view is live, dismantle the old one.
-            self._destroy_cards(old_cards, old_container)
+            # Queue the old view's teardown for the next event-loop tick so the
+            # new (placeholder) view paints first. Multiple rapid switches just
+            # stack up and get collected together.
+            if old_cards or old_container is not None:
+                self._garbage.append((old_cards, old_container))
+                QTimer.singleShot(0, self._collect_garbage)
             self._rebuilding = False
+
+    def _collect_garbage(self):
+        pending = self._garbage
+        self._garbage = []
+        for cards, container in pending:
+            self._destroy_cards(cards, container)
 
     def _new_container(self):
         """Create a fresh card container/layout (with a centered message label)."""
