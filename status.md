@@ -27,6 +27,33 @@
 - **Theme system** (`gui/theme.py`): live-switchable `fabfilter` (default, green accent) / `studio_dark` / `audio_console`. Switcher lives in the main toolbar; pages with `refresh_theme()` rebuild on switch.
 - **Critical crash fix**: `create_app()` only held a *local* reference to `MainWindow`, so Python GC could delete the whole window (and every child widget) mid-event-loop — surfacing as intermittent `wrapped C/C++ object ... has been deleted` errors on `cards_layout`/`scroll`, especially when clicking fast. Fixed by holding a strong ref: `app._main_window = window` in `gui/app.py`. **If you see "deleted C++ object" errors again, suspect a missing Python reference to a top-level widget, not teardown order.**
 
+### Phase 5: Sounds Library UX + Recording Performance (this session)
+
+**All work is on branch `sounds-ux-and-recording-perf` (8 commits, NOT merged to master, NOT pushed).**
+
+- **Recording performance (two O(n²) bugs fixed, both verified):**
+  - Live recording waveform (`gui/widgets/waveform.py`) rebuilt a numpy array from a growing Python list every frame (~16 ms/frame at 15 s, ~129 ms/frame at 2 min, on the UI thread). Now an amortized-growth int16 buffer + fixed display-point cap + ~30 fps redraw throttle → flat ~0.05 ms/frame.
+  - `determine_detection_state` (`lib/stream_processing.py`) re-iterated the entire `DetectionFrame` history in Python every 15 frames. Added a self-healing numpy cache on `detection_state` (`_stat_arrays`) that appends only new frames and shrinks on pause/clear truncation. **Detection output is byte-identical** (verified via SRT/sequence hash); per-frame p95 at 3 min: 5.6 ms → 0.7 ms.
+- **Audio preview / session card UX** (`gui/widgets/audio_preview.py`, `session_card.py`):
+  - Fixed-height previews with an inline **Expand/Collapse** toggle.
+  - Draggable playhead; click positions the playhead **without auto-playing** (jumps & continues only if already playing).
+  - **Duration now derived from decoded samples, not the WAV header** — several recordings store a byte count in `nframes`, which doubled the duration and made Fit show half-blank. Playback reuses the preview's already-decoded samples (no re-read on the UI thread → no first-play freeze).
+  - Horizontal **scrollbar** appears when zoomed (in a fixed-height row so it never shifts the plot).
+  - **Drag-to-select a time range**: highlighted band + duration; Fit zooms to selection (whole clip if none); Play/Space plays just the selection; auto-scrolls when dragging past the edge; click clears it.
+  - Wheel zooms time everywhere (incl. the left axis).
+  - **Play/pause use QPainter-drawn icons** (`_media_icon`) + plain text, fixed size — the old ▶/⏸ glyphs had different heights and shifted the layout on every toggle.
+- **Sounds library** (`gui/windows/library.py`):
+  - Left panel is now a **3-column tree (Sound / Data / Time)** with color-coded data-quantity rating; min width + stretch factors so it can't collapse.
+  - Per-sound header shows a **Data quantity** rating (Not enough / Sufficient / Good / Excellent) using parrot's thresholds, extracted to `get_quantity_rating()` in `lib/print_status.py` (shared with the CLI status, output unchanged).
+  - **Hotkeys** (on the selected card): `F` fit, `E` expand, `Home` start, `Esc` clear selection, `N` normalize, `V` waveform/spectrogram. Shown in the hint bar + tooltips. Space / ←→ / ↑↓ unchanged.
+- **Theme**: consolidated to **FabFilter only** (`gui/theme.py`) — the theme selector and the other two themes were removed (supersedes Phase 4's live-switchable themes). UI font is **Inter**. Fixed invisible buttons (contrast + a Qt gotcha: a selector-less stylesheet on an ancestor silently breaks `:checked` background on descendant buttons → scope container stylesheets with `QWidget#id { ... }`).
+
+**Open follow-ups from this session:**
+- Selection drag *feel* (edge auto-scroll speed = 7% of view span/tick; click-vs-drag threshold = 4 px) is tuned by guess — confirm in real use.
+- **Sound Quality (SNR)** metric exists in parrot but isn't surfaced in the read-only library (computed at capture time, not persisted). Would need to store SNR at record time.
+- Per-card normalize/spectrogram overrides considered and deferred (kept global; `V` makes flipping fast).
+- `process_wav_file` crashes standalone on the 16 kHz recordings (mfsc framing vs the 48 kHz config resample path) — pre-existing, unrelated, flagged.
+
 ### Current Data
 - **20 sound directories** in `data/recordings/`
 - **6 models** (`.pkl` + weights) in `data/models/`
@@ -36,7 +63,7 @@
 ## Next Session
 
 ### 0. Known open issues (start here)
-- **Switching sounds is slow.** Each `SessionCard.__init__` synchronously reads the full WAV and builds a pyqtgraph plot on the UI thread (`audio_preview.load()`), so selecting a sound with several recordings blocks visibly. **Fix: load waveform data off the UI thread** (a QThread/worker that reads + downsamples, then hands arrays back to the widget to render). This also structurally removes any remaining build-time jank.
+- **Switching sounds is slow.** Each `SessionCard.__init__` synchronously reads the full WAV and builds a pyqtgraph plot on the UI thread (`audio_preview.load()`), so selecting a sound with several recordings blocks visibly. Phase 5 removed the *duplicate* decode (playback now reuses the preview's samples), but the initial decode + plot build is still synchronous. **Fix: load waveform data off the UI thread** (a QThread/worker that reads + downsamples, then hands arrays back to the widget to render).
 - **`gui/windows/home.py` (`HomePage`, `ActionCard`, `MetadataWorker`) is built but NOT wired into `main_window.py`.** Decide whether to wire it in as a separate "Home" page or fold its model/Talon summary into the Sounds library. It is currently dead code.
 - **`gui/widgets/duration_bar.py`** exists but verify where (if anywhere) it is used.
 
