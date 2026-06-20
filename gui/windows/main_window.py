@@ -1,14 +1,15 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QStatusBar, QStackedWidget
 )
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt
 import sounddevice as sd
 from config.config import INPUT_DEVICE_INDEX
 from gui.models.app_state import AppState
 from gui.windows.library import SoundLibraryPage
-from gui.windows.recording import RecordingPage
-from gui.windows.training import TrainingPage
+from gui.windows.models import ModelsPage
+from gui.windows.settings import SettingsPage
+from gui.windows.about import AboutPage
 
 
 class MainWindow(QMainWindow):
@@ -23,32 +24,38 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        # Pages
+        # Four top-level pages: Sounds, Models, Settings, About.
+        # Recording and editing live inside the Sounds page; training lives
+        # inside the Models page.
         self.library_page = SoundLibraryPage(self.app_state, self)
-        self.recording_page = RecordingPage(self.app_state, self)
-        self.training_page = TrainingPage(self.app_state, self)
-        self.stack.addWidget(self.library_page)
-        self.stack.addWidget(self.recording_page)
-        self.stack.addWidget(self.training_page)
+        self.models_page = ModelsPage(self.app_state, self)
+        self.settings_page = SettingsPage(self.app_state, self)
+        self.about_page = AboutPage(self.app_state, self)
+        for page in (self.library_page, self.models_page,
+                     self.settings_page, self.about_page):
+            self.stack.addWidget(page)
 
-        # Toolbar
+        # Toolbar navigation — checkable actions so the current tab is obvious.
         toolbar = QToolBar("Navigation")
         toolbar.setMovable(False)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+        nav_group = QActionGroup(self)
+        nav_group.setExclusive(True)
 
-        self.library_action = QAction("Sounds", self)
-        self.library_action.triggered.connect(lambda: self.stack.setCurrentWidget(self.library_page))
-        toolbar.addAction(self.library_action)
+        for text, page in (("Sounds", self.library_page),
+                           ("Models", self.models_page),
+                           ("Settings", self.settings_page),
+                           ("About", self.about_page)):
+            action = QAction(text, self)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda _checked, p=page: self.stack.setCurrentWidget(p))
+            nav_group.addAction(action)
+            toolbar.addAction(action)
+            if page is self.library_page:
+                action.setChecked(True)
 
-        self.recording_action = QAction("Recording", self)
-        self.recording_action.triggered.connect(lambda: self.stack.setCurrentWidget(self.recording_page))
-        toolbar.addAction(self.recording_action)
-
-        self.training_action = QAction("Training", self)
-        self.training_action.triggered.connect(lambda: self.stack.setCurrentWidget(self.training_page))
-        toolbar.addAction(self.training_action)
-
-        # Start on the read-only Sounds library
+        # Start on the Sounds library
         self.stack.setCurrentWidget(self.library_page)
 
         # Status bar
