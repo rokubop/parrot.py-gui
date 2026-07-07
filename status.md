@@ -263,6 +263,20 @@ Make the recording page less overwhelming:
 
 ---
 
+## Later: Packaging / Distribution (deferred — do near a release, NOT now)
+
+Goal: a "download, double-click, taken care of" installable so end users never touch Python/clone/scripts.
+
+- **Don't build it yet.** It's a recurring sync-tax (like run.sh/run.bat already are) and only worth testing once the app's shape stabilizes. Building/testing installs of a half-built app is wasted effort.
+- **It won't hurt the dev loop** when we do it — keep dev as `python -m gui` / `run.sh`; the installer is a separate build recipe that *consumes* the repo, doesn't change code.
+- **The bootstrapper already exists**: `run.bat`/`run.sh` already detect/install Python, create the venv, pip-install deps with confirmation + progress, and recover on launch failure. That IS the launcher pattern (same as ComfyUI / A1111 / Easy Diffusion). Gap to "installable" is mostly presentation, not capability.
+- **Prefer bootstrapper over monolithic PyInstaller bundle** — because torch makes an all-in-one bundle 1–3+ GB and hardware-specific. Ship a tiny shell, pip-install the heavy/CPU-vs-CUDA wheels live on first run.
+- **Likely path (Windows first):** Inno Setup (or NSIS) wraps current `run.bat` → Start-menu shortcut + icon + uninstaller; first run does the existing venv/pip flow (ideally in a small window vs console); subsequent runs launch instantly. Est. ~half-day for a working loop. Mac/Linux handled separately later.
+- **Pay-off-now habit:** keep deps + entry point in obvious declared places (`requirements.txt`, single `gui/__main__`) so the future installer is trivial to point at. (Already doing this.)
+- Bonus: a native Windows build sidesteps the WSL/Wayland combo-popup issue entirely (no Wayland on real Windows).
+
+---
+
 ## File Structure Reference
 
 ```

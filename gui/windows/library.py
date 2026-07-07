@@ -24,7 +24,6 @@ class SoundLibraryPage(QWidget):
     # Requests for the full-screen sub-views, handled by MainWindow.
     record_requested = pyqtSignal(str)   # "" = new sound, else add to this label
     edit_requested = pyqtSignal(str)     # wav_path of the recording to edit
-    append_requested = pyqtSignal(str)   # wav_path to append a new take onto
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -101,47 +100,12 @@ class SoundLibraryPage(QWidget):
         left.setMinimumWidth(280)
         splitter.addWidget(left)
 
-        # Right: toolbar + scrollable stack of session cards
+        # Right: a distinct per-sound header panel + scrollable stack of cards
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
-        right_layout.addWidget(self._build_toolbar())
-
-        # Per-sound header (title + stats)
-        header = QWidget()
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(16, 12, 16, 0)
-        header_layout.setSpacing(2)
-        self.sound_title = QLabel("")
-        header_layout.addWidget(self.sound_title)
-        self.sound_stats = QLabel("")
-        header_layout.addWidget(self.sound_stats)
-        self.sound_quantity = QLabel("")
-        header_layout.addWidget(self.sound_quantity)
-
-        # Sound-level management actions (operate on the selected sound).
-        actions_row = QHBoxLayout()
-        actions_row.setContentsMargins(0, 8, 0, 0)
-        self.add_recording_btn = QPushButton("Add recording")
-        self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.add_recording_btn.setToolTip("Record a new session for this sound")
-        self.add_recording_btn.clicked.connect(self._on_add_recording)
-        actions_row.addWidget(self.add_recording_btn)
-        for text, slot, tip in (
-                ("Rename", self._on_rename_sound, "Rename this sound"),
-                ("Clone", self._on_clone_sound, "Make a copy of this sound under a new name"),
-                ("Open folder", self._on_open_sound_folder, "Reveal this sound's folder"),
-                ("Delete", self._on_delete_sound, "Delete this sound and all its recordings")):
-            btn = QPushButton(text)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            btn.setToolTip(tip)
-            btn.clicked.connect(slot)
-            actions_row.addWidget(btn)
-        actions_row.addStretch()
-        header_layout.addLayout(actions_row)
-
-        right_layout.addWidget(header)
+        right_layout.addWidget(self._build_header())
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -167,13 +131,23 @@ class SoundLibraryPage(QWidget):
             f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
         self.sound_stats.setStyleSheet(f"color: {t['text_dim']};")
         self.sound_quantity.setStyleSheet(f"color: {t['text_dim']}; margin-top: 2px;")
-        # Scope this to the bar itself: a selector-less stylesheet on an ancestor
-        # silently breaks :checked background-color on descendant QPushButtons.
-        self.toolbar_bar.setStyleSheet(
-            f"QWidget#toolbarBar {{ background-color: {t['toolbar']}; "
+        # Scope styles to the objects themselves: a selector-less stylesheet on an
+        # ancestor silently breaks :checked background-color on descendant buttons.
+        self.header_frame.setStyleSheet(
+            f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
+        # Add recording is the headline action — accent-filled, stands apart.
+        self.add_recording_btn.setStyleSheet(
+            f"QPushButton#primaryAction {{ background-color: {t['accent']}; color: #ffffff; "
+            f"font-weight: bold; border: none; border-radius: 4px; padding: 6px 18px; }} "
+            f"QPushButton#primaryAction:hover {{ background-color: {t['accent']}; }}")
+        # Rename / Clone / Open / Delete are quiet, second-class actions.
+        for b in self._secondary_btns:
+            b.setStyleSheet(
+                f"QPushButton#secondaryAction {{ color: {t['text_dim']}; border: none; "
+                f"background: transparent; padding: 3px 8px; }} "
+                f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }}")
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
-        self.hint_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
         # A wide, always-present scrollbar plus a right-side gutter gives a
         # dedicated place to scroll the page even when waveforms fill the view.
@@ -185,15 +159,38 @@ class SoundLibraryPage(QWidget):
         # Rebuild cards so plot colors / borders pick up the new theme.
         self._build_for_item(self.label_list.currentItem())
 
-    def _build_toolbar(self):
-        bar = QWidget()
-        bar.setObjectName("toolbarBar")
-        self.toolbar_bar = bar
-        bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(16, 8, 16, 8)
+    def _build_header(self):
+        """The per-sound header: a visually distinct panel holding the sound's
+        title/stats, the primary 'Add recording' action, the view toggles, and
+        the de-emphasized rename/clone/delete management actions."""
+        header = QFrame()
+        header.setObjectName("soundHeader")
+        self.header_frame = header
+        v = QVBoxLayout(header)
+        v.setContentsMargins(16, 12, 16, 12)
+        v.setSpacing(2)
+
+        self.sound_title = QLabel("")
+        v.addWidget(self.sound_title)
+        self.sound_stats = QLabel("")
+        v.addWidget(self.sound_stats)
+        self.sound_quantity = QLabel("")
+        v.addWidget(self.sound_quantity)
+
+        # Primary action (left, prominent) + view controls (right).
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 10, 0, 0)
+        self.add_recording_btn = QPushButton("+ Add recording")
+        self.add_recording_btn.setObjectName("primaryAction")
+        self.add_recording_btn.setMinimumHeight(34)
+        self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.add_recording_btn.setToolTip("Record a new session for this sound — R")
+        self.add_recording_btn.clicked.connect(self._on_add_recording)
+        actions.addWidget(self.add_recording_btn)
+        actions.addStretch()
 
         self.view_label = QLabel("View:")
-        bar_layout.addWidget(self.view_label)
+        actions.addWidget(self.view_label)
         self._mode_group = QButtonGroup(self)
         self._mode_buttons = {}
         for mode, text in (("waveform", "Waveform"), ("spectrogram", "Spectrogram")):
@@ -201,27 +198,42 @@ class SoundLibraryPage(QWidget):
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setChecked(mode == self._mode)
-            btn.setToolTip("Toggle waveform / spectrogram (V)")
+            btn.setToolTip("Toggle waveform / spectrogram (S)")
             btn.clicked.connect(lambda _checked, m=mode: self._set_mode(m))
             self._mode_group.addButton(btn)
             self._mode_buttons[mode] = btn
-            bar_layout.addWidget(btn)
+            actions.addWidget(btn)
 
         self.normalize_btn = QPushButton("Normalize")
         self.normalize_btn.setCheckable(True)
         self.normalize_btn.setChecked(self._normalized)
         self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.normalize_btn.setToolTip("Toggle amplitude normalization (N)")
+        self.normalize_btn.setToolTip("Toggle amplitude normalization (A)")
         self.normalize_btn.toggled.connect(self._set_normalized)
-        bar_layout.addSpacing(16)
-        bar_layout.addWidget(self.normalize_btn)
+        actions.addSpacing(12)
+        actions.addWidget(self.normalize_btn)
+        v.addLayout(actions)
 
-        bar_layout.addStretch()
-        self.hint_label = QLabel(
-            "Space play   ·   F fit   ·   E expand   ·   Home start   ·   Esc clear   ·   "
-            "N normalize   ·   V view   ·   drag to select   ·   ↑↓ session")
-        bar_layout.addWidget(self.hint_label)
-        return bar
+        # Second-class sound management — present but visually quiet.
+        secondary = QHBoxLayout()
+        secondary.setContentsMargins(0, 4, 0, 0)
+        self._secondary_btns = []
+        for text, slot, tip in (
+                ("Rename", self._on_rename_sound, "Rename this sound"),
+                ("Clone", self._on_clone_sound, "Make a copy of this sound under a new name"),
+                ("Open folder", self._on_open_sound_folder, "Reveal this sound's folder"),
+                ("Delete", self._on_delete_sound, "Delete this sound and all its recordings")):
+            btn = QPushButton(text)
+            btn.setObjectName("secondaryAction")
+            btn.setFlat(True)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setToolTip(tip)
+            btn.clicked.connect(slot)
+            secondary.addWidget(btn)
+            self._secondary_btns.append(btn)
+        secondary.addStretch()
+        v.addLayout(secondary)
+        return header
 
     # ---- data ----------------------------------------------------------
 
@@ -486,19 +498,27 @@ class SoundLibraryPage(QWidget):
         elif key in (Qt.Key.Key_Down, Qt.Key.Key_Up):
             self._step_selection(1 if key == Qt.Key.Key_Down else -1)
         elif key == Qt.Key.Key_F:
-            target.fit_view()
-        elif key == Qt.Key.Key_E:
-            target.toggle_expanded()
+            target.fit_view()                  # toggle fit (selection / all)
+        elif key == Qt.Key.Key_V:
+            target.toggle_expanded()           # expand/collapse (taller) view
+        elif key in (Qt.Key.Key_D, Qt.Key.Key_Escape):
+            target.deselect_or_start()         # deselect, or jump to start
         elif key == Qt.Key.Key_Home:
             target.go_to_start()
-        elif key == Qt.Key.Key_Escape:
-            target.clear_selection()
-        elif key == Qt.Key.Key_N:
+        elif key == Qt.Key.Key_A:
             self.normalize_btn.setChecked(not self.normalize_btn.isChecked())
-        elif key == Qt.Key.Key_V:
-            self._toggle_mode()
+        elif key == Qt.Key.Key_S:
+            self._toggle_mode()                # waveform <-> spectrum
+        elif key == Qt.Key.Key_R:
+            self._on_add_recording()           # record a new session for this sound
         else:
             super().keyPressEvent(event)
+        # Note: no X/Delete here — deleting a whole recording is deliberate and
+        # only via the button/menu, not a single keypress on a read-only view.
+
+    def keybinding_hint(self):
+        return ("Space play  ·  F fit  ·  A normalize  ·  S spectrum  ·  "
+                "D deselect/start  ·  V expand  ·  R add recording  ·  ↑↓ select")
 
     def _toggle_mode(self):
         new_mode = "spectrogram" if self._mode == "waveform" else "waveform"
@@ -618,8 +638,6 @@ class SoundLibraryPage(QWidget):
             self._open_recording_folder(card)
         elif action == "edit":
             self._edit_recording(card)
-        elif action == "append":
-            self.append_requested.emit(card.wav_path)
 
     def _delete_recording(self, card):
         files = library_ops.recording_sibling_files(card.wav_path)

@@ -213,6 +213,27 @@ class WaveformWidget(QWidget):
         """Recolor the live trace (used to signal recording / paused / idle)."""
         self.plot_item.setPen(pg.mkPen(color=color, width=1))
 
+    def seed_live(self, samples, sample_rate):
+        """Pre-fill the live buffer with already-recorded audio so a *resumed*
+        recording visually continues from the take's tail instead of starting
+        from a blank trace. ``samples`` is int16 mono at ``sample_rate``."""
+        self._reset_live()
+        if sample_rate:
+            self._sample_rate = int(sample_rate)
+        samples = np.asarray(samples, dtype=np.int16)
+        n = len(samples)
+        if n > self._live_buf.size:
+            self._live_buf = np.empty(n, dtype=np.int16)
+            self._det_buf = np.zeros(n, dtype=np.uint8)
+        if n:
+            self._live_buf[:n] = samples
+            self._det_buf[:n] = 0
+        self._live_len = n
+        self.cut_region.setVisible(False)
+        for reg in self._det_regions:
+            reg.setVisible(False)
+        self._redraw_live()
+
     def clear_display(self):
         """Clear the waveform display."""
         self._reset_live()

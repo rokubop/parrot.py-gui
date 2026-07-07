@@ -14,6 +14,7 @@ Resume records the next segment. The take file lives in the sound from the first
 segment on, so it's always saved.
 """
 import time
+import numpy as np
 import sounddevice as sd
 from PyQt6.QtCore import Qt, QElapsedTimer, QTimer, pyqtSignal
 from PyQt6.QtGui import QShortcut, QKeySequence
@@ -22,10 +23,11 @@ from PyQt6.QtWidgets import (
     QLineEdit, QGroupBox, QFormLayout, QMessageBox
 )
 
-from config.config import INPUT_DEVICE_INDEX
+from config.config import INPUT_DEVICE_INDEX, RATE
 from gui import theme
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.audio_preview import AudioPreviewWidget
+from gui.widgets.confirm_dialog import confirm_destructive
 from gui.workers.audio_worker import AudioWorker
 from gui.workers.segment_worker import AppendWorker, TrimWorker
 from gui.services import library_ops, strategies
@@ -49,6 +51,7 @@ def _quality_from_snr(snr, ms_recorded):
 
 class RecordingView(QWidget):
     done = pyqtSignal(str)   # left the view; arg = label to select (may be "")
+    keybindings_changed = pyqtSignal()  # state changed -> status bar should refresh
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -63,6 +66,10 @@ class RecordingView(QWidget):
         self._pending_action = None     # 'pause' | 'done' while a segment stops
         self._state = "idle"
         self._last_status_draw = 0.0
+
+        # review-preview view toggles (mirror AudioPreviewWidget defaults)
+        self._norm = False
+        self._mode = "waveform"
 
         # playback (review mode)
         self._audio = None
@@ -96,15 +103,6 @@ class RecordingView(QWidget):
         self.name_input.clear()
         self.title.setText("New sound")
         self._reset(take=None)
-
-    def start_append(self, target_wav):
-        """Add onto an existing recording: open it in review, ready to Resume."""
-        self._new_mode = False
-        self._label = library_ops.recording_label(target_wav)
-        base = library_ops.recording_base(target_wav)
-        self.name_row.setVisible(False)
-        self.title.setText(f"Add to:  {self._label} / {base}")
-        self._reset(take=target_wav)
 
     # ---- ui ------------------------------------------------------------
 
@@ -177,11 +175,11 @@ class RecordingView(QWidget):
         self.record_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.record_btn.clicked.connect(self._on_primary)
         controls.addWidget(self.record_btn)
-        self.done_btn = QPushButton("Done")
-        self.done_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.done_btn.setToolTip("Finish — the take is already saved to the sound")
-        self.done_btn.clicked.connect(self._on_done)
-        controls.addWidget(self.done_btn)
+        self.start_over_btn = QPushButton("↻ Start over")
+        self.start_over_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.start_over_btn.setToolTip("Delete this whole take and start again")
+        self.start_over_btn.clicked.connect(self._on_start_over)
+        controls.addWidget(self.start_over_btn)
 
         controls.addSpacing(20)
         self.play_btn = QPushButton("▶ Play")
@@ -192,7 +190,7 @@ class RecordingView(QWidget):
         self.delete_sel_btn = QPushButton("Delete selection")
         self.delete_sel_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.delete_sel_btn.setToolTip("Drag-select a range on the take, then "
-                                       "remove it — Delete")
+                                       "remove it — X (or Delete)")
         self.delete_sel_btn.clicked.connect(self._on_delete_selection)
         controls.addWidget(self.delete_sel_btn)
         self.undo_btn = QPushButton("Undo")
@@ -210,25 +208,37 @@ class RecordingView(QWidget):
         self.hint = QLabel("")
         self.hint.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         controls.addWidget(self.hint)
+        controls.addSpacing(16)
+        # Finish is the way out, set apart from the take-editing controls.
+        self.finish_btn = QPushButton("Finish ✓")
+        self.finish_btn.setMinimumWidth(130)
+        self.finish_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.finish_btn.setToolTip("Done — the take is already saved to the sound")
+        self.finish_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {theme.colors()['accent']}; "
+            f"color: #ffffff; font-weight: bold; border: none; }}")
+        self.finish_btn.clicked.connect(self._on_done)
+        controls.addWidget(self.finish_btn)
         root.addLayout(controls)
 
         # Space = pause while recording / play-pause while reviewing.
-        # Delete = delete the current selection while reviewing.
-        sp = QShortcut(QKeySequence("Space"), self)
-        sp.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        sp.activated.connect(self._on_space)
-        for k in ("Del", "Backspace"):
-            sc = QShortcut(QKeySequence(k), self)
-            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            sc.activated.connect(self._on_delete_selection)
-        for seq in ("Ctrl+Z",):
+        # X (or Delete/Backspace) = delete the current selection while reviewing.
+        for seq, slot in (
+                ("Space", self._on_space),
+                ("R", self._on_primary),
+                ("X", self._on_delete_selection),
+                ("Del", self._on_delete_selection),
+                ("Backspace", self._on_delete_selection),
+                ("A", self._toggle_normalize),
+                ("S", self._toggle_spectrum),
+                ("D", self._deselect_review),
+                ("F", self._fit_review),
+                ("Ctrl+Z", self._on_undo),
+                ("Ctrl+Y", self._on_redo),
+                ("Ctrl+Shift+Z", self._on_redo)):
             sc = QShortcut(QKeySequence(seq), self)
-            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            sc.activated.connect(self._on_undo)
-        for seq in ("Ctrl+Y", "Ctrl+Shift+Z"):
-            sc = QShortcut(QKeySequence(seq), self)
-            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            sc.activated.connect(self._on_redo)
+            sc.setContext(Qt.ShortcutContext.WindowShortcut)
+            sc.activated.connect(slot)
 
         self._set_state("idle")
 
@@ -339,7 +349,9 @@ class RecordingView(QWidget):
         reviewing = state == "review"
         self.waveform.setVisible(not reviewing)
         self.preview.setVisible(reviewing)
-        self.done_btn.setEnabled(state != "idle")
+        # Start over only makes sense once a take exists; you can finish anytime.
+        self.start_over_btn.setVisible(self._take_wav is not None)
+        self.start_over_btn.setEnabled(reviewing)
         self.play_btn.setVisible(reviewing)
         self.delete_sel_btn.setVisible(reviewing)
         self.undo_btn.setVisible(reviewing)
@@ -352,6 +364,42 @@ class RecordingView(QWidget):
         self.strategy_combo.setEnabled(not locked)
         if recording:
             self.name_input.setEnabled(False)
+        self.keybindings_changed.emit()
+
+    # ---- review view toggles + keybindings ----------------------------
+
+    def _deselect_review(self):
+        if self._state != "review":
+            return
+        if self.preview.current_selection() is not None:
+            self.preview.clear_selection()
+        else:
+            self._on_seek(0.0)
+
+    def _fit_review(self):
+        if self._state == "review":
+            self.preview.toggle_fit()
+
+    def _toggle_normalize(self):
+        if self._state != "review":
+            return
+        self._norm = not self._norm
+        self.preview.set_normalized(self._norm)
+
+    def _toggle_spectrum(self):
+        if self._state != "review":
+            return
+        self._mode = "spectrogram" if self._mode == "waveform" else "waveform"
+        self.preview.set_mode(self._mode)
+
+    def keybinding_hint(self):
+        if self._state == "recording":
+            return "Space / R  pause and review"
+        if self._state == "review":
+            return ("Space play  ·  R resume recording  ·  X delete selection  ·  "
+                    "F fit (selection/all)  ·  A normalize  ·  S spectrum  ·  "
+                    "D deselect/start  ·  Ctrl+Z/Y undo")
+        return "R (or ● Record) to start  ·  name the sound first for a new one"
 
     # ---- recording lifecycle ------------------------------------------
 
@@ -378,6 +426,26 @@ class RecordingView(QWidget):
         elif self._state == "recording":
             self._pause()
 
+    def _seed_or_clear_live(self):
+        """Resuming an existing take shows that take in the live view so the new
+        audio visibly continues it; a brand-new take starts from a blank trace."""
+        if self._take_wav is None:
+            self.waveform.clear_display()
+            return
+        try:
+            self._ensure_audio()
+            if self._audio is None or not self._sr:
+                self.waveform.clear_display()
+                return
+            ints = np.clip(np.asarray(self._audio) * 32768.0, -32768, 32767).astype(np.int16)
+            if self._sr != RATE:   # match the recorder's rate so the splice lines up
+                n_out = max(1, int(len(ints) * RATE / self._sr))
+                ints = np.interp(np.linspace(0, len(ints), n_out, endpoint=False),
+                                 np.arange(len(ints)), ints.astype(np.float32)).astype(np.int16)
+            self.waveform.seed_live(ints, RATE)
+        except Exception:
+            self.waveform.clear_display()
+
     def _start_segment(self):
         label = self._resolve_label()
         if not label:
@@ -387,7 +455,7 @@ class RecordingView(QWidget):
         strategy = strategies.strategy_for_label(self.strategy_combo.currentText())
 
         self.stop_playback()
-        self.waveform.clear_display()
+        self._seed_or_clear_live()
 
         self.worker = AudioWorker(label, mic, strategy)
         self.worker.frame_recorded.connect(self.waveform.append_live_data)
@@ -407,12 +475,33 @@ class RecordingView(QWidget):
         else:
             self._leave()
 
+    def _on_start_over(self):
+        if self._state != "review" or not self._take_wav or self._seg_worker:
+            return
+        self.stop_playback()
+        name = library_ops.recording_base(self._take_wav)
+        if not confirm_destructive(
+                self, title="Start over?",
+                body=f"This deletes the current take “{name}” and everything "
+                     f"recorded into it, so you can record it again.",
+                confirm_label="Delete take"):
+            return
+        try:
+            library_ops.delete_recording(self._take_wav)
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Couldn't delete the take", str(exc))
+            return
+        self.history.clear()
+        self.app_state.recordings_changed.emit()
+        self._reset(take=None)
+        self.hint.setText("Take deleted — record again when you're ready.")
+
     def _stop_segment(self, action):
         if not self.worker:
             return
         self._pending_action = action
         self.record_btn.setEnabled(False)
-        self.done_btn.setEnabled(False)
+        self.finish_btn.setEnabled(False)
         self.hint.setText("Finalizing…")
         self.worker.request_stop()
 
@@ -437,8 +526,18 @@ class RecordingView(QWidget):
                 lambda msg, src=seg_wav, srt=seg_srt: self._on_append_failed(msg, src, srt))
             self._seg_worker.start()
 
-    def _on_appended(self, source_wav, srt_path):
+    def _finish_seg_worker(self):
+        """Tear down a finished Append/Trim thread safely — the worker emits its
+        result as the last line of run(), so wait() before dropping the ref to
+        avoid deleting a still-running QThread (a hard crash)."""
+        w = self._seg_worker
         self._seg_worker = None
+        if w is not None:
+            w.wait()
+            w.deleteLater()
+
+    def _on_appended(self, source_wav, srt_path):
+        self._finish_seg_worker()
         try:
             library_ops.delete_recording(source_wav)
         except library_ops.LibraryOpError:
@@ -448,7 +547,7 @@ class RecordingView(QWidget):
         self._after_segment()
 
     def _on_append_failed(self, msg, source_wav, source_srt):
-        self._seg_worker = None
+        self._finish_seg_worker()
         # The append didn't happen — drop its checkpoint.
         self.history.discard_last_checkpoint()
         # Keep what we had; the stray segment stays as its own clip.
@@ -461,7 +560,7 @@ class RecordingView(QWidget):
     def _after_segment(self):
         action, self._pending_action = self._pending_action, None
         self.record_btn.setEnabled(True)
-        self.done_btn.setEnabled(True)
+        self.finish_btn.setEnabled(True)
         if action == "done":
             self._leave()
             return
@@ -499,7 +598,7 @@ class RecordingView(QWidget):
         self._seg_worker.start()
 
     def _on_trimmed(self, srt_path):
-        self._seg_worker = None
+        self._finish_seg_worker()
         self._take_srt = srt_path
         self.app_state.recordings_changed.emit()
         self._load_preview()
@@ -509,7 +608,7 @@ class RecordingView(QWidget):
         self.hint.setText("Deleted. Resume to add more, or Done.")
 
     def _on_trim_failed(self, msg):
-        self._seg_worker = None
+        self._finish_seg_worker()
         self.history.discard_last_checkpoint()
         self.delete_sel_btn.setEnabled(True)
         self.record_btn.setEnabled(True)

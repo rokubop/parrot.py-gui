@@ -347,6 +347,23 @@ class AudioPreviewWidget(QWidget):
         if self._mode == "waveform":
             self._apply_y_range()
 
+    def toggle_fit(self):
+        """F: toggle between fitting the selection and fitting the whole clip.
+        If a selection exists and we're not already zoomed to it, fit to it;
+        otherwise fit the whole clip."""
+        if self._duration <= 0:
+            return
+        sel = self._selection
+        if sel is not None and sel[1] - sel[0] > 0:
+            a, b = sel
+            x0, x1 = self._vb.viewRange()[0]
+            span = b - a
+            already = abs(x0 - a) <= span * 0.15 and abs(x1 - b) <= span * 0.15
+            if not already:
+                self.fit()      # zoom to the selection
+                return
+        self.fit_full()
+
     # ---- selection -----------------------------------------------------
 
     def _min_selection(self):
@@ -437,6 +454,16 @@ class AudioPreviewWidget(QWidget):
     def current_selection(self):
         """The selected (start, end) range in seconds, or None."""
         return self._selection
+
+    def select_all(self):
+        """Select the whole clip (Ctrl/Cmd+A)."""
+        if self._duration > 0:
+            self._set_selection(0.0, self._duration)
+            self.selection_changed.emit(0.0, self._duration)
+
+    def clear_selection(self):
+        """Drop any current selection (Esc)."""
+        self._clear_selection()
 
     # ---- horizontal scrollbar -----------------------------------------
 

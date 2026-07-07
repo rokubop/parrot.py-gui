@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QMainWindow, QToolBar, QStatusBar, QStackedWidget
+    QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel
 )
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt
@@ -7,6 +7,7 @@ import sounddevice as sd
 from config.config import INPUT_DEVICE_INDEX
 from gui.models.app_state import AppState
 from gui.windows.library import SoundLibraryPage
+from gui import theme
 
 
 class MainWindow(QMainWindow):
@@ -30,7 +31,6 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.library_page)
         self.library_page.record_requested.connect(self._open_recording)
         self.library_page.edit_requested.connect(self._open_edit)
-        self.library_page.append_requested.connect(self._open_append)
 
         self.models_page = None
         self.settings_page = None
@@ -60,10 +60,17 @@ class MainWindow(QMainWindow):
         # Start on the Sounds library
         self.stack.setCurrentWidget(self.library_page)
 
-        # Status bar
+        # Status bar: audio device (left) + the active keybindings for whatever
+        # view is showing (right). The keybinding hint is the single, always-in-
+        # the-same-place home for shortcuts — each page reports its own.
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        self.keys_label = QLabel("")
+        self.keys_label.setStyleSheet(f"color: {theme.colors()['text_dim']}; padding-right: 8px;")
+        self.status_bar.addPermanentWidget(self.keys_label)
+        self._wire_keybindings(self.library_page)
         self._update_status_bar()
+        self._refresh_keybindings()
 
     # ---- lazy page construction ---------------------------------------
 
@@ -93,6 +100,7 @@ class MainWindow(QMainWindow):
             from gui.windows.recording_view import RecordingView
             self.recording_view = RecordingView(self.app_state, self)
             self.recording_view.done.connect(self._return_to_sounds)
+            self._wire_keybindings(self.recording_view)
             self.stack.addWidget(self.recording_view)
         return self.recording_view
 
@@ -101,7 +109,7 @@ class MainWindow(QMainWindow):
             from gui.windows.edit_view import EditRecordingView
             self.edit_view = EditRecordingView(self.app_state, self)
             self.edit_view.done.connect(self._return_to_sounds)
-            self.edit_view.append_requested.connect(self._open_append)
+            self._wire_keybindings(self.edit_view)
             self.stack.addWidget(self.edit_view)
         return self.edit_view
 
@@ -130,11 +138,6 @@ class MainWindow(QMainWindow):
         view.start_for(wav_path)
         self.stack.setCurrentWidget(view)
 
-    def _open_append(self, wav_path):
-        view = self._get_recording_view()
-        view.start_append(wav_path)
-        self.stack.setCurrentWidget(view)
-
     def _return_to_sounds(self, label):
         self.stack.setCurrentWidget(self.library_page)
         self.nav_actions["Sounds"].setChecked(True)
@@ -147,6 +150,22 @@ class MainWindow(QMainWindow):
             self.recording_view.stop_worker()
         if self.edit_view is not None and current is not self.edit_view:
             self.edit_view.stop_playback()
+        self._refresh_keybindings()
+
+    # ---- keybinding status bar -----------------------------------------
+
+    def _wire_keybindings(self, page):
+        """Let a page push live keybinding updates (e.g. when its mode changes)
+        into the status bar, but only while it's the visible page."""
+        sig = getattr(page, "keybindings_changed", None)
+        if sig is not None:
+            sig.connect(lambda p=page: self._refresh_keybindings()
+                        if self.stack.currentWidget() is p else None)
+
+    def _refresh_keybindings(self):
+        page = self.stack.currentWidget()
+        getter = getattr(page, "keybinding_hint", None)
+        self.keys_label.setText(getter() if callable(getter) else "")
 
     def _update_status_bar(self):
         try:

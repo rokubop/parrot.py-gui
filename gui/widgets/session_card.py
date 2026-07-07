@@ -212,8 +212,12 @@ class SessionCard(QFrame):
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
 
-        row.addWidget(self._icon_button("Fit", "Fit to selection, or the whole clip — F (double-click resets)", self.fit_view))
-        row.addWidget(self._icon_button("Go to Start", "Move the playhead back to the beginning — Home", self.go_to_start))
+        # Play + Edit are the primary actions; fit / go-to-start / expand are
+        # keyboard-only (F / Home / V) and the rest lives behind the … menu.
+        if self._edit_enabled:
+            self.edit_btn = self._icon_button(
+                "Edit", "Edit this recording — trim, re-detect, append", self._on_edit)
+            row.addWidget(self.edit_btn)
 
         title = session_name.split("__")[0]
         name = QLabel(title)
@@ -234,29 +238,26 @@ class SessionCard(QFrame):
             thr.setStyleSheet(f"color: {t['text_dim']}; border: none; background: transparent;")
             row.addWidget(thr)
 
-        self.expand_btn = self._icon_button("Expand", "Show a taller waveform — E", self.toggle_expanded)
-        row.addWidget(self.expand_btn)
-
         self.menu_btn = QPushButton()
         self.menu_btn.setIcon(_dots_icon(t["text"]))
         self.menu_btn.setIconSize(QSize(13, 13))
-        self.menu_btn.setToolTip("Edit, rename, move, or delete this recording")
+        self.menu_btn.setToolTip("Rename, move, open folder, or delete this recording")
         self.menu_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.menu_btn.setFixedWidth(40)
         self.menu_btn.clicked.connect(self._show_menu)
         row.addWidget(self.menu_btn)
         return row
 
+    def _on_edit(self):
+        self.selected.emit(self)
+        self.action.emit(self, "edit")
+
     def _show_menu(self):
         self.selected.emit(self)
         menu = QMenu(self)
-        for label, name in (("Edit detection / trim…", "edit"),
-                            ("Append a recording…", "append"),
-                            ("Rename…", "rename"),
+        for label, name in (("Rename…", "rename"),
                             ("Move to another sound…", "move"),
                             ("Open folder", "open")):
-            if name == "edit" and not self._edit_enabled:
-                continue
             act = menu.addAction(label)
             act.triggered.connect(lambda _checked=False, n=name: self.action.emit(self, n))
         menu.addSeparator()
@@ -331,7 +332,7 @@ class SessionCard(QFrame):
     def fit_view(self):
         self.selected.emit(self)
         self.load_preview()
-        self.preview.fit()
+        self.preview.toggle_fit()
 
     def go_to_start(self):
         self.selected.emit(self)
@@ -347,12 +348,22 @@ class SessionCard(QFrame):
         height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
         self.load_preview()
         self.preview.setFixedHeight(height)
-        self.expand_btn.setText("Collapse" if self._expanded else "Expand")
+        if hasattr(self, "expand_btn"):
+            self.expand_btn.setText("Collapse" if self._expanded else "Expand")
         self.selected.emit(self)
 
     def clear_selection(self):
         if self.preview is not None:
             self.preview._clear_selection()
+
+    def deselect_or_start(self):
+        """D/Esc: drop the selection if there is one, else jump to the start."""
+        self.selected.emit(self)
+        self.load_preview()
+        if self.preview is not None and self.preview.current_selection() is not None:
+            self.preview._clear_selection()
+        else:
+            self.go_to_start()
 
     # ---- playback ------------------------------------------------------
 

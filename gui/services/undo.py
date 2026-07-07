@@ -22,6 +22,7 @@ class UndoHistory:
         self.wav_path = None
         self._undo = []   # list of snapshots (pre-op states), oldest first
         self._redo = []
+        self._baseline = None   # last-saved state, for non-destructive editing
         self._limit = limit
 
     def bind(self, wav_path):
@@ -112,7 +113,53 @@ class UndoHistory:
         self._root = None
         self._undo = []
         self._redo = []
+        self._baseline = None
 
     def cleanup(self):
         self.clear()
         self.wav_path = None
+
+    # ---- non-destructive editing (baseline = last saved state) ---------
+
+    def begin_baseline(self):
+        """Snapshot the current (saved) state so edits can be reverted to it.
+        Edits still touch the real files, but ``revert_to_baseline`` undoes the
+        whole session — so nothing is permanent until ``commit_baseline``."""
+        if not self.wav_path:
+            return
+        if self._baseline is not None:
+            self._drop(self._baseline)
+        self._baseline = self._capture()
+        for snap in self._undo + self._redo:
+            self._drop(snap)
+        self._undo = []
+        self._redo = []
+
+    def commit_baseline(self):
+        """Save: make the current state the new baseline and forget the edits
+        that led here (the on-disk files are already current)."""
+        if not self.wav_path:
+            return
+        if self._baseline is not None:
+            self._drop(self._baseline)
+        self._baseline = self._capture()
+        for snap in self._undo + self._redo:
+            self._drop(snap)
+        self._undo = []
+        self._redo = []
+
+    def revert_to_baseline(self):
+        """Discard: restore the files to the last saved state."""
+        if self._baseline is None:
+            return False
+        self._restore(self._baseline)
+        for snap in self._undo + self._redo:
+            self._drop(snap)
+        self._undo = []
+        self._redo = []
+        return True
+
+    def is_dirty(self):
+        """True when there are edits not yet committed to the baseline. Once
+        every edit is undone we're back at the baseline, so this clears."""
+        return bool(self._undo)
