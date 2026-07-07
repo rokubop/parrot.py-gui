@@ -16,12 +16,14 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QGroupBox,
     QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QComboBox, QMessageBox, QInputDialog, QDialog,
-    QPlainTextEdit, QListWidget, QListWidgetItem
+    QPlainTextEdit, QListWidget, QListWidgetItem, QTabWidget
 )
 
 from gui import theme
-from gui.services import talon_discovery, patterns_schema, patterns_store, library_ops
+from gui.services import (talon_discovery, patterns_schema, patterns_store,
+                          talon_companion, library_ops)
 from gui.widgets.pattern_edit_dialog import PatternEditDialog
+from gui.windows.talon_live import TalonLiveView
 from config.config import CLASSIFIER_FOLDER
 
 
@@ -90,10 +92,21 @@ class TalonPage(QWidget):
         t = theme.colors()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        outer.addWidget(scroll)
+        self.tabs.addTab(scroll, "Setup && Patterns")
+
+        self.live_view = TalonLiveView()
+        live_wrap = QWidget()
+        live_layout = QVBoxLayout(live_wrap)
+        live_layout.setContentsMargins(16, 8, 16, 8)
+        live_layout.addWidget(self.live_view)
+        self.tabs.addTab(live_wrap, "Live")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         body = QWidget()
         layout = QVBoxLayout(body)
@@ -122,6 +135,7 @@ class TalonPage(QWidget):
                 ("integration", "Integration"),
                 ("patterns", "patterns.json"),
                 ("model", "Deployed model"),
+                ("companion", "Companion"),
                 ("health", "Health")):
             row = QHBoxLayout()
             name = QLabel(f"{label}:")
@@ -142,6 +156,14 @@ class TalonPage(QWidget):
         self.open_folder_btn.clicked.connect(self._open_talon_folder)
         self.open_folder_btn.setEnabled(False)
         btn_row.addWidget(self.open_folder_btn)
+        self.companion_btn = QPushButton("Install companion")
+        self.companion_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.companion_btn.setToolTip(
+            "Copies parrot_gui_bridge.py into your Talon user directory so "
+            "the Live tab can show real Talon detection frames")
+        self.companion_btn.clicked.connect(self._on_install_companion)
+        self.companion_btn.setEnabled(False)
+        btn_row.addWidget(self.companion_btn)
         btn_row.addStretch()
         status_layout.addLayout(btn_row)
         layout.addWidget(self.status_group)
@@ -246,10 +268,76 @@ class TalonPage(QWidget):
         self.status_rows["model"].setText(model_txt)
 
         self.open_folder_btn.setEnabled(bool(result.pattern_path_from_talon))
+        self._refresh_companion_row()
         self._deployed = _copy(result.patterns or {})
         self.working = _copy(result.patterns or {})
+        self.live_view.set_patterns(self._deployed)
         self._refresh_variants()
         self._refresh_from_working()
+
+    # ---- companion / live tab ---------------------------------------------
+
+    def _talon_user_dir(self):
+        result = self._bundle.get("result") if self._bundle else None
+        return result.talon_user_dir if result else None
+
+    def _refresh_companion_row(self):
+        t = theme.colors()
+        user_dir = self._talon_user_dir()
+        if not user_dir:
+            self.status_rows["companion"].setText("—")
+            self.companion_btn.setEnabled(False)
+            return
+        info = talon_companion.status(user_dir)
+        self.companion_btn.setEnabled(True)
+        if not info["installed"]:
+            self.status_rows["companion"].setText(
+                "Not installed — needed for the Live tab")
+            self.companion_btn.setText("Install companion")
+        elif info["outdated"]:
+            self.status_rows["companion"].setText(
+                f"<span style='color:#d3a45c;'>v{info['installed_version']} installed, "
+                f"v{info['available_version']} available</span> — {info['path']}")
+            self.companion_btn.setText("Update companion")
+        else:
+            self.status_rows["companion"].setText(
+                f"<span style='color:{t['accent']};'>Installed</span> "
+                f"(v{info['installed_version']}) — {info['path']}")
+            self.companion_btn.setText("Reinstall companion")
+
+    def _on_install_companion(self):
+        user_dir = self._talon_user_dir()
+        if not user_dir:
+            return
+        dest = talon_companion.installed_path(user_dir)
+        if QMessageBox.question(
+                self, "Install companion",
+                f"Copy parrot_gui_bridge.py to\n{dest}?\n\n"
+                "Talon loads it immediately. It only observes detections and "
+                "publishes them to this app on localhost — remove it any time "
+                "by deleting the file.") != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            talon_companion.install(user_dir)
+        except OSError as exc:
+            QMessageBox.warning(self, "Install failed", str(exc))
+            return
+        self._refresh_companion_row()
+
+    def _on_tab_changed(self, index):
+        if self.tabs.widget(index) is not None and index == 1:
+            self.live_view.start()
+        else:
+            self.live_view.stop()
+
+    def hideEvent(self, event):
+        self.live_view.stop()
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        if self.tabs.currentIndex() == 1:
+            self.live_view.start()
+        super().showEvent(event)
 
     # ---- working-copy lifecycle ------------------------------------------
 
@@ -488,6 +576,7 @@ class TalonPage(QWidget):
             QMessageBox.warning(self, "Deploy failed", str(exc))
             return
         self._deployed = _copy(self.working)
+        self.live_view.set_patterns(self._deployed)
         self._refresh_from_working()
         QMessageBox.information(
             self, "Deployed",
