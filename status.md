@@ -212,6 +212,26 @@ real session: install companion → Live tab shows frames → record → A/B).
 Services: `patterns_store/schema/replay`, `capture_model`, `talon_companion`
 (all Qt-free + sandbox-tested), `bridge_worker`, `pattern_edit_dialog`.
 
+### Phase 9: RATE restored to 16 kHz + model testing
+
+- **RATE back to 16000** (was flipped to 48000 in early GUI work): every
+  recording, every model pkl (`settings['RATE']: 16000`) and Talon's feature
+  extraction live in the 16 kHz world. 16 kHz recordings process natively
+  again (the mfsc crash is gone — verified two-pass end-to-end on real
+  recordings); the 3 GUI-era 48 kHz test files downsample on read.
+- **Models tab: "Test accuracy" + "Test live"** (`gui/services/model_eval.py`
+  shared core, `eval_worker.py`, `model_test_dialogs.py`). Accuracy uses the
+  exact training feature path per sound → recall/precision/confusions table
+  (model-r: 90.1% over 4000 pop/nn segments). Live test streams the mic into
+  per-sound probability bars + detection log — raw model, no thresholds; the
+  Talon tab remains the deployed-truth view. (CLI's [A] test predates the
+  source/segments layout and silently finds no files.)
+- **Windows DLL fix:** Qt-then-torch fails to load c10.dll (WinError 1114).
+  gui/__main__ now preloads torch before Qt on Windows (~1 s startup) — this
+  also silently broke GUI training/inspect in the Windows venv before.
+- Migration-on-GUI-startup deliberately skipped: it only matters for
+  pre-source/segments CLI data; revisit before a public release.
+
 ---
 
 ## Next Session
