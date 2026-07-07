@@ -146,6 +146,36 @@ non-undoable whole-recording / sound / model deletes.
 - Recording strategy is selectable per session but **threshold mode
   (strict/lenient) is global** (Settings, applies on restart).
 
+### Phase 7: Two-pass detection (threshold quality)
+
+**Problem:** the auto-threshold was an *online* estimator even for saved files —
+its upper-bound dBFS threshold stays disabled until ~10 sounds have finished
+(`dBFS_valleys`), so the start of every recording was judged by weaker criteria
+("takes a while to settle, bad data at the start"), and the repair post-pass
+only ever *adds* detections, never demoting the settle-period junk.
+
+**Fix (`TWO_PASS_DETECTION = True` in `lib/default_config.py`):** for anything
+that is a *file* (not a live stream), run the existing pipeline once purely to
+settle the thresholds over the WHOLE recording (`settle_detection_state`), then
+re-judge every frame from 0:00 with them frozen (`DetectionState.frozen`).
+Applied in `process_wav_file` (re-detect / append / trim / migration; opt-out
+via `two_pass=False`) and `StreamRecorder.stop()`/`.post_processing()`
+(`rejudge_recording()` re-reads the take from disk — pause/clear truncate the
+file too, so it always matches the frames). The recorder un-freezes afterwards
+so CLI pause→process→resume keeps live recalculation. The online algorithm is
+untouched (live paths can't know their future); single-pass output verified
+**byte-identical** to pre-change.
+
+**Measured (synthetic 40 identical bursts + real pop recording, Windows venv):**
+detected 40/40 vs 39/40 with all first-quarter bursts found; real pop events went
+from 100±335 ms (settle-period blobs, multi-second outliers) to a uniform
+74±20 ms with 26 more events found. Pause/resume cycle + GUI offscreen smoke OK.
+
+**Note:** all pre-existing recordings are 16 kHz while config RATE is 48 kHz —
+`process_wav_file` crashes on them in the mfsc framing (pre-existing, also
+blocks GUI re-detect on old data). Fixing that is now the natural next step so
+old recordings can be re-segmented with the better algorithm.
+
 ---
 
 ## Next Session
