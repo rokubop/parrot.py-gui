@@ -202,6 +202,42 @@ def discover_talon() -> TalonDiscoveryResult:
     return result
 
 
+def find_matching_local_model(talon_model_path: str, classifier_folder: str) -> Optional[str]:
+    """Which local model (by name) is byte-identical to the model Talon uses?
+    Returns the model name (pkl basename without extension) or None."""
+    if not talon_model_path or not os.path.isfile(talon_model_path):
+        return None
+    if not os.path.isdir(classifier_folder):
+        return None
+    talon_size = os.path.getsize(talon_model_path)
+    for name in sorted(os.listdir(classifier_folder)):
+        if not name.endswith(".pkl"):
+            continue
+        local = os.path.join(classifier_folder, name)
+        try:
+            if os.path.getsize(local) == talon_size and \
+                    filecmp.cmp(local, talon_model_path, shallow=False):
+                return name[:-4]
+        except OSError:
+            continue
+    return None
+
+
+def load_model_sounds(model_path: str) -> Optional[list]:
+    """The class labels the deployed model can produce (joblib pkl), or None.
+    Heavy (unpickles the model) — call it off the UI thread."""
+    if not model_path or not os.path.isfile(model_path):
+        return None
+    try:
+        import joblib
+        model = joblib.load(model_path)
+        if hasattr(model, "classes_"):
+            return [str(c) for c in model.classes_]
+    except Exception:
+        return None
+    return None
+
+
 def compare_model_files(local_path: str, talon_path: str) -> dict:
     """Compare a local model file to the one referenced by Talon."""
     result = {

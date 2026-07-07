@@ -33,6 +33,7 @@ class MainWindow(QMainWindow):
         self.library_page.edit_requested.connect(self._open_edit)
 
         self.models_page = None
+        self.talon_page = None
         self.settings_page = None
         self.about_page = None
         self.recording_view = None
@@ -48,7 +49,7 @@ class MainWindow(QMainWindow):
         self._nav_group.setExclusive(True)
 
         self.nav_actions = {}
-        for text in ("Sounds", "Models", "Settings", "About"):
+        for text in ("Sounds", "Models", "Talon", "Settings", "About"):
             action = QAction(text, self)
             action.setCheckable(True)
             action.triggered.connect(lambda _checked, t=text: self._show_tab(t))
@@ -80,6 +81,13 @@ class MainWindow(QMainWindow):
             self.models_page = ModelsPage(self.app_state, self)
             self.stack.addWidget(self.models_page)
         return self.models_page
+
+    def _get_talon_page(self):
+        if self.talon_page is None:
+            from gui.windows.talon import TalonPage
+            self.talon_page = TalonPage(self.app_state, self)
+            self.stack.addWidget(self.talon_page)
+        return self.talon_page
 
     def _get_settings_page(self):
         if self.settings_page is None:
@@ -118,6 +126,8 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self.library_page)
         elif name == "Models":
             self.stack.setCurrentWidget(self._get_models_page())
+        elif name == "Talon":
+            self.stack.setCurrentWidget(self._get_talon_page())
         elif name == "Settings":
             self.stack.setCurrentWidget(self._get_settings_page())
         elif name == "About":
