@@ -133,17 +133,46 @@ class ModelsPage(QWidget):
         # Action buttons
         actions = QHBoxLayout()
         self.inspect_btn = self._action_btn("Inspect", self._on_inspect)
+        self.accuracy_btn = self._action_btn("Test accuracy", self._on_test_accuracy)
+        self.accuracy_btn.setToolTip(
+            "Classify every sound's recorded segments with this model")
+        self.live_test_btn = self._action_btn("Test live", self._on_test_live)
+        self.live_test_btn.setToolTip(
+            "Speak into the mic and watch the raw per-sound probabilities")
         self.rename_btn = self._action_btn("Rename", self._on_rename)
         self.clone_btn = self._action_btn("Clone", self._on_clone)
         self.open_btn = self._action_btn("Open folder", self._on_open_folder)
         self.delete_btn = self._action_btn("Delete", self._on_delete)
-        for b in (self.inspect_btn, self.rename_btn, self.clone_btn,
-                  self.open_btn, self.delete_btn):
+        for b in (self.inspect_btn, self.accuracy_btn, self.live_test_btn,
+                  self.rename_btn, self.clone_btn, self.open_btn, self.delete_btn):
             actions.addWidget(b)
         actions.addStretch()
         v.addLayout(actions)
         self._set_actions_enabled(False)
         return group
+
+    def _model_pkl_path(self):
+        if not self._current:
+            return None
+        return os.path.join(CLASSIFIER_FOLDER, f"{self._current}.pkl")
+
+    def _on_test_accuracy(self):
+        path = self._model_pkl_path()
+        if not path or not os.path.isfile(path):
+            return
+        from gui.widgets.model_test_dialogs import AccuracyDialog
+        dialog = AccuracyDialog(self, self._current, path,
+                                self.app_state.get_sound_labels())
+        dialog.exec()
+
+    def _on_test_live(self):
+        path = self._model_pkl_path()
+        if not path or not os.path.isfile(path):
+            return
+        from config.config import INPUT_DEVICE_INDEX
+        from gui.widgets.model_test_dialogs import LiveTestDialog
+        dialog = LiveTestDialog(self, self._current, path, INPUT_DEVICE_INDEX)
+        dialog.exec()
 
     def _action_btn(self, label, slot):
         btn = QPushButton(label)
@@ -250,8 +279,8 @@ class ModelsPage(QWidget):
         self._set_actions_enabled(True)
 
     def _set_actions_enabled(self, on):
-        for b in (self.inspect_btn, self.rename_btn, self.clone_btn,
-                  self.open_btn, self.delete_btn):
+        for b in (self.inspect_btn, self.accuracy_btn, self.live_test_btn,
+                  self.rename_btn, self.clone_btn, self.open_btn, self.delete_btn):
             b.setEnabled(on)
 
     # ---- actions -------------------------------------------------------
