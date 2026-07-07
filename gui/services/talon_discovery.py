@@ -16,6 +16,10 @@ class TalonDiscoveryResult:
     integration_path: Optional[str] = None
     model_path_from_talon: Optional[str] = None
     pattern_path_from_talon: Optional[str] = None
+    # Paths the integration file *references*, whether or not they exist yet —
+    # what a bootstrap flow should create.
+    intended_pattern_path: Optional[str] = None
+    intended_model_path: Optional[str] = None
     patterns: dict = field(default_factory=dict)
     error: Optional[str] = None
 
@@ -172,6 +176,8 @@ def discover_talon() -> TalonDiscoveryResult:
         # Parse it for paths
         parsed = parse_integration_file(integration_path)
         result.model_path_from_talon = parsed["model_path"]
+        result.intended_pattern_path = parsed["pattern_path"]
+        result.intended_model_path = parsed["model_path"]
 
         # Stage 1: pattern_path from parsing integration file
         if parsed["pattern_path"] and os.path.isfile(parsed["pattern_path"]):

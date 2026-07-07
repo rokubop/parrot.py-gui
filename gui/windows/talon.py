@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 
 from gui import theme
 from gui.services import (talon_discovery, patterns_schema, patterns_store,
-                          talon_companion, library_ops)
+                          talon_companion, talon_setup, library_ops)
 from gui.widgets.pattern_edit_dialog import PatternEditDialog
 from gui.windows.talon_live import TalonLiveView
 from gui.windows.talon_captures import TalonCapturesView
@@ -174,6 +174,19 @@ class TalonPage(QWidget):
         self.companion_btn.clicked.connect(self._on_install_companion)
         self.companion_btn.setEnabled(False)
         btn_row.addWidget(self.companion_btn)
+        self.setup_btn = QPushButton("Set up parrot integration…")
+        self.setup_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setup_btn.setToolTip(
+            "Creates <talon user>/parrot/ with parrot_integration.py, one of "
+            "your trained models, and a starter patterns.json")
+        self.setup_btn.clicked.connect(self._on_setup_integration)
+        self.setup_btn.setVisible(False)
+        btn_row.addWidget(self.setup_btn)
+        self.create_patterns_btn = QPushButton("Create patterns.json")
+        self.create_patterns_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.create_patterns_btn.clicked.connect(self._on_create_patterns)
+        self.create_patterns_btn.setVisible(False)
+        btn_row.addWidget(self.create_patterns_btn)
         btn_row.addStretch()
         status_layout.addLayout(btn_row)
         layout.addWidget(self.status_group)
@@ -279,6 +292,22 @@ class TalonPage(QWidget):
 
         self.open_folder_btn.setEnabled(bool(result.pattern_path_from_talon))
         self._refresh_companion_row()
+
+        # Bootstrap buttons for whatever is missing
+        user_dir = result.talon_user_dir
+        self.setup_btn.setVisible(bool(user_dir) and not result.integration_path)
+        patterns_missing = (result.integration_path
+                            and result.intended_pattern_path
+                            and not os.path.isfile(result.intended_pattern_path))
+        self.create_patterns_btn.setVisible(bool(patterns_missing))
+        if not result.integration_path and user_dir:
+            self.status_rows["integration"].setText(
+                f"<span style='color:{bad};'>Not found</span> — use "
+                "'Set up parrot integration' to create one")
+        elif patterns_missing:
+            self.status_rows["patterns"].setText(
+                f"<span style='color:{bad};'>Missing</span> — the integration "
+                f"expects {result.intended_pattern_path}")
         self._deployed = _copy(result.patterns or {})
         self.working = _copy(result.patterns or {})
         self.live_view.set_patterns(self._deployed)
@@ -333,6 +362,63 @@ class TalonPage(QWidget):
             QMessageBox.warning(self, "Install failed", str(exc))
             return
         self._refresh_companion_row()
+
+    def _on_setup_integration(self):
+        user_dir = self._talon_user_dir()
+        if not user_dir:
+            return
+        models = self.app_state.get_model_names()
+        if not models:
+            QMessageBox.information(
+                self, "No models yet",
+                "Train a model first (Models tab) — the integration needs one.")
+            return
+        name, okd = QInputDialog.getItem(
+            self, "Set up parrot integration",
+            "Model to deploy with the integration:", models, 0, False)
+        if not okd:
+            return
+        model_pkl = os.path.join(CLASSIFIER_FOLDER, f"{name}.pkl")
+        scaffold = QMessageBox.question(
+            self, "Starter patterns",
+            "Create one starter pattern per model sound (strict thresholds, "
+            "tune them in the editor)?\n\nChoosing No starts with an empty "
+            "patterns.json.") == QMessageBox.StandardButton.Yes
+        patterns = {}
+        if scaffold:
+            sounds = talon_discovery.load_model_sounds(model_pkl) or []
+            patterns = talon_setup.scaffold_patterns(sounds)
+        dest = os.path.join(user_dir, talon_setup.DEFAULT_SUBFOLDER)
+        if QMessageBox.question(
+                self, "Set up parrot integration",
+                f"Create {dest} with parrot_integration.py, {name}.pkl and "
+                f"patterns.json ({len(patterns)} patterns)?\n\n"
+                "Talon loads the integration immediately.") != \
+                QMessageBox.StandardButton.Yes:
+            return
+        try:
+            talon_setup.install_integration(user_dir, model_pkl, patterns=patterns)
+        except (OSError, patterns_store.PatternsError) as exc:
+            QMessageBox.warning(self, "Setup failed", str(exc))
+            return
+        self.refresh()
+
+    def _on_create_patterns(self):
+        result = self._bundle.get("result") if self._bundle else None
+        if not result or not result.intended_pattern_path:
+            return
+        sounds = self._bundle.get("model_sounds") or []
+        scaffold = bool(sounds) and QMessageBox.question(
+            self, "Starter patterns",
+            "Create one starter pattern per model sound (strict thresholds)?"
+            "\n\nChoosing No starts empty.") == QMessageBox.StandardButton.Yes
+        patterns = talon_setup.scaffold_patterns(sounds) if scaffold else {}
+        try:
+            talon_setup.create_patterns_file(result.intended_pattern_path, patterns)
+        except (OSError, patterns_store.PatternsError) as exc:
+            QMessageBox.warning(self, "Couldn't create patterns.json", str(exc))
+            return
+        self.refresh()
 
     def _on_tab_changed(self, index):
         if self.tabs.widget(index) is not None and index == 1:
