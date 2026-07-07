@@ -165,6 +165,35 @@ class AboutPage(QWidget):
         strengths of several. You train and manage models from the
         <b>Models</b> tab.</p>
 
+        {h("Talon patterns (patterns.json)")}
+        <p>When a model is deployed to Talon, <code>patterns.json</code> maps
+        model sounds to <b>patterns</b> — the named triggers your .talon files
+        bind actions to. Each pattern has:</p>
+        <p style='margin-left:12px;'><b>sounds</b> — which model sounds count
+        toward this pattern (their probabilities are summed).</p>
+        <p style='margin-left:12px;'><b>threshold</b> — rules that must
+        <i>all</i> pass for a frame to fire: <code>&gt;probability</code>
+        (summed model confidence, 0–1), <code>&gt;power</code> (loudness in
+        Talon's units), <code>&gt;f0/f1/f2</code> (pitch/formants in Hz, e.g.
+        to split a high hiss from a low one), each also available as
+        <code>&lt;</code>. A fired frame keeps firing on every frame that
+        passes — throttles are what stop a machine-gun trigger.</p>
+        <p style='margin-left:12px;'><b>throttle</b> — after this pattern
+        fires, silence the listed <i>patterns</i> (including itself) for N
+        seconds. Targets must be pattern names, not sound names.</p>
+        <p style='margin-left:12px;'><b>graceperiod / grace_threshold</b> —
+        right after a detection, softer rules apply for N seconds so a sound
+        you're holding doesn't stutter as its probability wobbles.</p>
+        <p style='margin-left:12px;'><b>detect_after</b> — the rules must hold
+        this many seconds before the first fire (turns a pop-like trigger into
+        a hold-to-activate).</p>
+        <p style='color:{dim};'>The Talon tab edits all of this with
+        validation, keeps snapshots of every deploy, and its Live/Captures
+        views show the real power and probability values your sounds produce —
+        the numbers thresholds should be judged against. Note that
+        <code>power</code>/<code>f0</code> there are Talon-engine units, not
+        the dBFS shown elsewhere in this app.</p>
+
         {h("Recording strategies")}
         <p>The detection strategy controls how onsets, rejections, and gap-mending
         are handled while segmenting. The current strategy is

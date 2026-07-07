@@ -96,7 +96,7 @@ class PatternEditDialog(QDialog):
     ``result_name`` / ``result_pattern`` hold the validated draft."""
 
     def __init__(self, parent, name, pattern, all_patterns, model_sounds,
-                 schema=None):
+                 schema=None, observed=None):
         super().__init__(parent)
         self.setWindowTitle(f"Edit pattern — {name}" if name else "New pattern")
         self.setMinimumSize(680, 640)
@@ -155,6 +155,15 @@ class PatternEditDialog(QDialog):
         ops = self._schema["threshold_ops"]
         thr_group = QGroupBox("Threshold — every rule must pass for a detection")
         QVBoxLayout(thr_group)
+        if observed:
+            from gui.services import session_stats
+            info = session_stats.describe(observed)
+            if info:
+                info_label = QLabel(info)
+                info_label.setWordWrap(True)
+                info_label.setStyleSheet(
+                    f"color: {t['text_dim']}; font-size: 12px; border: none;")
+                thr_group.layout().addWidget(info_label)
         self.threshold_rows = _RuleRows(thr_group, ops, self._revalidate)
         for op, value in (pattern.get("threshold") or {}).items():
             self.threshold_rows.add_row(op, value)

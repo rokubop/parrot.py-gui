@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import theme
-from gui.services import patterns_replay, patterns_store
+from gui.services import patterns_replay, patterns_store, session_stats
 
 CAPTURES_DIR = os.path.join("data", "talon", "captures")
 
@@ -68,9 +68,15 @@ class TalonCapturesView(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter, 1)
 
-        self.summary = QTableWidget(0, 4)
+        self.summary = QTableWidget(0, 7)
         self.summary.setHorizontalHeaderLabels(
-            ["Pattern", "Deployed fires", "Candidate fires", "Δ"])
+            ["Pattern", "Deployed fires", "Candidate fires", "Δ",
+             "Power when fired", "Prob. when fired", "Near misses"])
+        self.summary.horizontalHeaderItem(4).setToolTip(
+            "Observed p10–p90 (median) across the recorded session")
+        self.summary.horizontalHeaderItem(6).setToolTip(
+            "Frames where probability was ≥ 0.5 but the pattern did not fire, "
+            "with the rule that blocked it")
         self._style_table(self.summary)
         splitter.addWidget(self.summary)
 
@@ -152,18 +158,33 @@ class TalonCapturesView(QWidget):
         result_a, result_b, changes = patterns_replay.compare(
             frames, deployed, candidate, deployed_patterns=deployed)
 
+        observed = session_stats.analyze(frames, deployed)
         names = sorted(set(result_a.fires) | set(result_b.fires))
         self.summary.setRowCount(len(names))
         for row, name in enumerate(names):
             fires_a = result_a.fires.get(name, 0)
             fires_b = result_b.fires.get(name, 0)
             delta = fires_b - fires_a
-            cells = [name, str(fires_a), str(fires_b), f"{delta:+d}" if delta else ""]
+            entry = observed.get(name) or {}
+            power = entry.get("fired_power")
+            prob = entry.get("fired_prob")
+            near = entry.get("near_misses", 0)
+            blockers = entry.get("blockers") or {}
+            cells = [
+                name, str(fires_a), str(fires_b),
+                f"{delta:+d}" if delta else "",
+                f"{power[0]:.0f}–{power[2]:.0f}  ({power[1]:.0f})" if power else "",
+                f"{prob[0]:.2f}–{prob[2]:.2f}" if prob else "",
+                str(near) if near else "",
+            ]
             for col, value in enumerate(cells):
                 item = QTableWidgetItem(value)
                 if col == 3 and delta:
                     item.setForeground(QColor(
                         "#41d97f" if delta > 0 else "#e06c75"))
+                if col == 6 and near:
+                    item.setToolTip("Blocked by: " + ", ".join(
+                        f"{rule} ×{count}" for rule, count in blockers.items()))
                 self.summary.setItem(row, col, item)
 
         t0 = frames[0].get("ts", 0.0)

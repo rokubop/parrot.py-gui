@@ -507,10 +507,46 @@ class TalonPage(QWidget):
     # ---- pattern editing --------------------------------------------------
 
     def _edit_dialog(self, name, pattern):
+        observed = self._session_stats().get(name) if name else None
         return PatternEditDialog(
             self, name, pattern, self.working,
             self._bundle.get("model_sounds") if self._bundle else [],
-            self._bundle.get("schema") if self._bundle else None)
+            self._bundle.get("schema") if self._bundle else None,
+            observed=observed)
+
+    def _session_stats(self):
+        """Observed per-pattern stats from the newest recorded session,
+        cached by (path, mtime). Empty dict when there are no sessions."""
+        from gui.services import session_stats
+        captures_dir = os.path.join("data", "talon", "captures")
+        newest = None
+        if os.path.isdir(captures_dir):
+            sessions = [os.path.join(captures_dir, n)
+                        for n in os.listdir(captures_dir) if n.endswith(".jsonl")]
+            if sessions:
+                newest = max(sessions, key=os.path.getmtime)
+        if newest is None:
+            self._stats_cache = None
+            return {}
+        key = (newest, os.path.getmtime(newest))
+        cached = getattr(self, "_stats_cache", None)
+        if cached and cached[0] == key:
+            return cached[1]
+        frames = []
+        try:
+            with open(newest, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            frames.append(json.loads(line))
+                        except ValueError:
+                            continue
+        except OSError:
+            return {}
+        stats = session_stats.analyze(frames, self._deployed)
+        self._stats_cache = (key, stats)
+        return stats
 
     def _on_new(self):
         dialog = self._edit_dialog(None, None)
