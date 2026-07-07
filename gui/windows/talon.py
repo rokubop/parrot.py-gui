@@ -1,21 +1,32 @@
 """Talon tab — first-party Talon integration (see prd-talon.md).
 
-Phase A: Status (discovery, deployed-model match, health lints) and a
-read-only Patterns table with per-pattern lint badges. Discovery + model
-unpickling run off the UI thread; Refresh re-runs everything.
+Status (discovery, deployed-model match, health lints) + the patterns
+editor: a working copy of the deployed patterns.json is edited through the
+guided dialog (or raw JSON), can be stored as named variants, and is only
+written back to Talon via Deploy — which snapshots the deployed file first.
+Talon hot-reloads patterns.json (``@resource.watch``), so deploys apply live.
+
+Discovery + model unpickling run off the UI thread; Refresh re-runs both.
 """
+import json
 import os
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QGroupBox,
     QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView
+    QAbstractItemView, QComboBox, QMessageBox, QInputDialog, QDialog,
+    QPlainTextEdit, QListWidget, QListWidgetItem
 )
 
 from gui import theme
-from gui.services import talon_discovery, patterns_schema, library_ops
+from gui.services import talon_discovery, patterns_schema, patterns_store, library_ops
+from gui.widgets.pattern_edit_dialog import PatternEditDialog
 from config.config import CLASSIFIER_FOLDER
+
+
+def _copy(patterns):
+    return json.loads(json.dumps(patterns))
 
 
 class DiscoveryWorker(QThread):
@@ -59,8 +70,19 @@ class TalonPage(QWidget):
         self.app_state = app_state
         self.worker = None
         self._bundle = None
+        self._deployed = {}     # what's on disk at the Talon path right now
+        self.working = {}       # the copy being edited
         self._setup_ui()
         self.refresh()
+
+    @property
+    def dirty(self):
+        return self.working != self._deployed
+
+    @property
+    def _patterns_path(self):
+        result = self._bundle.get("result") if self._bundle else None
+        return result.pattern_path_from_talon if result else None
 
     # ---- ui -------------------------------------------------------------
 
@@ -127,6 +149,28 @@ class TalonPage(QWidget):
         # ---- patterns group
         self.patterns_group = QGroupBox("Patterns")
         pat_layout = QVBoxLayout(self.patterns_group)
+
+        tools = QHBoxLayout()
+        self.variant_combo = QComboBox()
+        self.variant_combo.setMinimumWidth(160)
+        self.variant_combo.setToolTip(
+            "Named variants are stored in data/talon/variants — load one to "
+            "edit it, then Deploy to make it live")
+        tools.addWidget(self.variant_combo)
+        self.load_variant_btn = self._tool_btn(tools, "Load", self._on_load_variant)
+        tools.addSpacing(16)
+        self.new_btn = self._tool_btn(tools, "New…", self._on_new)
+        self.edit_btn = self._tool_btn(tools, "Edit…", self._on_edit)
+        self.dup_btn = self._tool_btn(tools, "Duplicate", self._on_duplicate)
+        self.del_btn = self._tool_btn(tools, "Delete", self._on_delete)
+        self.raw_btn = self._tool_btn(tools, "Raw JSON…", self._on_raw_json)
+        tools.addStretch()
+        self.save_variant_btn = self._tool_btn(
+            tools, "Save as variant…", self._on_save_variant)
+        self.snapshots_btn = self._tool_btn(tools, "Snapshots…", self._on_snapshots)
+        self.deploy_btn = self._tool_btn(tools, "Deploy to Talon", self._on_deploy)
+        pat_layout.addLayout(tools)
+
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
             ["Pattern", "Sounds", "Threshold", "Grace", "Throttles",
@@ -142,6 +186,7 @@ class TalonPage(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setMinimumHeight(320)
+        self.table.doubleClicked.connect(lambda _ix: self._on_edit())
         pat_layout.addWidget(self.table)
 
         self.lint_label = QLabel("")
@@ -200,15 +245,34 @@ class TalonPage(QWidget):
                               f"{len(sounds)} sounds: {', '.join(sounds)}</span>")
         self.status_rows["model"].setText(model_txt)
 
-        issues = bundle.get("issues") or []
+        self.open_folder_btn.setEnabled(bool(result.pattern_path_from_talon))
+        self._deployed = _copy(result.patterns or {})
+        self.working = _copy(result.patterns or {})
+        self._refresh_variants()
+        self._refresh_from_working()
+
+    # ---- working-copy lifecycle ------------------------------------------
+
+    def _validate_working(self):
+        if not self._bundle:
+            return []
+        return patterns_schema.validate(
+            self.working, self._bundle.get("schema"),
+            model_sounds=self._bundle.get("model_sounds"))
+
+    def _refresh_from_working(self):
+        t = theme.colors()
+        ok, bad = t["accent"], "#e06c75"
+        issues = self._validate_working()
         errors = [i for i in issues if i.severity == "error"]
         warnings = [i for i in issues if i.severity == "warning"]
-        if not result.patterns:
+
+        if not self.working:
             self.status_rows["health"].setText("—")
         elif not issues:
             self.status_rows["health"].setText(
                 f"<span style='color:{ok};'>All good</span> — "
-                f"{len(result.patterns)} patterns, no issues")
+                f"{len(self.working)} patterns, no issues")
         else:
             parts = []
             if errors:
@@ -216,10 +280,257 @@ class TalonPage(QWidget):
             if warnings:
                 parts.append(f"<span style='color:#d3a45c;'>{len(warnings)} warnings</span>")
             self.status_rows["health"].setText(
-                f"{len(result.patterns)} patterns — " + ", ".join(parts))
+                f"{len(self.working)} patterns — " + ", ".join(parts))
 
-        self.open_folder_btn.setEnabled(bool(result.pattern_path_from_talon))
-        self._populate_table(result.patterns or {}, issues)
+        self.patterns_group.setTitle(
+            "Patterns — unsaved changes (Deploy to make live)" if self.dirty
+            else "Patterns")
+        editable = self._patterns_path is not None
+        for btn in (self.new_btn, self.edit_btn, self.dup_btn, self.del_btn,
+                    self.raw_btn, self.save_variant_btn, self.snapshots_btn):
+            btn.setEnabled(editable)
+        self.deploy_btn.setEnabled(editable and self.dirty
+                                   and not patterns_schema.has_errors(issues))
+        self._populate_table(self.working, issues)
+
+    def _refresh_variants(self):
+        current = self.variant_combo.currentText()
+        self.variant_combo.clear()
+        names = patterns_store.list_variants()
+        self.variant_combo.addItems(names)
+        idx = self.variant_combo.findText(current)
+        if idx >= 0:
+            self.variant_combo.setCurrentIndex(idx)
+        has = bool(names)
+        self.variant_combo.setVisible(True)
+        self.load_variant_btn.setEnabled(has)
+
+    def _selected_name(self):
+        row = self.table.currentRow()
+        if row < 0 or self.table.item(row, 0) is None:
+            return None
+        return self.table.item(row, 0).text()
+
+    def _tool_btn(self, layout, label, slot):
+        btn = QPushButton(label)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.clicked.connect(slot)
+        layout.addWidget(btn)
+        return btn
+
+    # ---- pattern editing --------------------------------------------------
+
+    def _edit_dialog(self, name, pattern):
+        return PatternEditDialog(
+            self, name, pattern, self.working,
+            self._bundle.get("model_sounds") if self._bundle else [],
+            self._bundle.get("schema") if self._bundle else None)
+
+    def _on_new(self):
+        dialog = self._edit_dialog(None, None)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.working[dialog.result_name] = dialog.result_pattern
+            self._refresh_from_working()
+
+    def _on_edit(self):
+        name = self._selected_name()
+        if not name or name not in self.working:
+            return
+        dialog = self._edit_dialog(name, self.working[name])
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_name = dialog.result_name
+        if new_name != name:
+            # keep position + update every throttle that pointed at the old name
+            self.working = {
+                (new_name if key == name else key): value
+                for key, value in self.working.items()}
+            for pattern in self.working.values():
+                throttle = pattern.get("throttle")
+                if isinstance(throttle, dict) and name in throttle:
+                    throttle[new_name] = throttle.pop(name)
+        self.working[new_name] = dialog.result_pattern
+        self._refresh_from_working()
+
+    def _on_duplicate(self):
+        name = self._selected_name()
+        if not name or name not in self.working:
+            return
+        copy_name = f"{name} copy"
+        counter = 2
+        while copy_name in self.working:
+            copy_name = f"{name} copy {counter}"
+            counter += 1
+        self.working[copy_name] = _copy(self.working[name])
+        self._refresh_from_working()
+
+    def _on_delete(self):
+        name = self._selected_name()
+        if not name or name not in self.working:
+            return
+        referrers = [p for p, pat in self.working.items()
+                     if isinstance(pat.get("throttle"), dict) and name in pat["throttle"]]
+        message = f"Delete pattern '{name}' from the working copy?"
+        if referrers:
+            message += ("\n\nThrottle references in "
+                        f"{', '.join(referrers)} will also be removed.")
+        if QMessageBox.question(self, "Delete pattern", message) != \
+                QMessageBox.StandardButton.Yes:
+            return
+        del self.working[name]
+        for pattern in self.working.values():
+            throttle = pattern.get("throttle")
+            if isinstance(throttle, dict):
+                throttle.pop(name, None)
+        self._refresh_from_working()
+
+    def _on_raw_json(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("patterns.json — raw")
+        dialog.setMinimumSize(640, 560)
+        layout = QVBoxLayout(dialog)
+        editor = QPlainTextEdit()
+        editor.setStyleSheet("font-family: Consolas, monospace; font-size: 12px;")
+        editor.setPlainText(patterns_store.dumps_patterns(self.working))
+        layout.addWidget(editor, 1)
+        note = QLabel("")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        row = QHBoxLayout()
+        row.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(dialog.reject)
+        row.addWidget(cancel)
+        apply_btn = QPushButton("Apply")
+        row.addWidget(apply_btn)
+        layout.addLayout(row)
+
+        def on_apply():
+            try:
+                data = json.loads(editor.toPlainText())
+            except json.JSONDecodeError as exc:
+                note.setText(f"Not valid JSON: {exc}")
+                return
+            if not isinstance(data, dict):
+                note.setText("patterns.json must be a JSON object")
+                return
+            issues = patterns_schema.validate(
+                data, self._bundle.get("schema") if self._bundle else None,
+                model_sounds=self._bundle.get("model_sounds") if self._bundle else None)
+            if patterns_schema.has_errors(issues):
+                errors = [str(i) for i in issues if i.severity == "error"]
+                note.setText("\n".join(errors[:6]))
+                return
+            self.working = data
+            dialog.accept()
+
+        apply_btn.clicked.connect(on_apply)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._refresh_from_working()
+
+    # ---- variants / deploy / snapshots -------------------------------------
+
+    def _on_save_variant(self):
+        name, okd = QInputDialog.getText(
+            self, "Save as variant",
+            "Variant name (stored in data/talon/variants):",
+            text=self.variant_combo.currentText() or "experiment")
+        if not okd or not name.strip():
+            return
+        try:
+            patterns_store.save_variant(name.strip(), self.working)
+        except patterns_store.PatternsError as exc:
+            QMessageBox.warning(self, "Couldn't save variant", str(exc))
+            return
+        self._refresh_variants()
+        idx = self.variant_combo.findText(name.strip())
+        if idx >= 0:
+            self.variant_combo.setCurrentIndex(idx)
+
+    def _on_load_variant(self):
+        name = self.variant_combo.currentText()
+        if not name:
+            return
+        if self.dirty and QMessageBox.question(
+                self, "Discard changes?",
+                "The working copy has unsaved changes. Load the variant anyway?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.working = patterns_store.load_variant(name)
+        except patterns_store.PatternsError as exc:
+            QMessageBox.warning(self, "Couldn't load variant", str(exc))
+            return
+        self._refresh_from_working()
+
+    def _on_deploy(self):
+        path = self._patterns_path
+        if not path:
+            return
+        diff = patterns_store.diff_patterns(self._deployed, self.working)
+        lines = []
+        for n in diff["added"]:
+            lines.append(f"+ {n}")
+        for n in diff["removed"]:
+            lines.append(f"− {n}")
+        for n, fields in diff["changed"].items():
+            lines.append(f"~ {n}: {', '.join(f[0] for f in fields)}")
+        summary = "\n".join(lines) or "(no changes)"
+        if QMessageBox.question(
+                self, "Deploy to Talon",
+                f"Write these changes to\n{path}?\n\n{summary}\n\n"
+                "The current file is snapshotted first, and Talon reloads "
+                "patterns.json automatically.") != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            snap = patterns_store.deploy(self.working, path)
+        except patterns_store.PatternsError as exc:
+            QMessageBox.warning(self, "Deploy failed", str(exc))
+            return
+        self._deployed = _copy(self.working)
+        self._refresh_from_working()
+        QMessageBox.information(
+            self, "Deployed",
+            f"patterns.json updated — Talon picks it up automatically.\n"
+            f"Previous version snapshotted to:\n{snap}")
+
+    def _on_snapshots(self):
+        snaps = patterns_store.list_snapshots()
+        if not snaps:
+            QMessageBox.information(self, "Snapshots",
+                                    "No snapshots yet — one is taken on every deploy.")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Snapshots")
+        dialog.setMinimumSize(520, 420)
+        layout = QVBoxLayout(dialog)
+        listing = QListWidget()
+        for path, _mtime in snaps:
+            QListWidgetItem(os.path.basename(path), listing)
+        layout.addWidget(listing, 1)
+        row = QHBoxLayout()
+        row.addStretch()
+        close = QPushButton("Close")
+        close.clicked.connect(dialog.reject)
+        row.addWidget(close)
+        restore = QPushButton("Load into working copy")
+        row.addWidget(restore)
+        layout.addLayout(row)
+
+        def on_restore():
+            idx = listing.currentRow()
+            if idx < 0:
+                return
+            try:
+                self.working = patterns_store.load_patterns(snaps[idx][0])
+            except patterns_store.PatternsError as exc:
+                QMessageBox.warning(dialog, "Couldn't load snapshot", str(exc))
+                return
+            dialog.accept()
+
+        restore.clicked.connect(on_restore)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._refresh_from_working()
 
     def _populate_table(self, patterns, issues):
         t = theme.colors()
