@@ -118,6 +118,20 @@ class AboutPage(QWidget):
         Everything outside them is treated as silence and ignored during
         training. You can re-run detection at a different threshold, or hand-edit
         a recording, from its edit view.</p>
+        <p>The threshold itself is worked out in three layers:</p>
+        <p style='margin-left:12px;'><b>1. Live calibration</b> — while you
+        record, Parrot listens to your noise floor and the sounds you make and
+        calibrates the threshold on the fly. It needs roughly ten finished
+        sounds before it settles, so judgments made early in a take are
+        provisional.</p>
+        <p style='margin-left:12px;'><b>2. Settled re-judge</b> — when a
+        recording is saved or re-detected, the whole take is judged again with
+        the thresholds that settled over all of it, so the first sounds are
+        segmented with exactly the same criteria as the last. (Two-pass
+        detection — on by default, can be switched off in Settings.)</p>
+        <p style='margin-left:12px;'><b>3. Manual override</b> — set a threshold
+        yourself in a recording's edit view and it wins over both, for that
+        recording only.</p>
 
         {h("Discrete vs continuous")}
         <p>A <b>discrete</b> sound is short and punchy (a click or a pop). A

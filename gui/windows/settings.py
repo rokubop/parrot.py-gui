@@ -14,8 +14,8 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import (
-    INPUT_DEVICE_INDEX, THRESHOLD_DETECTION, RECORDINGS_FOLDER,
-    CLASSIFIER_FOLDER,
+    INPUT_DEVICE_INDEX, THRESHOLD_DETECTION, TWO_PASS_DETECTION,
+    RECORDINGS_FOLDER, CLASSIFIER_FOLDER,
 )
 from gui import theme
 from gui.services import user_config, strategies, library_ops
@@ -69,6 +69,26 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.threshold_combo.setCurrentIndex(idx)
         form.addRow("Threshold mode:", self.threshold_combo)
+
+        self.two_pass_combo = QComboBox()
+        self.two_pass_combo.addItem(
+            "Two-pass — re-judge the whole recording once thresholds settle", True)
+        self.two_pass_combo.addItem(
+            "Single-pass — keep the live judgments as-is (legacy)", False)
+        self.two_pass_combo.setCurrentIndex(0 if TWO_PASS_DETECTION else 1)
+        form.addRow("Detection passes:", self.two_pass_combo)
+
+        two_pass_desc = QLabel(
+            "While you record, thresholds calibrate live and need roughly ten "
+            "sounds before they settle — so the first sounds of a take are "
+            "judged by weaker criteria. Two-pass re-judges the entire recording "
+            "with the settled thresholds whenever it is saved or re-detected, "
+            "so the start is segmented as accurately as the end. A manual "
+            "threshold set in a recording's edit view always wins over either.")
+        two_pass_desc.setWordWrap(True)
+        two_pass_desc.setStyleSheet(
+            f"color: {theme.colors()['text_dim']}; font-size: 12px;")
+        form.addRow("", two_pass_desc)
 
         self.strategy_combo = QComboBox()
         for label in strategies.labels():
@@ -172,6 +192,7 @@ class SettingsPage(QWidget):
         updates = {
             "INPUT_DEVICE_INDEX": self.device_combo.currentData(),
             "THRESHOLD_DETECTION": self.threshold_combo.currentData(),
+            "TWO_PASS_DETECTION": bool(self.two_pass_combo.currentData()),
             "CURRENT_DETECTION_STRATEGY": strategies.strategy_for_label(
                 self.strategy_combo.currentText()),
             "DEFAULT_CLF_FILE": self.model_combo.currentData() or "",
