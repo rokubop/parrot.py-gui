@@ -26,8 +26,13 @@ SPEECHREC_ENABLED = False
 FORMAT = np.int16
 SAMPLE_WIDTH = 2  # 16-bit = 2 bytes
 CHANNELS = 1
-# RATE = 16000
-RATE = 48000
+# 16000 is the rate the whole parrot ecosystem is built around: every
+# existing recording, every trained model (the pkl settings say RATE: 16000),
+# and Talon's feature extraction for those models. Changing it silently
+# desyncs training features from Talon inference and breaks processing of
+# existing 16 kHz recordings — recordings at other rates are resampled to
+# RATE on read instead.
+RATE = 16000
 CHUNK = 1024
 RECORD_SECONDS = 0.03
 TEMP_FILE_NAME = "play.wav"
