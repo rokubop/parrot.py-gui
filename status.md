@@ -176,6 +176,42 @@ from 100±335 ms (settle-period blobs, multi-second outliers) to a uniform
 blocks GUI re-detect on old data). Fixing that is now the natural next step so
 old recordings can be re-segmented with the better algorithm.
 
+### Phase 8: First-party Talon support (see prd-talon.md)
+
+**New top-level Talon tab** (Sounds | Models | **Talon** | Settings | About)
+with three sub-tabs, all verified offscreen against the real Talon setup:
+
+- **Setup & Patterns** — discovery (integration / patterns.json / deployed
+  model paths), deployed-model ↔ local-model byte-match, companion
+  install/update, health lints, and a full **patterns.json editor**: guided
+  per-pattern dialog (sounds from the deployed model's classes, threshold ops
+  from the integration's own `possible_thresholds`, throttle targets from
+  pattern names), raw-JSON mode, named variants (`data/talon/variants`),
+  snapshot-before-every-deploy + snapshot browser (`data/talon/snapshots`).
+  Rename/delete update throttle references everywhere. Validation caught 6
+  real dead throttles in the live patterns.json (sound names where pattern
+  names are required). Talon hot-reloads patterns.json (`@resource.watch`),
+  so Deploy applies live.
+- **Live** — port of talon-parrot-tester's frames table fed by a **companion
+  module** (`talon_companion/parrot_gui_bridge.py`, installed from the GUI):
+  a pure observer that wraps `pattern_match`, calls the original, and
+  publishes per-frame UDP JSON (power/formants/class probabilities/active/
+  throttled/grace) + heartbeat to 127.0.0.1:8352. Captures group with 0.3 s
+  pre-roll / 350 ms timeout like the tester. **Record session** writes raw
+  frames to `data/talon/captures/*.jsonl`.
+- **Captures** — the A/B workbench: replay a recorded session against the
+  working copy or any variant using a port of the integration's state
+  machine that is **verified frame-identical** (4000 random frames incl.
+  grace/throttle, 0 mismatches, tested by exec'ing the real integration's
+  classes with Talon stubbed). Shows per-pattern fire counts, dropped/added
+  frames, and warns when a lowered >power floor makes additions
+  under-reportable.
+
+**Not yet verified live:** the companion inside a running Talon (needs a
+real session: install companion → Live tab shows frames → record → A/B).
+Services: `patterns_store/schema/replay`, `capture_model`, `talon_companion`
+(all Qt-free + sandbox-tested), `bridge_worker`, `pattern_edit_dialog`.
+
 ---
 
 ## Next Session

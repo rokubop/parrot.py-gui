@@ -24,6 +24,7 @@ from gui.services import (talon_discovery, patterns_schema, patterns_store,
                           talon_companion, library_ops)
 from gui.widgets.pattern_edit_dialog import PatternEditDialog
 from gui.windows.talon_live import TalonLiveView
+from gui.windows.talon_captures import TalonCapturesView
 from config.config import CLASSIFIER_FOLDER
 
 
@@ -106,6 +107,15 @@ class TalonPage(QWidget):
         live_layout.setContentsMargins(16, 8, 16, 8)
         live_layout.addWidget(self.live_view)
         self.tabs.addTab(live_wrap, "Live")
+
+        self.captures_view = TalonCapturesView(
+            get_deployed=lambda: self._deployed,
+            get_working=lambda: self.working)
+        captures_wrap = QWidget()
+        captures_layout = QVBoxLayout(captures_wrap)
+        captures_layout.setContentsMargins(16, 8, 16, 8)
+        captures_layout.addWidget(self.captures_view)
+        self.tabs.addTab(captures_wrap, "Captures")
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         body = QWidget()
@@ -329,6 +339,8 @@ class TalonPage(QWidget):
             self.live_view.start()
         else:
             self.live_view.stop()
+        if index == 2:
+            self.captures_view.refresh_sessions()
 
     def hideEvent(self, event):
         self.live_view.stop()
