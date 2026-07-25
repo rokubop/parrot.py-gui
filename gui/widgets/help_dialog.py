@@ -11,19 +11,22 @@ from PyQt6.QtWidgets import (
 
 from gui import theme
 
+# Row bodies read as their own sentence, not as a continuation of the label -
+# so they start capitalised. Literal names ( sound labels, filenames ) keep
+# their own casing wherever they fall.
 RECORD_ROWS = (
-    ("Setup", "a quiet room, and the mic you'll actually use day to day "
+    ("Setup", "A quiet room, and the mic you'll actually use day to day "
               "(pick it in Settings). Avoid dynamic mics: takes vary too "
               "much between sessions."),
-    ("Good sounds", "tongue clicks, lip pops, palate clicks, “sh” / “ss” "
+    ("Good sounds", "Tongue clicks, lip pops, palate clicks, “sh” / “ss” "
                     "hisses, short vowels - distinct from each other and from "
                     "normal speech. “Choosing sounds”, on the New sound "
                     "dialog, goes into which ones work and why."),
-    ("Goal", "record each sound until its Data rating says Excellent "
+    ("Goal", "Record each sound until its Data rating says Excellent "
              "(~80 s of detected sound). More data beats more sounds."),
     ("How many", "2 sounds minimum to train. A daily-driver setup is "
                  "usually 10-20."),
-    ("Time", "a real commitment: 1 hr+ of recording spread over multiple "
+    ("Time", "A real commitment: 1 hr+ of recording spread over multiple "
              "days, 4 hr+ for a full model. Bursts are fine; every "
              "recording is saved as you go."),
     ("Where", "Sounds tab: “+ New sound”, then “+ Add recording”."),
@@ -31,53 +34,53 @@ RECORD_ROWS = (
 # Shown on Home until there are 2+ sounds. Deliberately only the three things
 # worth knowing *before* the first take - the full detail lives in the topics.
 PREP_ROWS = (
-    ("Set aside time", "recording is a solid block of work, not five minutes - "
+    ("Set aside time", "Recording is a solid block of work, not five minutes - "
                        "1 hr+ spread over sessions. Every take is saved as you "
                        "go, so stopping is fine."),
-    ("Find a quiet room", "and use the mic you'll actually use day to day (pick "
-                          "it in Settings). Avoid dynamic mics - takes vary too "
+    ("Find a quiet room", "Use the mic you'll actually use day to day (pick it "
+                          "in Settings). Avoid dynamic mics - takes vary too "
                           "much between sessions."),
-    ("Decide your sounds", "pick the noises before you record. The New sound "
+    ("Decide your sounds", "Pick the noises before you record. The New sound "
                            "dialog walks through what makes a good one."),
 )
 TRAIN_ROWS = (
-    ("What", "training reads every recording of every sound and produces "
+    ("What", "Training reads every recording of every sound and produces "
              "a model file in data/models."),
     ("Needs", "2+ sounds. The more sounds rated Excellent, the better the "
               "model."),
-    ("Time", "minutes, not hours. Retrain any time; old models are kept."),
+    ("Time", "Minutes, not hours. Retrain any time; old models are kept."),
     ("Where", "Models tab."),
 )
 CONNECT_ROWS = (
     ("What", "Talon (talonvoice.com) runs your model live and maps each "
              "sound to an action."),
-    ("Patterns", "patterns.json names each trigger and which sound fires "
-                 "it. Edit and deploy from the Talon tab."),
-    ("Setup", "the Talon tab finds your Talon install and can bootstrap "
+    ("Patterns", "Each trigger, and the sound that fires it, lives in "
+                 "patterns.json. Edit and deploy from the Talon tab."),
+    ("Setup", "The Talon tab finds your Talon install and can bootstrap "
               "the parrot integration from nothing."),
     ("Where", "Talon tab."),
 )
 
 SOUNDS_ROWS = (
-    ("How it works", "the audio is cut into 15 ms frames and each one is "
+    ("How it works", "The audio is cut into 15 ms frames and each one is "
                      "classified on its own."),
-    ("Start unique", "the opening frames are the most important to keep unique. "
+    ("Start unique", "The opening frames are the most important to keep unique. "
                      "It's ok if the tail overlaps other sounds, because you "
                      "can throttle them."),
     ("Suggestions", None),
-    ("Safe with speech", "<b>pop</b>, <b>palatal click</b> (tongue off the roof "
-                         "of your mouth), <b>alveolar click</b> / <b>cluck</b>, "
-                         "<b>tut</b>."),
-    ("Conflicts with speech", "vowels (<b>ah</b>, <b>oh</b>, <b>ee</b>) and "
+    ("Safe with speech", "<b>pop</b>, <b>palate</b> (palatal click), "
+                         "<b>cluck</b> (alveolar click), <b>tut</b> (dental "
+                         "click)."),
+    ("Conflicts with speech", "Vowels (<b>ah</b>, <b>oh</b>, <b>ee</b>) and "
                               "consonants (<b>mm</b>, <b>hiss</b>, <b>shush</b>, "
                               "<b>t</b>, <b>ff</b>, <b>guh</b>, <b>er</b>, "
                               "<b>eh</b>). Usable, but you give up voice "
                               "commands while they're live, and pairs sharing "
                               "an opening (<b>uh</b> vs <b>ah</b>) misfire."),
-    ("Distractors", "record the noises you want ignored - table bumps, throat "
+    ("Distractors", "Record the noises you want ignored - table bumps, throat "
                     "clears, keyboard - as their own sound, and map them to "
                     "nothing."),
-    ("Plan", "use 📝 Notes to keep notes."),
+    ("Plan", "Use 📝 Notes to keep notes."),
 )
 
 class FramesDiagram(QWidget):
