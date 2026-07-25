@@ -103,6 +103,27 @@ _STYLESHEET = Template("""
     QListWidget::item:selected, QTreeWidget::item:selected {
         background-color: $accent; color: $accent_text;
     }
+    /* Checkable rows need explicit indicators. Left to Fusion + the palette,
+       the box fills with $base and the tick is drawn in HighlightedText, so on
+       a selected row it came out dark-on-dark: checked and unchecked looked
+       identical and clicking appeared to do nothing. */
+    QListWidget::indicator, QTreeWidget::indicator {
+        width: 13px; height: 13px;
+        border: 1px solid $border; border-radius: 3px;
+        background-color: $base;
+    }
+    QListWidget::indicator:hover, QTreeWidget::indicator:hover { border-color: $text; }
+    QListWidget::indicator:checked, QTreeWidget::indicator:checked {
+        background-color: $accent; border-color: $accent;
+    }
+    /* A selected row is already $accent, so an accent-filled box would vanish
+       into it. Invert on selection: dark fill for checked, outline for not. */
+    QListWidget::indicator:selected, QTreeWidget::indicator:selected {
+        background-color: transparent; border-color: $accent_text;
+    }
+    QListWidget::indicator:checked:selected, QTreeWidget::indicator:checked:selected {
+        background-color: $accent_text; border-color: $accent_text;
+    }
     QTableWidget { gridline-color: $border; border: none; font-size: 12px; background-color: $base; }
     QHeaderView::section {
         background-color: $toolbar; color: $text_dim; border: none;
