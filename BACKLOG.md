@@ -25,10 +25,13 @@ grouped by area, not prioritised beyond the first section.
   mirrors `lib/learn_data.py`'s Audio Net branch, but no full run has completed
   through the GUI yet. Also covers model details, stale markers and ensemble
   combine against real model files.
-  - Synthetic fixtures are a dead end here: the active strategy
-    (`auto_dBFS_secondary_dBFS_reject_cont_45ms_repair`) rejects anything that
-    reads as continuous, and hand-built bursts kept segmenting to zero
-    detections. Record two real sounds instead.
+  - Synthetic fixtures turned out to be a poor use of time - hand-built bursts
+    kept segmenting to **zero** detections, and the cause was never pinned
+    down. (Not the strategy's minimum-length rule as first assumed:
+    `reject_cont_45ms` drops continuous blips *under 45 ms* and keeps short
+    discrete sounds, so 70 ms bursts should have passed.) Record two real
+    sounds instead. If synthetic fixtures are ever wanted for CI, the real
+    question is what the detector needs in an onset - worth answering once.
 
 ## Training performance
 
@@ -51,6 +54,29 @@ All still reachable from `python settings.py`:
 
 Note the CLI's own accuracy test ([A]) predates the `source/` `segments/` layout
 and silently finds no files; the GUI's Test accuracy replaced it.
+
+## Match what the CLI offers when training
+
+Raised 2026-07-25, not yet designed. `lib/learn_data.py` offers three
+algorithms and a settings pass; the GUI hardcodes Audio Net and exposes only
+the net count.
+
+- **Algorithm choice** - `[A]` Audio Net (PyTorch, *required by Talon*, so it
+  stays the default and the recommendation), `[R]` Random Forest (sklearn,
+  described in the CLI as "for quick verification"), `[M]` Multi Layer
+  Perceptron (sklearn). Random Forest is the interesting one for UX: it trains
+  in seconds where Audio Net takes 4-6 hours, so it answers "is my data
+  actually learnable?" *before* committing a night to it. That also gives the
+  sound checklist a real purpose - trying subsets becomes cheap.
+- **Audio settings** (`define_settings` in `lib/combine_models.py`): RATE,
+  CHANNELS, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT and FEATURE_ENGINEERING_TYPE
+  (RAW / MFCC / normalised MFCC / normalised MFSC). These are a footgun - they
+  must match how the recordings were made and what Talon expects - so the
+  proposal is a read-only summary line ("16 kHz, 30 ms frames, MFSC") with an
+  Advanced override that says plainly what changing them breaks.
+- Net count should only appear for Audio Net.
+- The CLI's post-train confusion matrix is already superseded by the GUI's
+  Test accuracy dialog.
 
 ## GUI features
 
