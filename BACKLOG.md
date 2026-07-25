@@ -23,6 +23,17 @@ grouped by area, not prioritised beyond the first section.
   ensemble combine against real model files - needs a machine with recorded
   sounds and trained models.
 
+## Training performance
+
+- **Check whether the GPU is actually used**, on the Windows box with the good
+  GPU. Both requirements files install plain `torch` from PyPI with no CUDA
+  index URL, so the wheel may well be CPU-only while `audio_net.py` politely
+  falls back to CPU. If so, a CUDA wheel is the single biggest available win on
+  a 4-6 hour run. See `memory/training-takes-hours.md` for the one-line check.
+- **Apple silicon uses no GPU at all** - the trainer checks `torch.cuda` only,
+  never `torch.backends.mps`. Worth trying MPS on the Mac, with the caveat that
+  these ops need verifying against CPU output before trusting it.
+
 ## Terminal-only operations not yet in the GUI
 
 All still reachable from `python settings.py`:

@@ -33,6 +33,7 @@ an individual file when its line looks relevant.
 ### Conventions
 - [UI copy style](ui-copy-style.md) - no em dashes anywhere, sentence case, actions name their target
 - [GUI design vocabulary](gui-design-vocabulary.md) - one primary accent action per screen, quiet secondary row, centered empty states, the data-quantity rating as shared language
+- [Training takes hours, not minutes](training-takes-hours.md) - 4-6 hrs for a real run; stopping early keeps the best model so far
 - [Qt traps paid for once](qt-traps.md) - top-level widget GC, stylesheet scoping, word-wrapped labels, pyqtgraph on the UI thread
 
 ### Decisions not to re-litigate

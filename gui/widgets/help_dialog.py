@@ -10,6 +10,13 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import theme
+from lib.print_status import get_quantity_rating
+
+# Detected sound per label: below the first, get_quantity_rating says "Not
+# enough" (16.5s) and training is a formality; the second is where a model
+# starts being usable. Quoted in the Sounds empty state too.
+MIN_TRAIN_SECONDS = 17
+GOOD_TRAIN_SECONDS = 40
 
 # Row bodies read as their own sentence, not as a continuation of the label -
 # so they start capitalised. Literal names ( sound labels, filenames ) keep
@@ -48,8 +55,16 @@ TRAIN_ROWS = (
              "a model file in data/models."),
     ("Needs", "2+ sounds. The more sounds rated Excellent, the better the "
               "model."),
-    ("Time", "Minutes, not hours. Retrain any time; old models are kept."),
-    ("Where", "Models tab."),
+    ("Time", "Hours, not minutes - roughly 4-6 hrs for 14 sounds at 5 nets "
+             "running all 300 epochs. Sound count, how much you've recorded "
+             "and the net count each multiply it. Runs unattended, so start "
+             "it and leave it."),
+    ("Rough draft", "You don't have to run it out. The best model so far is "
+                    "saved every time accuracy improves, so Stop once the "
+                    "curve flattens and you keep it - a usable first pass in "
+                    "a fraction of the time. Let it finish when you're "
+                    "chasing the last few points."),
+    ("Where", "Models tab. Retrain any time; old models are kept."),
 )
 CONNECT_ROWS = (
     ("What", "Talon (talonvoice.com) runs your model live and maps each "
@@ -220,6 +235,48 @@ TOPICS = {
     "connect": ("Connecting to Talon", CONNECT_ROWS, None),
     "sounds": ("Choosing sounds", SOUNDS_ROWS, frames_diagram_widget),
 }
+
+
+def quantity_summary(pairs, max_named=3):
+    """Describe a set of sounds by data quantity, as a sentence fragment.
+
+    `pairs` is [(label, detected_ms), ...].
+
+    Never render a bare count next to a rating name: "2 sounds: 2 Not enough"
+    reads as "2 sounds is not enough", and it is worst in the case that matters
+    most - every sound in the same band, so there is no second category to
+    disambiguate. Few sounds are named individually; many are counted with an
+    explicit "rated".
+    """
+    if not pairs:
+        return ""
+    rated = [(label, get_quantity_rating(ms)[0]) for label, ms in pairs]
+    if len(rated) <= max_named:
+        return ", ".join(f"{label} ({quantity})" for label, quantity in rated)
+    counts = {}
+    for _label, quantity in rated:
+        counts[quantity] = counts.get(quantity, 0) + 1
+    order = ("Excellent", "Good", "Sufficient", "Not enough")
+    present = [q for q in order if q in counts]
+    # A bare "N Quantity" only misreads when it stands alone; a list of several
+    # is obviously a breakdown, so spell it out only in the single-band case.
+    if len(present) == 1:
+        return f"all {len(rated)} rated {present[0]}"
+    return ", ".join(f"{counts[q]} {q}" for q in present)
+
+
+def thin_data_warning(count, total):
+    """The consequence of training on sounds under the minimum. It never blocks -
+    it says what will happen. All-thin is a different situation from one weak
+    sound: there is no strong sound left for it to be weak against."""
+    if count < total:
+        noun = "sound has" if count == 1 else "sounds have"
+        return (f"{count} {noun} too little data and will be the model's weak "
+                f"spot.")
+    subject = "Both are" if total == 2 else "They are all"
+    return (f"{subject} under {MIN_TRAIN_SECONDS}s of detected sound, so expect "
+            f"a lot of misfires. Around {GOOD_TRAIN_SECONDS}s each is where a "
+            f"model starts being usable.")
 
 
 def rows_html(rows):

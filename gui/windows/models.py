@@ -452,18 +452,21 @@ class ModelsPage(QWidget):
             return
 
         self.train_btn.setEnabled(True)
-        counts = {}
-        for label in labels:
-            quantity, _p, _n = get_quantity_rating(
-                self.app_state.get_label_duration_ms(label))
-            counts[quantity] = counts.get(quantity, 0) + 1
-        order = ("Excellent", "Good", "Sufficient", "Not enough")
-        breakdown = ", ".join(f"{counts[q]} {q}" for q in order if q in counts)
+        pairs = [(label, self.app_state.get_label_duration_ms(label))
+                 for label in labels]
+        summary = help_dialog.quantity_summary(pairs)
+        thin = sum(1 for _l, ms in pairs
+                   if get_quantity_rating(ms)[0] == "Not enough")
+
+        body = f"You have {len(labels)} sounds - {summary}."
+        if thin:
+            body += " " + help_dialog.thin_data_warning(thin, len(labels))
+        body += (" Training reads every recording of the sounds you pick and "
+                 "produces one model file. It runs unattended for hours - you "
+                 "can stop it early for a rough first model, and retrain "
+                 "whenever you record more.")
         self.empty_title.setText("Train your first model")
-        self._set_empty_body(
-            f"You have {len(labels)} sounds: {breakdown}. Training reads every "
-            f"recording of the sounds you pick and produces one model file. It "
-            f"takes a few minutes, and you can retrain whenever you record more.")
+        self._set_empty_body(body)
         self.empty_btn.setText("Train a model")
         self.empty_btn.clicked.connect(self.train_requested.emit)
 

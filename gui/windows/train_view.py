@@ -206,6 +206,9 @@ class TrainView(QWidget):
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.stop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Not an abort: the best checkpoint so far is already on disk.
+        self.stop_btn.setToolTip(
+            "Finish after this epoch and keep the best model so far")
         self.stop_btn.clicked.connect(self._on_stop)
         btn_row.addWidget(self.stop_btn)
         # Only route to Sounds when there is genuinely nothing to train on -
@@ -384,13 +387,15 @@ class TrainView(QWidget):
         counts = self._ratings(selected)
         running = self.worker is not None
 
-        parts = []
         if selected:
-            order = ("Excellent", "Good", "Sufficient", "Not enough")
-            breakdown = ", ".join(f"{counts[q]} {q}" for q in order if q in counts)
+            pairs = [(label, self.app_state.get_label_duration_ms(label))
+                     for label in selected]
             noun = "sound" if len(selected) == 1 else "sounds"
-            parts.append(f"{len(selected)} {noun} selected  ·  {breakdown}")
-        self.summary.setText("  ".join(parts))
+            self.summary.setText(
+                f"{len(selected)} {noun} selected  ·  "
+                f"{help_dialog.quantity_summary(pairs)}")
+        else:
+            self.summary.setText("")
 
         self.to_sounds_btn.setVisible(total < 2)
         if total < 2:
@@ -415,13 +420,15 @@ class TrainView(QWidget):
             self._set_readiness(
                 f"“{name}” already exists - training will overwrite it.", WARN)
         elif thin:
-            noun = "sound has" if thin == 1 else "sounds have"
+            # All-thin is a different situation from one weak sound: there is no
+            # strong sound left for it to be weak *against*.
+            warning = help_dialog.thin_data_warning(thin, len(selected))
             self._set_readiness(
-                f"Ready, but {thin} {noun} too little data and will be the "
-                f"model's weak spot.", WARN)
+                "Ready, but " + warning[0].lower() + warning[1:], WARN)
         else:
-            self._set_readiness("Ready to train. This takes a few minutes.",
-                                t["accent"])
+            self._set_readiness(
+                "Ready to train. This runs for hours unattended - you can "
+                "leave, and Stop keeps the best model so far.", t["accent"])
         self.train_btn.setEnabled(not running)
 
     def _set_readiness(self, text, color):
@@ -457,8 +464,9 @@ class TrainView(QWidget):
         self.placeholder_box.setVisible(False)
         self.success_frame.setVisible(False)
         self.status.setText(
-            f"Training “{name}” on {len(selected)} sounds… this usually takes a "
-            f"few minutes.")
+            f"Training “{name}” on {len(selected)} sounds… this runs for hours. "
+            f"You can leave this screen; it keeps going. Stop once the curve "
+            f"flattens if you only want a rough model.")
         self.train_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.labels_tree.setEnabled(False)
