@@ -62,16 +62,16 @@ class MainWindow(QMainWindow):
         self.nav_actions["Home"].setChecked(True)
         self.stack.setCurrentWidget(self.home_page)
 
-        # notes drawer: open by default, close via its X or the toolbar toggle
+        # notes drawer: hidden until toggled, closable via its X too
         from gui.widgets.notes_dock import NotesDock
         self.notes_dock = NotesDock(self.app_state, self)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.notes_dock)
+        self.notes_dock.hide()
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
-        notes_action = QAction("Notes", self)
+        notes_action = QAction("📝 Notes", self)
         notes_action.setCheckable(True)
-        notes_action.setChecked(True)
         notes_action.toggled.connect(self.notes_dock.setVisible)
         self.notes_dock.visibilityChanged.connect(notes_action.setChecked)
         toolbar.addAction(notes_action)
