@@ -24,7 +24,7 @@
   - Right: per-sound header (counts / recorded / detected seconds) + a vertical stack of **session cards**, one per recording.
 - **Session card** (`gui/widgets/session_card.py`): date + length + threshold header, play/pause, click-to-seek. Loads audio lazily on first play.
 - **Audio preview** (`gui/widgets/audio_preview.py`): min/max envelope waveform ⇄ spectrogram toggle, X-locked zoom with limits, detection regions overlaid from the `.srt`, hover time readout, animated fit, visual-only **Normalize** (rescales Y to the peak, since these sounds peak ~0.3).
-- **Theme system** (`gui/theme.py`): live-switchable `fabfilter` (default, green accent) / `studio_dark` / `audio_console`. Switcher lives in the main toolbar; pages with `refresh_theme()` rebuild on switch.
+- **Theme system** (`gui/theme.py`): live-switchable, pages with `refresh_theme()` rebuild on switch. *(As of 2026-07-25 only `fabfilter` remains and the toolbar switcher is gone — the machinery is still there if a second theme is ever added.)*
 - **Critical crash fix**: `create_app()` only held a *local* reference to `MainWindow`, so Python GC could delete the whole window (and every child widget) mid-event-loop — surfacing as intermittent `wrapped C/C++ object ... has been deleted` errors on `cards_layout`/`scroll`, especially when clicking fast. Fixed by holding a strong ref: `app._main_window = window` in `gui/app.py`. **If you see "deleted C++ object" errors again, suspect a missing Python reference to a top-level widget, not teardown order.**
 
 ### Phase 5: Sounds Library UX + Recording Performance (this session)
@@ -234,6 +234,43 @@ Services: `patterns_store/schema/replay`, `capture_model`, `talon_companion`
 
 ---
 
+### Phase 10: Home, help system & sounds-first onboarding (2026-07-25)
+
+Covers the GUI commits that landed after Phase 9 and were never written up
+(`eb892f0`..`ee794a6`).
+
+- **Multi-mic simultaneous recording** — GUI parity with the terminal recorder.
+- **Device toolbar** (`widgets/device_bar.py`) — replaced the transport strip.
+- **Home page** — default landing: 1-2-3 workflow cards with live status,
+  active-model / Talon state, "Before you start" (hides at 2+ sounds).
+- **Shared help modals** (`widgets/help_dialog.py`) — one source of truth for
+  workflow copy, reachable from every page header and from Home's step cards.
+  `rows_html` renders label/body rows; a row with a `None` body is a section
+  header.
+- **Notes drawer** — right dock, toolbar toggle, hidden by default.
+- **Sounds-first onboarding**
+  - Empty states for "no sounds" and "sound with no recordings"; the per-sound
+    header hides entirely when nothing is selected, since every control in it
+    acts on a sound.
+  - `+ Add recording` names its target: `+ Add recording to "pop"`.
+  - A sound is always created *before* a take — New sound is a real dialog
+    (not `QInputDialog`) carrying the "Choosing a sound" guidance inline.
+  - `FramesDiagram` — a painted pop cut into the 15 ms frames detection
+    actually uses, each frame labelled `pop` / `silence` (BACKGROUND_LABEL).
+    Frame labels are derived from the drawn waveform's RMS so the annotations
+    can't drift from the curve.
+- **Detection facts worth not re-deriving** (verified against the code):
+  - One frame = `RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT` = 240 samples
+    = **15 ms**; each classification joins 2 frames = 30 ms (`stream_processing.py:17,85,299`).
+  - Recording is one continuous take. A detection is opened by a **spectral-flux
+    onset**, which then *sets* `current_dBFS_threshold` (`:141`, `:276`) — there
+    is no fixed threshold the sound rises through, and between sounds the
+    threshold is 0 so level alone can never start one.
+  - `silence` is added as a training class automatically from the non-detected
+    parts of your own recordings (`load_data.py:239-246`), so the "2 sounds
+    minimum" rule is a **quality guard against false positives**, not a
+    technical floor.
+
 ## Next Session
 
 ### 0. Known open issues (start here)
@@ -244,20 +281,28 @@ Services: `patterns_store/schema/replay`, `capture_model`, `talon_companion`
   - Result: blocking build ~104 ms → ~14 ms; felt switch latency ~30 ms.
   - **Startup**: only the Sounds page is built eagerly; Models/Settings/About + recording/edit views construct on first use (`main_window` lazy getters). Window build ~1031 ms → ~322 ms (the remaining ~1.1 s is the unavoidable PyQt6/sounddevice import).
   - Verified responsive + rapid-switch-safe offscreen; **confirm the feel on Windows.** Further wins if ever needed: cache decoded audio, cap plotted points, drop antialias on dense envelopes.
-- **Dead code removed in Phase 6:** `windows/home.py`, `windows/recording.py`, `widgets/segment_bar.py`, `widgets/duration_bar.py` are gone. Talon discovery (`gui/services/talon_discovery.py`) is still unsurfaced in the UI.
+- **Dead code removed in Phase 6:** `windows/recording.py`, `widgets/segment_bar.py`, `widgets/duration_bar.py` are gone. **`windows/home.py` came back** and is now the default landing page — do not treat it as dead code (the Phase 6 note below is history, not current state). Talon discovery is now surfaced, on both Home and the Talon tab.
 
 ### Priority Order
 
-1. Talon discovery & status display (`gui/services/talon_discovery.py` exists — wire its results into the UI)
-2. Move `SessionCard`/preview decode off the UI thread (the slow-switch issue above)
-3. Remaining terminal-only ops in the GUI (hierarchical combine, accuracy test, file conversion, upgrade-settings)
-4. First-run wizard / Patterns.json editor
+Reviewed 2026-07-25. Items 1 and 2 of the old list are **done** (Talon
+discovery is surfaced on Home + the Talon tab; the preview/threading work
+landed in Phase 6 — see the known-issues note above, which had contradicted
+this list). What's actually left:
+
+1. **Windows verification** — the bootstrap path and the Phase 6 perf work are
+   both written but only validated on macOS.
+2. Remaining terminal-only ops in the GUI (hierarchical combine, accuracy test,
+   file conversion, upgrade-settings)
+3. Patterns.json full editor (section 4 below)
+4. Sound library improvements still open (section 5 below)
 
 ---
 
-### 1. Landing / Home Page (Returning User)
+### 1. Landing / Home Page (Returning User) — ✅ BUILT (Phase 10)
 
-Replace the current "open straight to recording" flow with a home page that orients the user.
+Home is now the default landing page. The spec below is kept as the original
+intent; anything in it not described in Phase 10 is still open.
 
 **Active model (front and center):**
 - Auto-detect from Talon's `patterns.json` if available, fallback to last-trained or user-selected
@@ -315,9 +360,14 @@ Reference implementation: `talon-parrot-tester/parrot_integration_paths.py` — 
 - Which sounds from `patterns.json` map to which actions (noise → action mapping)
 - Whether the model referenced in `patterns.json` matches any model in `data/models/` (file comparison for copies)
 
-### 3. Guided First-Run Experience (New User)
+### 3. Guided First-Run Experience (New User) — ◐ MOSTLY COVERED (Phase 10)
 
-Step-by-step wizard for a brand new user with no data:
+Home's 1-2-3 cards, "Before you start", the Sounds empty states and the New
+sound guidance now do this **without a modal wizard**, which keeps every page
+usable instead of gating it. Steps 1 and 2 below are covered; a dedicated
+wizard is only worth revisiting if the inline version tests badly.
+
+Original spec:
 
 1. **"Welcome to Parrot.py"** — brief explanation of what it does (voice → actions via Talon)
 2. **"Step 1: Record Sounds"** — guide them to record a few sounds (suggest starting with pop, cluck, hiss). Explain what a "sound" is and how much to record.
@@ -340,9 +390,10 @@ The idea: users may not know how to type specific keys and values. The GUI preve
 ### 5. Sound Library Improvements
 
 Make the recording page less overwhelming:
-- Visual bars showing duration per sound, color-coded (highlight sounds with too few samples)
-- Show recommended minimum duration per sound (guide new users on how much to record)
-- "Add Sound" flow should be more prominent and guided
+- ✅ Colour-coded data-quantity rating per sound (the Data column + header line)
+- ✅ Recommended minimum surfaced (~17 s to train at all, 40 s+ better) in the
+  empty state for a sound with no recordings
+- ✅ "Add Sound" flow is now prominent and guided (Phase 10)
 - Recording can append to existing data or start fresh without overwriting old recordings
 - Consider a "Quick Record" mode: pick a sound, hit record, it auto-stops after silence, repeat
 - Future consideration: named recording sessions / datasets that can be combined when training (current architecture is flat-list per sound)
@@ -382,32 +433,42 @@ Would collapse Python-download + venv + install into one tool and make dep insta
 
 ## File Structure Reference
 
+Regenerated 2026-07-25 from the actual tree — the previous version listed
+about a third of the files and named modules that no longer exist.
+
 ```
 gui/
-├── __init__.py
 ├── __main__.py          # python -m gui
 ├── app.py               # QApplication + Fusion + theme; HOLDS the MainWindow ref
-├── theme.py             # Live theme system (fabfilter/studio_dark/audio_console)
+├── theme.py             # live theme system (only "fabfilter" ships today)
 ├── windows/
-│   ├── main_window.py   # QMainWindow + toolbar + QStackedWidget (Sounds/Recording/Training)
-│   ├── library.py       # SoundLibraryPage — read-only landing page (DEFAULT)
-│   ├── home.py          # HomePage — BUILT BUT NOT WIRED IN (dead code, decide its fate)
-│   ├── recording.py     # Recording page
-│   └── training.py      # Training page
+│   ├── main_window.py   # QMainWindow + toolbar + QStackedWidget; lazy page getters
+│   ├── home.py          # HomePage — DEFAULT landing page (1-2-3 steps + status)
+│   ├── library.py       # SoundLibraryPage — Sounds tab
+│   ├── recording_view.py# full-screen record sub-view
+│   ├── edit_view.py     # full-screen recording editor
+│   ├── models.py        # Models tab
+│   ├── training.py      # training UI
+│   ├── talon.py         # Talon tab
+│   ├── talon_captures.py / talon_live.py
+│   ├── settings.py
+│   └── about.py
 ├── widgets/
-│   ├── audio_preview.py # waveform/spectrogram preview w/ detection overlay + normalize
+│   ├── audio_preview.py # waveform/spectrogram preview w/ detection overlay
 │   ├── session_card.py  # one recording session (preview + play/seek)
-│   ├── duration_bar.py  # (verify usage)
-│   ├── waveform.py      # pyqtgraph waveform viewer (recording page)
-│   ├── segment_bar.py   # pyqtgraph segment overlay (recording page)
-│   └── training_plot.py # Live loss/accuracy curves
-├── workers/
-│   ├── audio_worker.py  # QThread for recording
-│   └── training_worker.py # QThread for training
-├── services/
-│   └── talon_discovery.py # standalone Talon integration discovery (not yet surfaced in UI)
+│   ├── waveform.py      # pyqtgraph waveform viewer
+│   ├── training_plot.py # live loss/accuracy curves
+│   ├── help_dialog.py   # all workflow help copy + the frames diagram
+│   ├── device_bar.py    # Audacity-style device toolbar
+│   ├── notes_dock.py    # 📝 Notes drawer (toolbar toggle, right dock)
+│   ├── confirm_dialog.py / click_slider.py
+│   └── model_test_dialogs.py / pattern_edit_dialog.py
+├── workers/             # QThreads: audio, training, segment, combine, eval, bridge
+├── services/            # 14 modules — library_ops, talon_discovery/setup/companion,
+│                        # patterns_store/schema/replay, audio_devices, strategies,
+│                        # model_eval, capture_model, session_stats, undo, user_config
 └── models/
-    └── app_state.py     # Reads data/recordings/ and data/models/
+    └── app_state.py     # reads data/recordings/ and data/models/; change signals
 ```
 
 Key lib files for integration:
