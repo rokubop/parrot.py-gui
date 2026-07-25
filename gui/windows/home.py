@@ -1,19 +1,5 @@
-"""Home page — orientation for a user who hasn't opened the app in months.
-
-The page answers, at a glance:
-  * What is the workflow?            -> the 1-2-3 step bubbles (Record / Train / Connect)
-  * Where am I in it?                -> each bubble shows live state; the first
-                                        unfinished step is highlighted
-  * What model am I actually using?  -> active-model panel (deployed match, or
-                                        the most recent local model)
-  * What sounds does it know?        -> labels loaded from the pkl off-thread,
-                                        diffed against the current library
-  * Is it hooked up to Talon?        -> talon panel from the discovery service
-  * What did past-me want to say?    -> the global notes, editable in place
-
-Everything is recomputed from AppState on the relevant change signals, so the
-page is always a truthful snapshot rather than a cached welcome screen.
-"""
+"""Home landing page. Re-orients a user returning after months away:
+workflow steps with live state, active model + Talon status, notes to self."""
 import os
 import time
 
@@ -29,8 +15,7 @@ from gui.services.talon_discovery import find_matching_local_model
 
 
 def _ago(timestamp):
-    """Rough human 'how long ago' — precision is deliberately coarse; the
-    6-months-later user cares about 'months ago', not minutes."""
+    """'4 months ago' style. Coarse on purpose."""
     seconds = max(0, time.time() - timestamp)
     days = seconds / 86400
     if days < 1:
@@ -46,7 +31,6 @@ def _ago(timestamp):
 
 
 def _newest_wav_mtime(label):
-    """Newest source recording mtime for a label, or None."""
     source_dir = os.path.join(RECORDINGS_FOLDER, label, "source")
     newest = None
     if os.path.isdir(source_dir):
@@ -62,12 +46,9 @@ def _newest_wav_mtime(label):
 
 
 class _ModelSoundsWorker(QThread):
-    """Reading a model's labels means unpickling it (and possibly its torch
-    weights) — slow enough to stutter the UI, so it runs off-thread. Uses
-    get_model_metadata because labels may live in the pkl (sklearn classes_)
-    OR in the weight files, depending on the model type; same pattern as the
-    Models page's InspectWorker."""
-    loaded = pyqtSignal(str, object)   # model name, list-of-labels or None
+    """Reads model labels off-thread (unpickling stutters the UI).
+    get_model_metadata because labels live in the pkl or the weight files."""
+    loaded = pyqtSignal(str, object)   # model name, labels or None
 
     def __init__(self, app_state, name, parent=None):
         super().__init__(parent)
@@ -118,7 +99,6 @@ class _StepCard(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
     def set_state(self, done, current, status_text):
-        """done -> checkmark bubble; current -> highlighted card + accent button."""
         t = theme.colors()
         self.bubble.setText("✓" if done else str(self.number))
         bubble_bg = t["accent"] if done else (t["button"] if not current else t["panel"])
@@ -159,21 +139,18 @@ class HomePage(QWidget):
 
         self._setup_ui()
 
-        # Debounced auto-save for notes: typing shouldn't hit disk per keystroke.
         self._notes_timer = QTimer(self)
         self._notes_timer.setSingleShot(True)
         self._notes_timer.setInterval(800)
         self._notes_timer.timeout.connect(self._save_notes)
 
         self.app_state.recordings_changed.connect(self._refresh)
-        # A retrained/renamed model may have different labels — forget what we
-        # read before, then rebuild.
+        # retrained/renamed models may have different labels
         self.app_state.models_changed.connect(self._loaded_sounds.clear)
         self.app_state.models_changed.connect(self._refresh)
         self.app_state.talon_status_changed.connect(self._refresh)
 
-        # First refresh runs Talon discovery (an rglob over the Talon user dir)
-        # — defer it one event-loop tick so the window paints immediately.
+        # first refresh runs Talon discovery (an rglob) - defer so the window paints first
         QTimer.singleShot(0, self._refresh)
 
     # ---- ui --------------------------------------------------------------
@@ -186,7 +163,6 @@ class HomePage(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         outer.addWidget(scroll)
 
-        # Center a max-width column so the page reads well full-screen.
         wrapper = QWidget()
         wrap_layout = QHBoxLayout(wrapper)
         wrap_layout.setContentsMargins(32, 28, 32, 28)
@@ -201,14 +177,12 @@ class HomePage(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(16)
 
-        # Hero
         self.hero_title = QLabel("Parrot.py")
         v.addWidget(self.hero_title)
         self.hero_sub = QLabel("")
         self.hero_sub.setWordWrap(True)
         v.addWidget(self.hero_sub)
 
-        # 1-2-3 workflow bubbles
         steps_row = QHBoxLayout()
         steps_row.setSpacing(12)
         self.step_record = _StepCard(
@@ -233,7 +207,6 @@ class HomePage(QWidget):
             steps_row.addWidget(card, 1)
         v.addLayout(steps_row)
 
-        # Guide link under the bubbles — the 'what do these words mean' escape hatch.
         guide_row = QHBoxLayout()
         self.guide_label = QLabel("New to this, or forgot how it works?")
         guide_row.addWidget(self.guide_label)
@@ -245,7 +218,6 @@ class HomePage(QWidget):
         guide_row.addStretch()
         v.addLayout(guide_row)
 
-        # Where you're at: model + talon panels side by side
         self.status_title = QLabel("Where you're at")
         v.addWidget(self.status_title)
         self.status_row_widget = QWidget()
@@ -260,7 +232,6 @@ class HomePage(QWidget):
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
 
-        # Notes to your future self
         self.notes_title = QLabel("Notes to your future self")
         v.addWidget(self.notes_title)
         self.notes_hint = QLabel(
@@ -327,7 +298,6 @@ class HomePage(QWidget):
         talon = self.app_state.get_talon_status()
         t = theme.colors()
 
-        # Which local model is actually deployed to Talon (byte-identical)?
         deployed_name = None
         if talon.model_path_from_talon:
             deployed_name = find_matching_local_model(
@@ -341,7 +311,6 @@ class HomePage(QWidget):
         else:
             self.hero_sub.setText("Welcome back. Here's where you left off.")
 
-        # ---- step bubbles ----
         step1_done = len(labels) >= 2
         if not labels:
             s1 = "No sounds yet."
@@ -377,14 +346,12 @@ class HomePage(QWidget):
         self.step_record.action.setText(
             "Record your first sound" if not labels else "Record a sound")
 
-        # ---- status panels (hidden on a true first run — nothing to report) ----
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
         if not first_run:
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
 
-        # ---- notes ----
         if not self._notes_loaded:
             notes = self.app_state.load_notes()
             self.notes_edit.blockSignals(True)
@@ -393,7 +360,6 @@ class HomePage(QWidget):
             self._notes_loaded = True
 
     def _latest_model(self):
-        """(name, mtime) of the most recently trained local model, or (None, 0)."""
         best, best_mtime = None, 0
         for name in self.app_state.get_model_names():
             pkl = os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
@@ -404,7 +370,6 @@ class HomePage(QWidget):
         return best, best_mtime
 
     def _refresh_model_panel(self, labels, deployed_name, latest_name, latest_mtime, t):
-        # Prefer the model Talon actually runs; else fall back to the newest.
         name = deployed_name or latest_name
         if name is None:
             self.model_panel_title.setText("Active model")
@@ -422,7 +387,6 @@ class HomePage(QWidget):
         lines = [f"<b style='color:{t['text_bright']}; font-size:15px;'>{name}</b>",
                  f"<span style='color:{t['text_dim']};'>Trained {_ago(mtime)}</span>"]
 
-        # Staleness: sounds whose newest recording postdates the model.
         stale = [l for l in labels
                  if (m := _newest_wav_mtime(l)) is not None and m > mtime]
         if stale:
@@ -435,7 +399,6 @@ class HomePage(QWidget):
         self.model_panel_body.setText("<br>".join(lines))
 
     def _model_sounds_html(self, name, labels, t):
-        """The sounds the model knows — loaded off-thread on first request."""
         if name not in self._loaded_sounds:
             self._start_sounds_worker(name)
             return f"<span style='color:{t['text_dim']};'>Reading its sounds…</span>"
@@ -461,7 +424,7 @@ class HomePage(QWidget):
         self._sounds_worker.start()
 
     def _on_sounds_loaded(self, name, sounds):
-        # [] means unreadable — remembered so we don't loop retrying forever.
+        # [] = unreadable, prevents endless retry
         self._loaded_sounds[name] = sounds if sounds is not None else []
         self._refresh()
 
@@ -502,7 +465,7 @@ class HomePage(QWidget):
         self._notes_timer.start()
 
     def _save_notes(self):
-        # Re-read at save time so per-model notes edited elsewhere aren't lost.
+        # re-read first: don't clobber model notes edited elsewhere
         notes = self.app_state.load_notes()
         notes["global_notes"] = self.notes_edit.toPlainText()
         self.app_state.save_notes(notes)

@@ -23,11 +23,8 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        # Only the landing page (Home) and the Sounds library are built eagerly.
-        # The other tabs and the recording/edit sub-views are constructed on
-        # first use so startup is fast (each of the others costs ~30-200 ms to
-        # build, incl. an audio-device query for the recording views). See the
-        # lazy getters below.
+        # only Home + Sounds build eagerly; other tabs cost 30-200 ms each
+        # (some query audio devices), so they build lazily on first use
         self.home_page = HomePage(self.app_state, self)
         self.stack.addWidget(self.home_page)
         self.home_page.navigate.connect(self._go_to_tab)
@@ -63,9 +60,6 @@ class MainWindow(QMainWindow):
             toolbar.addAction(action)
             self.nav_actions[text] = action
         self.nav_actions["Home"].setChecked(True)
-
-        # Land on Home: it re-orients a returning user (and welcomes a new one)
-        # before they drop into the Sounds library.
         self.stack.setCurrentWidget(self.home_page)
 
         # Status bar: audio device (left) + the active keybindings for whatever
@@ -129,8 +123,7 @@ class MainWindow(QMainWindow):
         return self.edit_view
 
     def _go_to_tab(self, name):
-        """Programmatic navigation (e.g. from Home's action buttons): keep the
-        toolbar's checked state in sync with the page being shown."""
+        """Navigation from page buttons: keeps the toolbar checked state in sync."""
         if name in self.nav_actions:
             self.nav_actions[name].setChecked(True)
             self._show_tab(name)
