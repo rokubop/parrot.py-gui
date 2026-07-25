@@ -2,7 +2,7 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup,
-    QMenu, QInputDialog, QMessageBox
+    QMenu, QInputDialog, QMessageBox, QDialog, QLineEdit, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
@@ -142,22 +142,42 @@ class SoundLibraryPage(QWidget):
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
         # Add recording is the headline action - accent-filled, stands apart.
-        self.add_recording_btn.setStyleSheet(
-            f"QPushButton#primaryAction {{ background-color: {t['accent']}; color: #ffffff; "
-            f"font-weight: bold; border: none; border-radius: 4px; padding: 6px 18px; }} "
-            f"QPushButton#primaryAction:hover {{ background-color: {t['accent']}; }}")
+        self.add_recording_btn.setStyleSheet(self._primary_button_style())
         # Rename / Clone / Open / Delete are quiet, second-class actions.
         for b in self._secondary_btns:
             b.setStyleSheet(
                 f"QPushButton#secondaryAction {{ color: {t['text_dim']}; border: none; "
                 f"background: transparent; padding: 3px 8px; }} "
                 f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }}")
+        # View / Normalize are state toggles, not actions. The app-wide
+        # QPushButton:checked rule fills them with the accent color, which put
+        # three accent-filled buttons next to the one real call to action - so
+        # they get a quieter segmented-control look, scoped to this header.
+        toggle_style = (
+            f"QPushButton#viewToggle {{ background-color: {t['button']}; "
+            f"color: {t['text_dim']}; border: 1px solid {t['border']}; "
+            f"border-radius: 4px; padding: 5px 14px; }} "
+            f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
+            f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
+            f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }}")
+        for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
+            b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
         # A wide, always-present scrollbar plus a right-side gutter gives a
         # dedicated place to scroll the page even when waveforms fill the view.
         self.scroll.setStyleSheet(
             f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }}")
+
+    @staticmethod
+    def _primary_button_style():
+        """Accent-filled call to action, shared by the header's Add recording
+        and the empty-state panels so they read as the same rank of button."""
+        t = theme.colors()
+        return (f"QPushButton#primaryAction {{ background-color: {t['accent']}; "
+                f"color: {t['accent_text']}; font-weight: bold; border: none; "
+                f"border-radius: 4px; padding: 6px 18px; }} "
+                f"QPushButton#primaryAction:hover {{ background-color: {t['accent']}; }}")
 
     def refresh_theme(self):
         self._apply_theme_styles()
@@ -200,6 +220,7 @@ class SoundLibraryPage(QWidget):
         self._mode_buttons = {}
         for mode, text in (("waveform", "Waveform"), ("spectrogram", "Spectrogram")):
             btn = QPushButton(text)
+            btn.setObjectName("viewToggle")
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setChecked(mode == self._mode)
@@ -210,6 +231,7 @@ class SoundLibraryPage(QWidget):
             actions.addWidget(btn)
 
         self.normalize_btn = QPushButton("Normalize")
+        self.normalize_btn.setObjectName("viewToggle")
         self.normalize_btn.setCheckable(True)
         self.normalize_btn.setChecked(self._normalized)
         self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -264,11 +286,9 @@ class SoundLibraryPage(QWidget):
 
         count = self.label_list.topLevelItemCount()
         if count == 0:
-            self.sound_title.setText("")
-            self.sound_stats.setText("")
-            self.sound_quantity.setText("")
+            # _build_for_item owns the empty state (header hidden, onboarding
+            # panel in the body) - don't paint over it with a plain message.
             self._build_for_item(None)
-            self._show_message("No sounds yet - click “+ New sound” to start.")
             return
 
         # Reselect the previous sound if it still exists, else fall back to the
@@ -320,16 +340,37 @@ class SoundLibraryPage(QWidget):
 
             recordings = []
             if current is None:
+                # Every control in the header (title, add recording, rename,
+                # clone, delete) is about *a* sound. With none selected they'd
+                # all point at nothing, so hide the panel entirely and let the
+                # body carry the single action that makes sense here.
+                self.header_frame.setVisible(False)
                 self.sound_title.setText("")
                 self.sound_stats.setText("")
                 self.sound_quantity.setText("")
-                message.setText("Select a sound to review its recordings.")
+                message.setVisible(False)
+                if self.label_list.topLevelItemCount() == 0:
+                    self._fill_empty_state(layout, self._build_empty_panel(
+                        "No sounds yet",
+                        "A sound is one noise you can make - a pop, a hiss, a "
+                        "cluck. Create the sound first, then record takes of it.",
+                        "+ New sound", self._on_new_sound))
+                else:
+                    message.setVisible(True)
+                    message.setText("Select a sound to review its recordings.")
             else:
+                self.header_frame.setVisible(True)
                 label = current.data(0, Qt.ItemDataRole.UserRole)
                 recordings = self.app_state.get_recordings_for_label(label)
                 self._update_sound_header(label, recordings)
                 if not recordings:
-                    message.setText(f"No recordings for '{label}'.")
+                    message.setVisible(False)
+                    self._fill_empty_state(layout, self._build_empty_panel(
+                        f"“{label}” has no recordings yet",
+                        f"Record a few short takes of this sound. Around "
+                        f"{self._MIN_TRAIN_SECONDS}s of detected sound is the "
+                        f"minimum to train on; 40s or more trains noticeably better.",
+                        self._add_recording_text(label), self._on_add_recording))
 
             if recordings:
                 message.setVisible(False)
@@ -390,6 +431,66 @@ class SoundLibraryPage(QWidget):
         self.message_label.setText(text)
         self.message_label.setVisible(True)
 
+    # ---- empty states --------------------------------------------------
+
+    # Detected sound needed before a label can train at all: get_quantity_rating
+    # leaves "Not enough" at 16.5s.
+    _MIN_TRAIN_SECONDS = 17
+
+    # Measure line length for the empty-state body copy.
+    _EMPTY_BODY_WIDTH = 440
+
+    @staticmethod
+    def _short(label, limit=18):
+        """Keep a sound name from stretching a button off the panel."""
+        return label if len(label) <= limit else label[:limit - 1] + "…"
+
+    def _add_recording_text(self, label):
+        return f"+ Add recording to “{self._short(label)}”"
+
+    def _build_empty_panel(self, title, body, button_text, slot):
+        """A centered title/body/action block used by both empty states."""
+        t = theme.colors()
+        panel = QWidget()
+        v = QVBoxLayout(panel)
+        v.setContentsMargins(24, 24, 24, 24)
+        v.setSpacing(8)
+
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet(
+            f"font-size: 17px; font-weight: bold; color: {t['text_bright']};")
+        v.addWidget(title_label)
+
+        body_label = QLabel(body)
+        body_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        body_label.setWordWrap(True)
+        # A word-wrapped QLabel reports a one-line sizeHint, so a layout that
+        # isn't asked for heightForWidth clips it. Pin the width and give it the
+        # height that width actually needs.
+        body_label.setFixedWidth(self._EMPTY_BODY_WIDTH)
+        body_label.setMinimumHeight(
+            body_label.heightForWidth(self._EMPTY_BODY_WIDTH))
+        body_label.setStyleSheet(f"color: {t['text_dim']};")
+        v.addWidget(body_label, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        btn = QPushButton(button_text)
+        btn.setObjectName("primaryAction")
+        btn.setMinimumHeight(34)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.setStyleSheet(self._primary_button_style())
+        btn.clicked.connect(slot)
+        v.addSpacing(6)
+        v.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
+        return panel
+
+    def _fill_empty_state(self, layout, panel):
+        """Center `panel` vertically in an otherwise empty card area: springs
+        above and below, ahead of the container's own trailing stretch."""
+        layout.insertStretch(layout.count() - 1)
+        layout.insertWidget(layout.count() - 1, panel, 0,
+                            Qt.AlignmentFlag.AlignHCenter)
+
     def _destroy_cards(self, cards, container):
         """Clean up replaced cards (stop playback/animations, clear their plots)
         and delete the old container they lived in. Runs only after the new view
@@ -414,6 +515,10 @@ class SoundLibraryPage(QWidget):
 
     def _update_sound_header(self, label, recordings):
         self.sound_title.setText(label)
+        # Name the target on the button itself: "Add recording" alone reads as
+        # a free-floating action, and a take always belongs to a sound.
+        self.add_recording_btn.setText(self._add_recording_text(label))
+        self.add_recording_btn.setToolTip(f"Record a new take for “{label}” - R")
         count = len(recordings)
         recorded_s = sum(_wav_duration(r["wav_path"]) for r in recordings)
         detected_ms = self.app_state.get_label_duration_ms(label)
@@ -422,7 +527,11 @@ class SoundLibraryPage(QWidget):
         self.sound_stats.setText(
             f"{count} {noun}   ·   {recorded_s:.1f}s recorded   ·   {detected_s:.1f}s detected sound"
         )
-        self._update_quantity(detected_ms)
+        # A brand-new sound scoring a red "Not enough" reads as a failure rather
+        # than a starting point - the empty-state panel says what to do instead.
+        self.sound_quantity.setVisible(count > 0)
+        if count:
+            self._update_quantity(detected_ms)
 
     def _update_quantity(self, detected_ms):
         quantity, percent_to_next, next_quantity = get_quantity_rating(detected_ms)
@@ -567,9 +676,58 @@ class SoundLibraryPage(QWidget):
         menu.addAction("Delete sound", self._on_delete_sound)
         menu.exec(self.label_list.viewport().mapToGlobal(pos))
 
+    def _prompt_new_sound_name(self):
+        """Name prompt for a new sound. Deliberately not a bare QInputDialog:
+        *which* noise you choose decides how well the model can ever do, and
+        this is the one moment the app can say so before you record 20 takes of
+        something that collides with your own voice."""
+        t = theme.colors()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("New sound")
+        # Wide enough that the diagram reads and the tips don't fight a
+        # scrollbar - this dialog is carrying real content, not just a field.
+        dlg.setMinimumWidth(760)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.setSpacing(8)
+
+        prompt = QLabel("Name for the new sound")
+        prompt.setStyleSheet(f"color: {t['text_bright']}; font-weight: bold;")
+        v.addWidget(prompt)
+
+        edit = QLineEdit()
+        edit.setPlaceholderText("e.g. pop, cluck, hiss")
+        edit.setMinimumWidth(300)
+        v.addWidget(edit)
+
+        # The advice belongs here, not behind a button: which noise you pick is
+        # decided in this dialog and nowhere else.
+        tips_title = QLabel("Choosing a sound")
+        tips_title.setStyleSheet(
+            f"color: {t['text_bright']}; font-weight: bold; margin-top: 6px;")
+        v.addWidget(tips_title)
+        v.addWidget(help_dialog.scrolled(
+            help_dialog.topic_content("sounds"), max_height=520))
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 6, 0, 0)
+        row.addStretch()
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                                   QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)
+        row.addWidget(buttons)
+        v.addLayout(row)
+
+        edit.setFocus()
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return edit.text()
+
     def _on_new_sound(self):
-        name, ok = QInputDialog.getText(self, "New sound", "Name for the new sound:")
-        if not ok:
+        name = self._prompt_new_sound_name()
+        if name is None:
             return
         try:
             label = self.app_state.create_sound(name)
@@ -695,7 +853,12 @@ class SoundLibraryPage(QWidget):
 
     def _on_add_recording(self):
         label = self._current_label()
-        self.record_requested.emit(label or "")
+        if not label:
+            # A recording is always a take *of* a sound, so there's nothing to
+            # record into yet - creating the sound is the step that comes first.
+            self._on_new_sound()
+            return
+        self.record_requested.emit(label)
 
     def _edit_recording(self, card):
         self.edit_requested.emit(card.wav_path)

@@ -67,7 +67,7 @@ class _ModelSoundsWorker(QThread):
 class _StepCard(QFrame):
     """One numbered bubble in the Record -> Train -> Connect strip."""
 
-    def __init__(self, number, title, description, action_text, parent=None):
+    def __init__(self, number, title, action_text, parent=None):
         super().__init__(parent)
         self.setObjectName("stepCard")
         v = QVBoxLayout(self)
@@ -90,9 +90,8 @@ class _StepCard(QFrame):
         self.number = number
         self.title = QLabel(title)
         v.addWidget(self.title)
-        self.description = QLabel(description)
-        self.description.setWordWrap(True)
-        v.addWidget(self.description)
+        # No blurb: the title says what the step is and the status line below
+        # says where you actually stand. Anything longer belongs behind ? Help.
         self.status = QLabel("")
         self.status.setWordWrap(True)
         v.addWidget(self.status)
@@ -119,7 +118,6 @@ class _StepCard(QFrame):
             f"border: 1px solid {border}; border-radius: 8px; }}")
         self.title.setStyleSheet(
             f"font-size: 15px; font-weight: bold; color: {t['text_bright']}; border: none;")
-        self.description.setStyleSheet(f"color: {t['text_dim']}; border: none;")
         self.help_btn.setStyleSheet(
             f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
             f"border: none; padding: 2px 6px; }} "
@@ -183,27 +181,20 @@ class HomePage(QWidget):
 
         self.hero_title = QLabel("Parrot.py")
         v.addWidget(self.hero_title)
-        self.hero_sub = QLabel("")
+        # What the app *is*, stated once and always - not a first-run greeting.
+        # Descriptive rather than a pitch: noise -> action is the whole idea,
+        # and the three cards below already spell out the pipeline.
+        self.hero_sub = QLabel(
+            "Turn noises you make - a click, a pop, a hiss - into instant "
+            "actions on your computer.")
         self.hero_sub.setWordWrap(True)
         v.addWidget(self.hero_sub)
 
         steps_row = QHBoxLayout()
         steps_row.setSpacing(12)
-        self.step_record = _StepCard(
-            1, "Record sounds",
-            "Record short noises - clicks, pops, hisses. Each sound becomes "
-            "a label the model learns. You need at least two.",
-            "Open Sounds")
-        self.step_train = _StepCard(
-            2, "Train a model",
-            "Turn your recorded sounds into a model that recognizes them "
-            "live from the microphone.",
-            "Train a model")
-        self.step_connect = _StepCard(
-            3, "Connect to Talon",
-            "Deploy the model and patterns to Talon so your sounds trigger "
-            "real actions.",
-            "Open Talon setup")
+        self.step_record = _StepCard(1, "Record sounds", "Open Sounds")
+        self.step_train = _StepCard(2, "Train a model", "Train a model")
+        self.step_connect = _StepCard(3, "Connect to Talon", "Open Talon setup")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
         self.step_connect.action.clicked.connect(lambda: self.navigate.emit("Talon"))
@@ -244,7 +235,10 @@ class HomePage(QWidget):
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
 
-        v.addStretch()
+        # Non-zero factor: leftover height belongs at the bottom of the page,
+        # not distributed into the step cards (which would stretch them tall
+        # and strand their buttons far below the status line).
+        v.addStretch(1)
         self._apply_theme_styles()
 
     def _make_panel(self, title):
@@ -260,6 +254,14 @@ class HomePage(QWidget):
         body.setTextFormat(Qt.TextFormat.RichText)
         pv.addWidget(body)
         pv.addStretch()
+        # A word-wrapped rich-text label reports its height for a much narrower
+        # width than it gets, which left the panel padded with dead space. Ask
+        # the layout for height-for-width and cap the panel at what it needs.
+        for w in (body, panel):
+            sp = w.sizePolicy()
+            sp.setHeightForWidth(True)
+            w.setSizePolicy(sp)
+        panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         return panel, title_label, body
 
     def _apply_theme_styles(self):
@@ -300,12 +302,6 @@ class HomePage(QWidget):
                 talon.model_path_from_talon, CLASSIFIER_FOLDER)
 
         first_run = not labels and not model_names
-        if first_run:
-            self.hero_sub.setText(
-                "Teach your computer to react to sounds you make - clicks, pops, "
-                "hisses - for hands-free control. Three steps, top to bottom.")
-        else:
-            self.hero_sub.setText("Welcome back. Here's where you left off.")
 
         step1_done = len(labels) >= 2
         if not labels:
@@ -353,7 +349,7 @@ class HomePage(QWidget):
             self._refresh_talon_panel(talon, deployed_name, t)
 
     def _prep_html(self, t):
-        return help_dialog.rows_html(help_dialog.RECORD_ROWS)
+        return help_dialog.rows_html(help_dialog.PREP_ROWS)
 
     def _show_help(self, key):
         help_dialog.show_help(self, key)
