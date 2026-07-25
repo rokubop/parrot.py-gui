@@ -10,6 +10,7 @@ from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, _wav_duration
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
+from gui.widgets import help_dialog
 from gui import theme
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating
@@ -75,8 +76,12 @@ class SoundLibraryPage(QWidget):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
+        title_row = QHBoxLayout()
         self.left_title = QLabel("Sounds")
-        left_layout.addWidget(self.left_title)
+        title_row.addWidget(self.left_title)
+        title_row.addStretch()
+        title_row.addWidget(help_dialog.help_button(self, "record"))
+        left_layout.addLayout(title_row)
         self.label_list = QTreeWidget()
         self.label_list.setColumnCount(3)
         self.label_list.setHeaderLabels(["Sound", "Data", "Time"])
@@ -480,6 +485,13 @@ class SoundLibraryPage(QWidget):
             if self._pending_loads:
                 self._load_timer.start()
             return
+
+    def play_selected(self):
+        """Toggle playback of the selected (or first) card. Used by the
+        transport bar."""
+        target = self._selected_card or (self._cards[0] if self._cards else None)
+        if target is not None:
+            target.toggle_play()
 
     # ---- keyboard ------------------------------------------------------
 

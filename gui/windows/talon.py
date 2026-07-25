@@ -23,6 +23,7 @@ from gui import theme
 from gui.services import (talon_discovery, patterns_schema, patterns_store,
                           talon_companion, talon_setup, library_ops)
 from gui.widgets.pattern_edit_dialog import PatternEditDialog
+from gui.widgets import help_dialog
 from gui.windows.talon_live import TalonLiveView
 from gui.windows.talon_captures import TalonCapturesView
 from config.config import CLASSIFIER_FOLDER
@@ -129,6 +130,7 @@ class TalonPage(QWidget):
         title.setStyleSheet(
             f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
         head.addWidget(title)
+        head.addWidget(help_dialog.help_button(self, "connect"))
         head.addStretch()
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)

@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel, QWidget,
-    QSizePolicy
+    QSizePolicy, QVBoxLayout
 )
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt
@@ -20,9 +20,19 @@ class MainWindow(QMainWindow):
 
         self.app_state = AppState(self)
 
-        # Central stacked widget
+        # Central column: persistent transport strip above the page stack
+        from gui.widgets.transport_bar import TransportBar
         self.stack = QStackedWidget()
-        self.setCentralWidget(self.stack)
+        self.transport = TransportBar()
+        self.transport.record_clicked.connect(self._transport_record)
+        self.transport.play_clicked.connect(self._transport_play)
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.transport)
+        central_layout.addWidget(self.stack)
+        self.setCentralWidget(central)
 
         # only Home + Sounds build eagerly; other tabs cost 30-200 ms each
         # (some query audio devices), so they build lazily on first use
@@ -183,6 +193,19 @@ class MainWindow(QMainWindow):
             self.recording_view.stop_worker()
         if self.edit_view is not None and current is not self.edit_view:
             self.edit_view.stop_playback()
+        # recording view owns the mic: the transport monitor must let go
+        if self.recording_view is not None and current is self.recording_view:
+            self.transport.stop_monitor()
+
+    # ---- transport -------------------------------------------------------
+
+    def _transport_record(self):
+        self.transport.stop_monitor()
+        self._open_recording(self.library_page._current_label() or "")
+
+    def _transport_play(self):
+        self._go_to_tab("Sounds")
+        self.library_page.play_selected()
         self._refresh_keybindings()
 
     # ---- keybinding status bar -----------------------------------------

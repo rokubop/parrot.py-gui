@@ -18,6 +18,7 @@ from config.config import CLASSIFIER_FOLDER
 from gui import theme
 from gui.services import library_ops
 from gui.widgets.confirm_dialog import confirm_destructive
+from gui.widgets import help_dialog
 from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
 from gui.workers.combine_worker import CombineWorker
@@ -76,10 +77,14 @@ class ModelsPage(QWidget):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
+        title_row = QHBoxLayout()
         title = QLabel("Models")
         title.setStyleSheet(
             f"font-size: 15px; font-weight: bold; color: {theme.colors()['text_bright']};")
-        left_layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        title_row.addWidget(help_dialog.help_button(self, "train"))
+        left_layout.addLayout(title_row)
         self.model_list = QListWidget()
         self.model_list.currentItemChanged.connect(self._on_select)
         left_layout.addWidget(self.model_list)

@@ -6,11 +6,12 @@ import time
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QSizePolicy, QDialog
+    QScrollArea, QSizePolicy
 )
 
 from config.config import CLASSIFIER_FOLDER, RECORDINGS_FOLDER
 from gui import theme
+from gui.widgets import help_dialog
 from gui.services.talon_discovery import find_matching_local_model
 
 
@@ -351,74 +352,11 @@ class HomePage(QWidget):
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
 
-    _RECORD_ROWS = (
-        ("Setup", "a quiet room, and the mic you'll actually use day to day "
-                  "(pick it in Settings). Avoid dynamic mics: takes vary too "
-                  "much between sessions."),
-        ("Good sounds", "tongue clicks, lip pops, palate clicks, “sh” / “ss” "
-                        "hisses, short vowels. Distinct from each other and "
-                        "from normal speech."),
-        ("Goal", "record each sound until its Data rating says Excellent "
-                 "(~80 s of detected sound). More data beats more sounds."),
-        ("How many", "2 sounds minimum to train. A daily-driver setup is "
-                     "usually 10-20."),
-        ("Time", "a real commitment: 1 hr+ of recording spread over multiple "
-                 "days, 4 hr+ for a full model. Bursts are fine; every "
-                 "recording is saved as you go."),
-        ("Where", "Sounds tab: “+ New sound”, then “+ Add recording”."),
-    )
-    _TRAIN_ROWS = (
-        ("What", "training reads every recording of every sound and produces "
-                 "a model file in data/models."),
-        ("Needs", "2+ sounds. The more sounds rated Excellent, the better the "
-                  "model."),
-        ("Time", "minutes, not hours. Retrain any time; old models are kept."),
-        ("Where", "Models tab."),
-    )
-    _CONNECT_ROWS = (
-        ("What", "Talon (talonvoice.com) runs your model live and maps each "
-                 "sound to an action."),
-        ("Patterns", "patterns.json names each trigger and which sound fires "
-                     "it. Edit and deploy from the Talon tab."),
-        ("Setup", "the Talon tab finds your Talon install and can bootstrap "
-                  "the parrot integration from nothing."),
-        ("Where", "Talon tab."),
-    )
-    _HELP = {
-        "record": ("Recording sounds", _RECORD_ROWS),
-        "train": ("Training a model", _TRAIN_ROWS),
-        "connect": ("Connecting to Talon", _CONNECT_ROWS),
-    }
-
-    def _rows_html(self, rows, t):
-        dim, text = t["text_dim"], t["text"]
-        return "<table cellspacing='0' cellpadding='2'>" + "".join(
-            f"<tr><td style='color:{dim}; font-weight:bold; padding-right:12px; "
-            f"white-space:nowrap; vertical-align:top;'>{label}</td>"
-            f"<td style='color:{text};'>{body}</td></tr>"
-            for label, body in rows) + "</table>"
-
     def _prep_html(self, t):
-        return self._rows_html(self._RECORD_ROWS, t)
+        return help_dialog.rows_html(help_dialog.RECORD_ROWS)
 
     def _show_help(self, key):
-        title, rows = self._HELP[key]
-        dlg = QDialog(self)
-        dlg.setWindowTitle(title)
-        v = QVBoxLayout(dlg)
-        v.setContentsMargins(20, 16, 20, 16)
-        body = QLabel(self._rows_html(rows, theme.colors()))
-        body.setWordWrap(True)
-        body.setTextFormat(Qt.TextFormat.RichText)
-        body.setMaximumWidth(560)
-        v.addWidget(body)
-        close = QPushButton("Close")
-        close.clicked.connect(dlg.accept)
-        row = QHBoxLayout()
-        row.addStretch()
-        row.addWidget(close)
-        v.addLayout(row)
-        dlg.exec()
+        help_dialog.show_help(self, key)
 
     def _latest_model(self):
         best, best_mtime = None, 0
