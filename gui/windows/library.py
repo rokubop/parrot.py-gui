@@ -716,7 +716,14 @@ class SoundLibraryPage(QWidget):
                                    QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
+        # Typing a name and pressing Enter has to create the sound. Setting Ok
+        # as the default button is not enough on its own: the box re-picks a
+        # default when the dialog is shown and Cancel wins, so Enter silently
+        # cancelled and looked like nothing happening. Take Cancel out of the
+        # running and accept straight from the field.
         buttons.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setAutoDefault(False)
+        edit.returnPressed.connect(dlg.accept)
         row.addWidget(buttons)
         v.addLayout(row)
 
