@@ -6,7 +6,7 @@ import time
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QSizePolicy
+    QScrollArea, QSizePolicy, QDialog
 )
 
 from config.config import CLASSIFIER_FOLDER, RECORDINGS_FOLDER
@@ -80,6 +80,10 @@ class _StepCard(QFrame):
         bubble_row = QHBoxLayout()
         bubble_row.addWidget(self.bubble)
         bubble_row.addStretch()
+        self.help_btn = QPushButton("?  Help")
+        self.help_btn.setFlat(True)
+        self.help_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        bubble_row.addWidget(self.help_btn, alignment=Qt.AlignmentFlag.AlignTop)
         v.addLayout(bubble_row)
 
         self.number = number
@@ -115,6 +119,10 @@ class _StepCard(QFrame):
         self.title.setStyleSheet(
             f"font-size: 15px; font-weight: bold; color: {t['text_bright']}; border: none;")
         self.description.setStyleSheet(f"color: {t['text_dim']}; border: none;")
+        self.help_btn.setStyleSheet(
+            f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
+            f"border: none; padding: 2px 6px; }} "
+            f"QPushButton:hover {{ color: {t['text_bright']}; }}")
         self.status.setStyleSheet(
             f"color: {t['accent'] if done else t['text']}; border: none;")
         self.status.setText(status_text)
@@ -180,7 +188,7 @@ class HomePage(QWidget):
         steps_row.setSpacing(12)
         self.step_record = _StepCard(
             1, "Record sounds",
-            "Record short noises — clicks, pops, hisses. Each sound becomes "
+            "Record short noises - clicks, pops, hisses. Each sound becomes "
             "a label the model learns. You need at least two.",
             "Open Sounds")
         self.step_train = _StepCard(
@@ -196,6 +204,9 @@ class HomePage(QWidget):
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
         self.step_connect.action.clicked.connect(lambda: self.navigate.emit("Talon"))
+        self.step_record.help_btn.clicked.connect(lambda: self._show_help("record"))
+        self.step_train.help_btn.clicked.connect(lambda: self._show_help("train"))
+        self.step_connect.help_btn.clicked.connect(lambda: self._show_help("connect"))
         for card in (self.step_record, self.step_train, self.step_connect):
             steps_row.addWidget(card, 1)
         v.addLayout(steps_row)
@@ -288,8 +299,8 @@ class HomePage(QWidget):
         first_run = not labels and not model_names
         if first_run:
             self.hero_sub.setText(
-                "Teach your computer to react to sounds you make — clicks, pops, "
-                "hisses — for hands-free control. Three steps, top to bottom.")
+                "Teach your computer to react to sounds you make - clicks, pops, "
+                "hisses - for hands-free control. Three steps, top to bottom.")
         else:
             self.hero_sub.setText("Welcome back. Here's where you left off.")
 
@@ -297,7 +308,7 @@ class HomePage(QWidget):
         if not labels:
             s1 = "No sounds yet."
         elif len(labels) == 1:
-            s1 = "1 sound — a model needs at least 2."
+            s1 = "1 sound - a model needs at least 2."
         else:
             s1 = f"{len(labels)} sounds recorded."
 
@@ -307,16 +318,18 @@ class HomePage(QWidget):
             s2 = "No models yet."
         else:
             noun = "model" if len(model_names) == 1 else "models"
-            s2 = (f"{len(model_names)} {noun} — latest “{latest_name}” "
+            s2 = (f"{len(model_names)} {noun} · latest “{latest_name}” "
                   f"trained {_ago(latest_mtime)}.")
 
         step3_done = deployed_name is not None
         if step3_done:
-            s3 = f"Hooked up — Talon is running “{deployed_name}”."
+            count = len(talon.patterns.get("patterns", talon.patterns) or {})
+            s3 = (f"{count} patterns using “{deployed_name}”." if count
+                  else f"Talon is running “{deployed_name}”.")
         elif talon.talon_found:
             s3 = "Talon found, but no deployed model matches a local one."
         elif talon.talon_home:
-            s3 = "Talon found — parrot integration not set up yet."
+            s3 = "Talon found · parrot integration not set up yet."
         else:
             s3 = "Talon not detected on this machine."
 
@@ -336,28 +349,74 @@ class HomePage(QWidget):
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
 
-    def _prep_html(self, t):
+    _RECORD_ROWS = (
+        ("Setup", "a quiet room, and the mic you'll actually use day to day "
+                  "(pick it in Settings). Avoid dynamic mics: takes vary too "
+                  "much between sessions."),
+        ("Good sounds", "tongue clicks, lip pops, palate clicks, “sh” / “ss” "
+                        "hisses, short vowels. Distinct from each other and "
+                        "from normal speech."),
+        ("Goal", "record each sound until its Data rating says Excellent "
+                 "(~80 s of detected sound). More data beats more sounds."),
+        ("How many", "2 sounds minimum to train. A daily-driver setup is "
+                     "usually 10-20."),
+        ("Time", "a real commitment: 1 hr+ of recording spread over multiple "
+                 "days, 4 hr+ for a full model. Bursts are fine; every "
+                 "recording is saved as you go."),
+        ("Where", "Sounds tab: “+ New sound”, then “+ Add recording”."),
+    )
+    _TRAIN_ROWS = (
+        ("What", "training reads every recording of every sound and produces "
+                 "a model file in data/models."),
+        ("Needs", "2+ sounds. The more sounds rated Excellent, the better the "
+                  "model."),
+        ("Time", "minutes, not hours. Retrain any time; old models are kept."),
+        ("Where", "Models tab."),
+    )
+    _CONNECT_ROWS = (
+        ("What", "Talon (talonvoice.com) runs your model live and maps each "
+                 "sound to an action."),
+        ("Patterns", "patterns.json names each trigger and which sound fires "
+                     "it. Edit and deploy from the Talon tab."),
+        ("Setup", "the Talon tab finds your Talon install and can bootstrap "
+                  "the parrot integration from nothing."),
+        ("Where", "Talon tab."),
+    )
+    _HELP = {
+        "record": ("Recording sounds", _RECORD_ROWS),
+        "train": ("Training a model", _TRAIN_ROWS),
+        "connect": ("Connecting to Talon", _CONNECT_ROWS),
+    }
+
+    def _rows_html(self, rows, t):
         dim, text = t["text_dim"], t["text"]
-        rows = (
-            ("Setup", "a quiet room, and the mic you'll actually use day to day "
-                      "(pick it in Settings). Avoid dynamic mics — takes vary too "
-                      "much between sessions."),
-            ("Good sounds", "tongue clicks, lip pops, palate clicks, “sh” / “ss” "
-                            "hisses, short vowels. Distinct from each other and "
-                            "from normal speech."),
-            ("Goal", "record each sound until its Data rating says Excellent "
-                     "(~80 s of detected sound). More data beats more sounds."),
-            ("How many", "2 sounds minimum to train. A daily-driver setup is "
-                         "usually 10–20."),
-            ("Time", "a real commitment — 1 hr+ of recording spread over multiple "
-                     "days, 4 hr+ for a full model. Bursts are fine; every "
-                     "recording is saved as you go."),
-        )
         return "<table cellspacing='0' cellpadding='2'>" + "".join(
             f"<tr><td style='color:{dim}; font-weight:bold; padding-right:12px; "
             f"white-space:nowrap; vertical-align:top;'>{label}</td>"
             f"<td style='color:{text};'>{body}</td></tr>"
             for label, body in rows) + "</table>"
+
+    def _prep_html(self, t):
+        return self._rows_html(self._RECORD_ROWS, t)
+
+    def _show_help(self, key):
+        title, rows = self._HELP[key]
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(20, 16, 20, 16)
+        body = QLabel(self._rows_html(rows, theme.colors()))
+        body.setWordWrap(True)
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setMaximumWidth(560)
+        v.addWidget(body)
+        close = QPushButton("Close")
+        close.clicked.connect(dlg.accept)
+        row = QHBoxLayout()
+        row.addStretch()
+        row.addWidget(close)
+        v.addLayout(row)
+        dlg.exec()
 
     def _latest_model(self):
         best, best_mtime = None, 0
@@ -374,7 +433,7 @@ class HomePage(QWidget):
         if name is None:
             self.model_panel_title.setText("Active model")
             self.model_panel_body.setText(
-                f"<span style='color:{t['text_dim']};'>No models yet — train one "
+                f"<span style='color:{t['text_dim']};'>No models yet - train one "
                 f"from your recorded sounds.</span>")
             return
 
@@ -436,14 +495,14 @@ class HomePage(QWidget):
                          f"<span style='color:{dim};'>({talon.talon_home})</span>")
         else:
             lines.append(f"<span style='color:{warn};'>✗ Talon not found</span> "
-                         f"<span style='color:{dim};'>— install Talon, or set it up "
+                         f"<span style='color:{dim};'>- install Talon, or set it up "
                          f"later; recording and training work without it.</span>")
         if talon.integration_path:
             lines.append(f"<span style='color:{ok};'>✓</span> Parrot integration "
                          f"found")
         elif talon.talon_home:
             lines.append(f"<span style='color:{warn};'>○ No parrot integration "
-                         f"yet</span> <span style='color:{dim};'>— the Talon tab can "
+                         f"yet</span> <span style='color:{dim};'>- the Talon tab can "
                          f"bootstrap one.</span>")
         if talon.pattern_path_from_talon:
             count = len(talon.patterns.get("patterns", talon.patterns) or {})
@@ -454,7 +513,7 @@ class HomePage(QWidget):
                          f"matches local “{deployed_name}”")
         elif talon.model_path_from_talon:
             exists = os.path.isfile(talon.model_path_from_talon)
-            msg = ("doesn't match any local model — retrained since deploying?"
+            msg = ("doesn't match any local model - retrained since deploying?"
                    if exists else "file is missing")
             lines.append(f"<span style='color:{warn};'>⚠ Talon's model {msg}</span>")
         self.talon_panel_body.setText("<br>".join(lines))

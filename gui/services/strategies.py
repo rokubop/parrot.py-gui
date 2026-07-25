@@ -28,7 +28,7 @@ PRESETS = [
         "keep_short",
         "Keep short sounds",
         "auto_dBFS_secondary_dBFS_repair",
-        "No minimum-length rejection — keeps even the briefest detections. "
+        "No minimum-length rejection - keeps even the briefest detections. "
         "Use when valid sounds are being dropped as too short.",
     ),
     (

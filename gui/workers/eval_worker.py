@@ -1,5 +1,5 @@
 """Workers for model evaluation: the offline accuracy test and the live mic
-test. Both are thin threads around gui/services/model_eval — the accuracy
+test. Both are thin threads around gui/services/model_eval - the accuracy
 worker drives it with recorded segments, the live worker with mic chunks.
 """
 import math

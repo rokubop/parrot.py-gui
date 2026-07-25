@@ -79,9 +79,9 @@ class AboutPage(QWidget):
             rating_row("#e05a5a", "Not enough",
                        f"under {_SUFFICIENT_S:g}s of detected sound"),
             rating_row("#e0b020", "Sufficient",
-                       f"{_SUFFICIENT_S:g}s – {_GOOD_S:g}s"),
+                       f"{_SUFFICIENT_S:g}s - {_GOOD_S:g}s"),
             rating_row("#5ac8e0", "Good",
-                       f"{_GOOD_S:g}s – {_EXCELLENT_S:g}s"),
+                       f"{_GOOD_S:g}s - {_EXCELLENT_S:g}s"),
             rating_row("#41d97f", "Excellent",
                        f"{_EXCELLENT_S:g}s and above"),
         )
@@ -90,8 +90,8 @@ class AboutPage(QWidget):
         <div style='color:{text}; font-size:14px; line-height:150%;'>
         <h1 style='color:{bright}; margin-bottom:2px;'>Parrot.py</h1>
         <p style='color:{dim}; margin-top:0;'>
-            Train a model to recognize the sounds you make — clicks, pops,
-            vowels, hisses — and use them to control your computer. You record
+            Train a model to recognize the sounds you make - clicks, pops,
+            vowels, hisses - and use them to control your computer. You record
             examples of each sound, Parrot segments out the actual sound from
             the silence, and then trains a classifier on those segments.
         </p>
@@ -99,7 +99,7 @@ class AboutPage(QWidget):
         {h("Sounds &amp; recordings")}
         <p>A <b style='color:{accent};'>sound</b> is one label you want the model
         to recognize (for example <i>pop</i> or <i>ah</i>). Each sound holds one
-        or more <b style='color:{accent};'>recordings</b> — individual capture
+        or more <b style='color:{accent};'>recordings</b> - individual capture
         sessions. The more varied, clean examples a sound has, the better the
         model learns it.</p>
         <p style='color:{dim};'>On disk, each recording is a source
@@ -110,26 +110,26 @@ class AboutPage(QWidget):
         <p>Most of a recording is silence between sounds. Parrot splits each
         recording into {ms_per_frame}&nbsp;ms frames and decides, frame by frame,
         whether each one is <i>signal</i> or <i>silence</i> by comparing its
-        loudness (measured in <b>dBFS</b> — decibels relative to full scale,
+        loudness (measured in <b>dBFS</b> - decibels relative to full scale,
         where 0 is the loudest possible and more negative is quieter) against a
         threshold.</p>
         <p>The <b style='color:#5ab0f5;'>blue bands</b> drawn over a waveform are
-        the detected-sound regions — the frames that landed above the threshold.
+        the detected-sound regions - the frames that landed above the threshold.
         Everything outside them is treated as silence and ignored during
         training. You can re-run detection at a different threshold, or hand-edit
         a recording, from its edit view.</p>
         <p>The threshold itself is worked out in three layers:</p>
-        <p style='margin-left:12px;'><b>1. Live calibration</b> — while you
+        <p style='margin-left:12px;'><b>1. Live calibration</b> - while you
         record, Parrot listens to your noise floor and the sounds you make and
         calibrates the threshold on the fly. It needs roughly ten finished
         sounds before it settles, so judgments made early in a take are
         provisional.</p>
-        <p style='margin-left:12px;'><b>2. Settled re-judge</b> — when a
+        <p style='margin-left:12px;'><b>2. Settled re-judge</b> - when a
         recording is saved or re-detected, the whole take is judged again with
         the thresholds that settled over all of it, so the first sounds are
         segmented with exactly the same criteria as the last. (Two-pass
-        detection — on by default, can be switched off in Settings.)</p>
-        <p style='margin-left:12px;'><b>3. Manual override</b> — set a threshold
+        detection - on by default, can be switched off in Settings.)</p>
+        <p style='margin-left:12px;'><b>3. Manual override</b> - set a threshold
         yourself in a recording's edit view and it wins over both, for that
         recording only.</p>
 
@@ -142,7 +142,7 @@ class AboutPage(QWidget):
 
         {h("Data quantity")}
         <p>For each sound, Parrot adds up the <b>detected</b> sound time (the blue
-        regions only — not the silence) and rates how much training data you have:
+        regions only - not the silence) and rates how much training data you have:
         </p>
         <table style='margin:6px 0 6px 4px;'>{''.join(ratings)}</table>
         <p style='color:{dim};'>These are guidelines, not hard limits. “Good” is
@@ -159,7 +159,7 @@ class AboutPage(QWidget):
 
         {h("Models")}
         <p>A <b style='color:{accent};'>model</b> is what you train from your
-        sounds. It can be made of several neural <b>nets</b> trained together —
+        sounds. It can be made of several neural <b>nets</b> trained together -
         more nets can raise accuracy at the cost of training time and size.
         Models can also be <b>combined</b> (ensemble or hierarchical) to merge the
         strengths of several. You train and manage models from the
@@ -167,29 +167,29 @@ class AboutPage(QWidget):
 
         {h("Talon patterns (patterns.json)")}
         <p>When a model is deployed to Talon, <code>patterns.json</code> maps
-        model sounds to <b>patterns</b> — the named triggers your .talon files
+        model sounds to <b>patterns</b> - the named triggers your .talon files
         bind actions to. Each pattern has:</p>
-        <p style='margin-left:12px;'><b>sounds</b> — which model sounds count
+        <p style='margin-left:12px;'><b>sounds</b> - which model sounds count
         toward this pattern (their probabilities are summed).</p>
-        <p style='margin-left:12px;'><b>threshold</b> — rules that must
+        <p style='margin-left:12px;'><b>threshold</b> - rules that must
         <i>all</i> pass for a frame to fire: <code>&gt;probability</code>
-        (summed model confidence, 0–1), <code>&gt;power</code> (loudness in
+        (summed model confidence, 0-1), <code>&gt;power</code> (loudness in
         Talon's units), <code>&gt;f0/f1/f2</code> (pitch/formants in Hz, e.g.
         to split a high hiss from a low one), each also available as
         <code>&lt;</code>. A fired frame keeps firing on every frame that
-        passes — throttles are what stop a machine-gun trigger.</p>
-        <p style='margin-left:12px;'><b>throttle</b> — after this pattern
+        passes - throttles are what stop a machine-gun trigger.</p>
+        <p style='margin-left:12px;'><b>throttle</b> - after this pattern
         fires, silence the listed <i>patterns</i> (including itself) for N
         seconds. Targets must be pattern names, not sound names.</p>
-        <p style='margin-left:12px;'><b>graceperiod / grace_threshold</b> —
+        <p style='margin-left:12px;'><b>graceperiod / grace_threshold</b> -
         right after a detection, softer rules apply for N seconds so a sound
         you're holding doesn't stutter as its probability wobbles.</p>
-        <p style='margin-left:12px;'><b>detect_after</b> — the rules must hold
+        <p style='margin-left:12px;'><b>detect_after</b> - the rules must hold
         this many seconds before the first fire (turns a pop-like trigger into
         a hold-to-activate).</p>
         <p style='color:{dim};'>The Talon tab edits all of this with
         validation, keeps snapshots of every deploy, and its Live/Captures
-        views show the real power and probability values your sounds produce —
+        views show the real power and probability values your sounds produce -
         the numbers thresholds should be judged against. Note that
         <code>power</code>/<code>f0</code> there are Talon-engine units, not
         the dBFS shown elsewhere in this app.</p>
@@ -198,7 +198,7 @@ class AboutPage(QWidget):
         <p>The detection strategy controls how onsets, rejections, and gap-mending
         are handled while segmenting. The current strategy is
         <code style='color:{dim};'>{CURRENT_DETECTION_STRATEGY}</code>, and the
-        threshold mode is <b>{THRESHOLD_DETECTION}</b> — <i>strict</i> suits
+        threshold mode is <b>{THRESHOLD_DETECTION}</b> - <i>strict</i> suits
         rapid back-to-back sounds, <i>lenient</i> leaves more room between sounds
         to settle on a threshold. You can pick a strategy when recording.</p>
 

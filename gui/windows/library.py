@@ -71,7 +71,7 @@ class SoundLibraryPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter)
 
-        # Left: sound list — three columns (sound / data quantity / detected time)
+        # Left: sound list - three columns (sound / data quantity / detected time)
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
@@ -136,7 +136,7 @@ class SoundLibraryPage(QWidget):
         self.header_frame.setStyleSheet(
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
-        # Add recording is the headline action — accent-filled, stands apart.
+        # Add recording is the headline action - accent-filled, stands apart.
         self.add_recording_btn.setStyleSheet(
             f"QPushButton#primaryAction {{ background-color: {t['accent']}; color: #ffffff; "
             f"font-weight: bold; border: none; border-radius: 4px; padding: 6px 18px; }} "
@@ -184,7 +184,7 @@ class SoundLibraryPage(QWidget):
         self.add_recording_btn.setObjectName("primaryAction")
         self.add_recording_btn.setMinimumHeight(34)
         self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.add_recording_btn.setToolTip("Record a new session for this sound — R")
+        self.add_recording_btn.setToolTip("Record a new session for this sound - R")
         self.add_recording_btn.clicked.connect(self._on_add_recording)
         actions.addWidget(self.add_recording_btn)
         actions.addStretch()
@@ -214,7 +214,7 @@ class SoundLibraryPage(QWidget):
         actions.addWidget(self.normalize_btn)
         v.addLayout(actions)
 
-        # Second-class sound management — present but visually quiet.
+        # Second-class sound management - present but visually quiet.
         secondary = QHBoxLayout()
         secondary.setContentsMargins(0, 4, 0, 0)
         self._secondary_btns = []
@@ -263,7 +263,7 @@ class SoundLibraryPage(QWidget):
             self.sound_stats.setText("")
             self.sound_quantity.setText("")
             self._build_for_item(None)
-            self._show_message("No sounds yet — click “+ New sound” to start.")
+            self._show_message("No sounds yet - click “+ New sound” to start.")
             return
 
         # Reselect the previous sound if it still exists, else fall back to the
@@ -295,7 +295,7 @@ class SoundLibraryPage(QWidget):
         self._load_timer.stop()
         self._pending_loads = []
         # Cards/container that are being replaced. We build the new view fully,
-        # swap it in, and only THEN destroy these — so tearing down the old
+        # swap it in, and only THEN destroy these - so tearing down the old
         # pyqtgraph scenes can never disturb the layout we're inserting into.
         old_cards = self._cards
         old_container = self.cards_container
@@ -346,7 +346,7 @@ class SoundLibraryPage(QWidget):
             self.scroll.setWidget(container)
 
             if self._cards:
-                # Mark the first card selected (border only — no plot build) so
+                # Mark the first card selected (border only - no plot build) so
                 # the swap is instant, then queue every card to load in order
                 # (selected one first) on subsequent event-loop ticks.
                 self._mark_selected(self._cards[0])
@@ -448,7 +448,7 @@ class SoundLibraryPage(QWidget):
         self._active_card = card
 
     def _mark_selected(self, card):
-        """Set the selection highlight only (no preview build) — used during a
+        """Set the selection highlight only (no preview build) - used during a
         rebuild so swapping in the new view never blocks on a plot."""
         if (self._selected_card is not None
                 and not sip.isdeleted(self._selected_card)):
@@ -464,14 +464,14 @@ class SoundLibraryPage(QWidget):
         if self._selected_card is not None:
             self._selected_card.set_selected(False)
         self._selected_card = card
-        # A selected card is about to be interacted with — build it now rather
+        # A selected card is about to be interacted with - build it now rather
         # than waiting for its turn in the progressive queue.
         card.load_preview()
         card.set_selected(True)
 
     def _load_next_pending(self):
         """Build one queued card's waveform, then yield to the event loop and
-        re-arm for the next — so the UI stays responsive while previews fill in."""
+        re-arm for the next - so the UI stays responsive while previews fill in."""
         while self._pending_loads:
             card = self._pending_loads.pop(0)
             if sip.isdeleted(card):
@@ -513,7 +513,7 @@ class SoundLibraryPage(QWidget):
             self._on_add_recording()           # record a new session for this sound
         else:
             super().keyPressEvent(event)
-        # Note: no X/Delete here — deleting a whole recording is deliberate and
+        # Note: no X/Delete here - deleting a whole recording is deliberate and
         # only via the button/menu, not a single keypress on a read-only view.
 
     def keybinding_hint(self):

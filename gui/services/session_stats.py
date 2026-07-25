@@ -2,7 +2,7 @@
 
 Pure information, no suggestions: what power/probability values a pattern
 actually fired at (recorded Talon ground truth, not replay), and how often it
-*nearly* fired — probability was there but some rule said no — with the rule
+*nearly* fired - probability was there but some rule said no - with the rule
 that blocked it. This is what makes threshold numbers meaningful when editing.
 """
 
@@ -10,7 +10,7 @@ NEAR_MISS_PROBABILITY = 0.5
 
 
 def _percentiles(values):
-    """(p10, median, p90) without numpy — sessions are small."""
+    """(p10, median, p90) without numpy - sessions are small."""
     if not values:
         return None
     ordered = sorted(values)
@@ -53,7 +53,7 @@ def _blocking_rule(frame, config, probability):
 
 def analyze(frames, patterns_json):
     """Per pattern: {"fires", "fired_power", "fired_prob", "fired_f0",
-    "near_misses", "blockers": {rule: count}} — all from recorded ground
+    "near_misses", "blockers": {rule: count}} - all from recorded ground
     truth (the 'active' sets Talon actually produced)."""
     stats = {}
     for name, config in (patterns_json or {}).items():
@@ -94,8 +94,8 @@ def describe(entry):
     if entry["fires"]:
         p = entry["fired_power"]
         q = entry["fired_prob"]
-        parts.append(f"fired {entry['fires']}× — power {p[0]:.0f}–{p[2]:.0f} "
-                     f"(median {p[1]:.0f}), probability {q[0]:.2f}–{q[2]:.2f}")
+        parts.append(f"fired {entry['fires']}× - power {p[0]:.0f}-{p[2]:.0f} "
+                     f"(median {p[1]:.0f}), probability {q[0]:.2f}-{q[2]:.2f}")
         f0 = entry["fired_f0"]
         if f0 and f0[1] > 0:
             parts.append(f"f0 median {f0[1]:.0f} Hz")

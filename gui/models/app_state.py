@@ -108,7 +108,7 @@ class AppState(QObject):
         if meta["pkl_exists"]:
             meta["total_size_bytes"] += os.path.getsize(pkl_path)
 
-        # Find matching BEST weight files (fast — just file listing)
+        # Find matching BEST weight files (fast - just file listing)
         best_files = sorted(glob.glob(pkl_path + "_*-BEST-weights.pth.tar"))
         meta["net_count"] = len(best_files)
 

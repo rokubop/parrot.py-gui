@@ -1,9 +1,9 @@
-"""Captures workbench — evaluate recorded sessions against pattern variants.
+"""Captures workbench - evaluate recorded sessions against pattern variants.
 
 Record a session of real usage in the Live tab once, then compare what the
 deployed patterns.json did against what an edited working copy / variant
 WOULD have done, frame for frame, using the ported integration state machine
-(patterns_replay — verified frame-identical against the real integration).
+(patterns_replay - verified frame-identical against the real integration).
 """
 import json
 import os
@@ -73,7 +73,7 @@ class TalonCapturesView(QWidget):
             ["Pattern", "Deployed fires", "Candidate fires", "Δ",
              "Power when fired", "Prob. when fired", "Near misses"])
         self.summary.horizontalHeaderItem(4).setToolTip(
-            "Observed p10–p90 (median) across the recorded session")
+            "Observed p10-p90 (median) across the recorded session")
         self.summary.horizontalHeaderItem(6).setToolTip(
             "Frames where probability was ≥ 0.5 but the pattern did not fire, "
             "with the rule that blocked it")
@@ -173,8 +173,8 @@ class TalonCapturesView(QWidget):
             cells = [
                 name, str(fires_a), str(fires_b),
                 f"{delta:+d}" if delta else "",
-                f"{power[0]:.0f}–{power[2]:.0f}  ({power[1]:.0f})" if power else "",
-                f"{prob[0]:.2f}–{prob[2]:.2f}" if prob else "",
+                f"{power[0]:.0f}-{power[2]:.0f}  ({power[1]:.0f})" if power else "",
+                f"{prob[0]:.2f}-{prob[2]:.2f}" if prob else "",
                 str(near) if near else "",
             ]
             for col, value in enumerate(cells):
@@ -201,13 +201,13 @@ class TalonCapturesView(QWidget):
 
         total_a = sum(result_a.fires.values())
         total_b = sum(result_b.fires.values())
-        parts = [f"{len(frames)} frames replayed — deployed fired {total_a}×, "
+        parts = [f"{len(frames)} frames replayed - deployed fired {total_a}×, "
                  f"{candidate_label} would fire {total_b}× "
                  f"({len(changes)} frames differ)."]
         if result_b.power_floor_warning:
             parts.append(
                 "⚠ The candidate lowers a >power threshold below the deployed "
-                "one — frames quieter than the deployed floor were never "
+                "one - frames quieter than the deployed floor were never "
                 "recorded, so additions may be under-reported.")
         if result_b.skipped_patterns:
             parts.append(

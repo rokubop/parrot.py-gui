@@ -2,7 +2,7 @@ import os
 import sys
 
 # On Windows, torch's DLLs (c10.dll) fail to initialize if Qt's are loaded
-# first (WinError 1114 — conflicting bundled runtimes). Everything that
+# first (WinError 1114 - conflicting bundled runtimes). Everything that
 # touches models (training, inspect, accuracy/live tests) imports torch
 # lazily, so it MUST be resident before the first PyQt6 import. Costs ~1 s
 # of startup on Windows only; no effect where the conflict doesn't exist.

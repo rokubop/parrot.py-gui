@@ -1,7 +1,7 @@
 """Dialogs for testing a model: offline accuracy against recorded segments,
 and a live mic test with per-sound probability bars.
 
-Both answer "is my model good?" with parrot.py's own pipeline — deliberately
+Both answer "is my model good?" with parrot.py's own pipeline - deliberately
 separate from the Talon tab, which shows what the deployed Talon setup does.
 """
 from PyQt6.QtCore import Qt, QTimer
@@ -21,7 +21,7 @@ WINNER_THRESHOLD = 0.5
 class AccuracyDialog(QDialog):
     def __init__(self, parent, model_name, model_path, labels):
         super().__init__(parent)
-        self.setWindowTitle(f"Accuracy — {model_name}")
+        self.setWindowTitle(f"Accuracy - {model_name}")
         self.setMinimumSize(640, 480)
         t = theme.colors()
 
@@ -68,7 +68,7 @@ class AccuracyDialog(QDialog):
             precision = result["precision"].get(label)
             cells = [label, str(entry["samples"]),
                      f"{entry['recall']:.1%}",
-                     f"{precision:.1%}" if precision is not None else "—",
+                     f"{precision:.1%}" if precision is not None else "-",
                      confusions]
             for col, value in enumerate(cells):
                 item = QTableWidgetItem(value)
@@ -86,7 +86,7 @@ class AccuracyDialog(QDialog):
                          f"{', '.join(result['skipped'])}.")
         if result["rate_mismatch"]:
             parts.append(f"⚠ Model expects {result['rate_mismatch']} Hz but "
-                         "the app is configured differently — results are "
+                         "the app is configured differently - results are "
                          "unreliable.")
         self.status.setText(" ".join(parts))
 
@@ -99,7 +99,7 @@ class AccuracyDialog(QDialog):
 class LiveTestDialog(QDialog):
     def __init__(self, parent, model_name, model_path, mic_index=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Live test — {model_name}")
+        self.setWindowTitle(f"Live test - {model_name}")
         self.setMinimumSize(560, 620)
         t = theme.colors()
         self._latest = None
@@ -107,12 +107,12 @@ class LiveTestDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self.status = QLabel("Listening… make your sounds. This is the raw "
-                             "model — no thresholds, no throttles.")
+                             "model - no thresholds, no throttles.")
         self.status.setWordWrap(True)
         self.status.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(self.status)
 
-        self.dbfs_label = QLabel("dBFS: —")
+        self.dbfs_label = QLabel("dBFS: -")
         self.dbfs_label.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(self.dbfs_label)
 
@@ -143,7 +143,7 @@ class LiveTestDialog(QDialog):
         self.worker.frame_classified.connect(self._on_frame)
         self.worker.start()
 
-        # Coalesce UI updates — frames arrive much faster than 30 fps.
+        # Coalesce UI updates - frames arrive much faster than 30 fps.
         self._timer = QTimer(self)
         self._timer.setInterval(50)
         self._timer.timeout.connect(self._render)

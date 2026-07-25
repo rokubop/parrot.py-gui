@@ -2,11 +2,11 @@
 
 All three run ``process_wav_file`` (slow) off the UI thread:
 
-* ReSegmentWorker — write a manual dBFS/duration-type override and re-detect,
+* ReSegmentWorker - write a manual dBFS/duration-type override and re-detect,
   producing a ``.MANUAL.srt`` that takes precedence (the "blue overlay" redo).
-* ResetWorker — drop any manual override and regenerate the automatic
+* ResetWorker - drop any manual override and regenerate the automatic
   ``.v<VERSION>.srt``.
-* TrimWorker — rewrite the source WAV with selected time ranges removed
+* TrimWorker - rewrite the source WAV with selected time ranges removed
   (destructive), then re-detect. The waveform and detection both update because
   both are derived from the rewritten file.
 """
@@ -187,7 +187,7 @@ class TrimWorker(QThread):
 class AppendWorker(QThread):
     """Concatenate one recording's audio onto another, then re-detect the
     combined clip. Used to extend an existing recording with a fresh take.
-    Not destructive to data — it grows the target."""
+    Not destructive to data - it grows the target."""
     finished_ok = pyqtSignal(str)   # srt path of the (longer) target
     failed = pyqtSignal(str)
 

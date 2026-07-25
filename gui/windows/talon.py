@@ -1,9 +1,9 @@
-"""Talon tab — first-party Talon integration (see prd-talon.md).
+"""Talon tab - first-party Talon integration (see prd-talon.md).
 
 Status (discovery, deployed-model match, health lints) + the patterns
 editor: a working copy of the deployed patterns.json is edited through the
 guided dialog (or raw JSON), can be stored as named variants, and is only
-written back to Talon via Deploy — which snapshots the deployed file first.
+written back to Talon via Deploy - which snapshots the deployed file first.
 Talon hot-reloads patterns.json (``@resource.watch``), so deploys apply live.
 
 Discovery + model unpickling run off the UI thread; Refresh re-runs both.
@@ -199,7 +199,7 @@ class TalonPage(QWidget):
         self.variant_combo = QComboBox()
         self.variant_combo.setMinimumWidth(160)
         self.variant_combo.setToolTip(
-            "Named variants are stored in data/talon/variants — load one to "
+            "Named variants are stored in data/talon/variants - load one to "
             "edit it, then Deploy to make it live")
         tools.addWidget(self.variant_combo)
         self.load_variant_btn = self._tool_btn(tools, "Load", self._on_load_variant)
@@ -268,14 +268,14 @@ class TalonPage(QWidget):
             return
         if result.talon_found:
             self.status_rows["talon"].setText(
-                f"<span style='color:{ok};'>Found</span> — {result.talon_home}")
+                f"<span style='color:{ok};'>Found</span> - {result.talon_home}")
         else:
             self.status_rows["talon"].setText(
-                f"<span style='color:{bad};'>Not found</span> — {result.error or ''}")
-        self.status_rows["integration"].setText(result.integration_path or "—")
-        self.status_rows["patterns"].setText(result.pattern_path_from_talon or "—")
+                f"<span style='color:{bad};'>Not found</span> - {result.error or ''}")
+        self.status_rows["integration"].setText(result.integration_path or "-")
+        self.status_rows["patterns"].setText(result.pattern_path_from_talon or "-")
 
-        model_txt = result.model_path_from_talon or "—"
+        model_txt = result.model_path_from_talon or "-"
         match = bundle.get("local_match")
         sounds = bundle.get("model_sounds")
         if result.model_path_from_talon:
@@ -284,7 +284,7 @@ class TalonPage(QWidget):
                               f"'{match}'</span>")
             else:
                 model_txt += (f"<br><span style='color:{bad};'>No identical local "
-                              f"model — Talon may be running an old copy</span>")
+                              f"model - Talon may be running an old copy</span>")
             if sounds:
                 model_txt += (f"<br><span style='color:{t['text_dim']};'>"
                               f"{len(sounds)} sounds: {', '.join(sounds)}</span>")
@@ -302,11 +302,11 @@ class TalonPage(QWidget):
         self.create_patterns_btn.setVisible(bool(patterns_missing))
         if not result.integration_path and user_dir:
             self.status_rows["integration"].setText(
-                f"<span style='color:{bad};'>Not found</span> — use "
+                f"<span style='color:{bad};'>Not found</span> - use "
                 "'Set up parrot integration' to create one")
         elif patterns_missing:
             self.status_rows["patterns"].setText(
-                f"<span style='color:{bad};'>Missing</span> — the integration "
+                f"<span style='color:{bad};'>Missing</span> - the integration "
                 f"expects {result.intended_pattern_path}")
         self._deployed = _copy(result.patterns or {})
         self.working = _copy(result.patterns or {})
@@ -324,24 +324,24 @@ class TalonPage(QWidget):
         t = theme.colors()
         user_dir = self._talon_user_dir()
         if not user_dir:
-            self.status_rows["companion"].setText("—")
+            self.status_rows["companion"].setText("-")
             self.companion_btn.setEnabled(False)
             return
         info = talon_companion.status(user_dir)
         self.companion_btn.setEnabled(True)
         if not info["installed"]:
             self.status_rows["companion"].setText(
-                "Not installed — needed for the Live tab")
+                "Not installed - needed for the Live tab")
             self.companion_btn.setText("Install companion")
         elif info["outdated"]:
             self.status_rows["companion"].setText(
                 f"<span style='color:#d3a45c;'>v{info['installed_version']} installed, "
-                f"v{info['available_version']} available</span> — {info['path']}")
+                f"v{info['available_version']} available</span> - {info['path']}")
             self.companion_btn.setText("Update companion")
         else:
             self.status_rows["companion"].setText(
                 f"<span style='color:{t['accent']};'>Installed</span> "
-                f"(v{info['installed_version']}) — {info['path']}")
+                f"(v{info['installed_version']}) - {info['path']}")
             self.companion_btn.setText("Reinstall companion")
 
     def _on_install_companion(self):
@@ -353,7 +353,7 @@ class TalonPage(QWidget):
                 self, "Install companion",
                 f"Copy parrot_gui_bridge.py to\n{dest}?\n\n"
                 "Talon loads it immediately. It only observes detections and "
-                "publishes them to this app on localhost — remove it any time "
+                "publishes them to this app on localhost - remove it any time "
                 "by deleting the file.") != QMessageBox.StandardButton.Yes:
             return
         try:
@@ -371,7 +371,7 @@ class TalonPage(QWidget):
         if not models:
             QMessageBox.information(
                 self, "No models yet",
-                "Train a model first (Models tab) — the integration needs one.")
+                "Train a model first (Models tab) - the integration needs one.")
             return
         name, okd = QInputDialog.getItem(
             self, "Set up parrot integration",
@@ -454,10 +454,10 @@ class TalonPage(QWidget):
         warnings = [i for i in issues if i.severity == "warning"]
 
         if not self.working:
-            self.status_rows["health"].setText("—")
+            self.status_rows["health"].setText("-")
         elif not issues:
             self.status_rows["health"].setText(
-                f"<span style='color:{ok};'>All good</span> — "
+                f"<span style='color:{ok};'>All good</span> - "
                 f"{len(self.working)} patterns, no issues")
         else:
             parts = []
@@ -466,10 +466,10 @@ class TalonPage(QWidget):
             if warnings:
                 parts.append(f"<span style='color:#d3a45c;'>{len(warnings)} warnings</span>")
             self.status_rows["health"].setText(
-                f"{len(self.working)} patterns — " + ", ".join(parts))
+                f"{len(self.working)} patterns - " + ", ".join(parts))
 
         self.patterns_group.setTitle(
-            "Patterns — unsaved changes (Deploy to make live)" if self.dirty
+            "Patterns - unsaved changes (Deploy to make live)" if self.dirty
             else "Patterns")
         editable = self._patterns_path is not None
         for btn in (self.new_btn, self.edit_btn, self.dup_btn, self.del_btn,
@@ -608,7 +608,7 @@ class TalonPage(QWidget):
 
     def _on_raw_json(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("patterns.json — raw")
+        dialog.setWindowTitle("patterns.json - raw")
         dialog.setMinimumSize(640, 560)
         layout = QVBoxLayout(dialog)
         editor = QPlainTextEdit()
@@ -714,14 +714,14 @@ class TalonPage(QWidget):
         self._refresh_from_working()
         QMessageBox.information(
             self, "Deployed",
-            f"patterns.json updated — Talon picks it up automatically.\n"
+            f"patterns.json updated - Talon picks it up automatically.\n"
             f"Previous version snapshotted to:\n{snap}")
 
     def _on_snapshots(self):
         snaps = patterns_store.list_snapshots()
         if not snaps:
             QMessageBox.information(self, "Snapshots",
-                                    "No snapshots yet — one is taken on every deploy.")
+                                    "No snapshots yet - one is taken on every deploy.")
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("Snapshots")

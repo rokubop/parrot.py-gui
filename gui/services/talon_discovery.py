@@ -16,7 +16,7 @@ class TalonDiscoveryResult:
     integration_path: Optional[str] = None
     model_path_from_talon: Optional[str] = None
     pattern_path_from_talon: Optional[str] = None
-    # Paths the integration file *references*, whether or not they exist yet —
+    # Paths the integration file *references*, whether or not they exist yet -
     # what a bootstrap flow should create.
     intended_pattern_path: Optional[str] = None
     intended_model_path: Optional[str] = None
@@ -231,7 +231,7 @@ def find_matching_local_model(talon_model_path: str, classifier_folder: str) -> 
 
 def load_model_sounds(model_path: str) -> Optional[list]:
     """The class labels the deployed model can produce (joblib pkl), or None.
-    Heavy (unpickles the model) — call it off the UI thread."""
+    Heavy (unpickles the model) - call it off the UI thread."""
     if not model_path or not os.path.isfile(model_path):
         return None
     try:

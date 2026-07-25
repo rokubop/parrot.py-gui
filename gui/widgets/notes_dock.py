@@ -11,8 +11,7 @@ class NotesDock(QDockWidget):
 
         self.edit = QTextEdit()
         self.edit.setPlaceholderText(
-            "Notes to your future self — which model works best, mic quirks, "
-            "what not to retrain. Saved automatically.")
+            "Persistent notes to plan or track status. Saved automatically.")
         self.edit.setMinimumWidth(280)
         self.edit.setPlainText(app_state.load_notes().get("global_notes", ""))
         self.edit.textChanged.connect(self._queue_save)

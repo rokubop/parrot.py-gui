@@ -3,7 +3,7 @@
 Pure, Qt-free functions that mutate the on-disk library under
 ``data/recordings/`` and ``data/models/``. They raise ``LibraryOpError`` on
 invalid input or conflicts so callers can surface a clean message. Slow audio
-reprocessing (re-segmentation, trimming) lives in workers, not here — these are
+reprocessing (re-segmentation, trimming) lives in workers, not here - these are
 all fast metadata/file moves.
 
 On-disk layout (one sound label):

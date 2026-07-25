@@ -1,8 +1,8 @@
 """Central theme definitions and application.
 
 A theme is a flat dict of colors/metrics consumed two ways:
-  * UI chrome  — turned into a Qt stylesheet + palette applied to the app.
-  * Plots      — read directly by the pyqtgraph widgets (background, waveform
+  * UI chrome  - turned into a Qt stylesheet + palette applied to the app.
+  * Plots      - read directly by the pyqtgraph widgets (background, waveform
                  pen/fill, detection tint, playhead).
 
 Widgets read the active theme via ``colors()``; the main window switches
@@ -31,7 +31,7 @@ THEMES = {
         "button": "#4c5462",
         "button_hover": "#5c6577",
         "radius": "5px",
-        # plot colors — glowing green curve on a dark analyzer, blue detection
+        # plot colors - glowing green curve on a dark analyzer, blue detection
         "plot_bg": "#15181c",
         "wave": (90, 230, 150),
         "wave_fill": (70, 215, 135, 60),

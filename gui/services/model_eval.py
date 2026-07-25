@@ -1,4 +1,4 @@
-"""Model evaluation core — shared by the accuracy test (recorded segments)
+"""Model evaluation core - shared by the accuracy test (recorded segments)
 and the live mic test (streaming frames). Qt-free.
 
 Features are extracted exactly the way training extracts them
@@ -70,7 +70,7 @@ def srt_for_source(label_dir):
 
 def sound_features(label, input_type, max_samples=2000):
     """Feature vectors for one sound's detected segments (no augmentation,
-    no offsets — evaluation wants the plain samples)."""
+    no offsets - evaluation wants the plain samples)."""
     label_dir = os.path.join(RECORDINGS_FOLDER, label)
     features = []
     for source_wav, srt in sorted(srt_for_source(label_dir).items()):

@@ -26,7 +26,7 @@ class TrainingPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
 
-        # Left panel — label selection
+        # Left panel - label selection
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
 
@@ -36,7 +36,7 @@ class TrainingPage(QWidget):
 
         splitter.addWidget(left_panel)
 
-        # Right panel — training controls and plot
+        # Right panel - training controls and plot
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
 

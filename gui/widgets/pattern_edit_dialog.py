@@ -98,7 +98,7 @@ class PatternEditDialog(QDialog):
     def __init__(self, parent, name, pattern, all_patterns, model_sounds,
                  schema=None, observed=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Edit pattern — {name}" if name else "New pattern")
+        self.setWindowTitle(f"Edit pattern - {name}" if name else "New pattern")
         self.setMinimumSize(680, 640)
         self._original_name = name
         self._all_patterns = all_patterns
@@ -153,7 +153,7 @@ class PatternEditDialog(QDialog):
 
         # ---- thresholds
         ops = self._schema["threshold_ops"]
-        thr_group = QGroupBox("Threshold — every rule must pass for a detection")
+        thr_group = QGroupBox("Threshold - every rule must pass for a detection")
         QVBoxLayout(thr_group)
         if observed:
             from gui.services import session_stats
@@ -169,7 +169,7 @@ class PatternEditDialog(QDialog):
             self.threshold_rows.add_row(op, value)
         layout.addWidget(thr_group)
 
-        grace_group = QGroupBox("Grace threshold — softer rules right after a detection")
+        grace_group = QGroupBox("Grace threshold - softer rules right after a detection")
         QVBoxLayout(grace_group)
         self.grace_rows = _RuleRows(grace_group, ops, self._revalidate)
         for op, value in (pattern.get("grace_threshold") or {}).items():
@@ -207,7 +207,7 @@ class PatternEditDialog(QDialog):
 
         # ---- throttles
         throttle_group = QGroupBox(
-            "Throttle — after this fires, silence these patterns for N seconds")
+            "Throttle - after this fires, silence these patterns for N seconds")
         QVBoxLayout(throttle_group)
         pattern_names = [n for n in all_patterns.keys()]
         if name and name not in pattern_names:

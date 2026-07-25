@@ -22,7 +22,7 @@ class AudioPreviewWidget(QWidget):
     sharpens on zoom instead of aliasing.
     """
 
-    seeked = pyqtSignal(float)            # seconds — user clicked to seek
+    seeked = pyqtSignal(float)            # seconds - user clicked to seek
     pressed = pyqtSignal()                # user interacted; used for selection
     selection_changed = pyqtSignal(float, float)  # start, end (seconds)
     selection_cleared = pyqtSignal()
@@ -410,7 +410,7 @@ class AudioPreviewWidget(QWidget):
                 return
             a, b = sorted((anchor, x))
             if (b - a) < self._min_selection():
-                # Too small to be a range — treat it as a click/seek.
+                # Too small to be a range - treat it as a click/seek.
                 self._clear_selection()
                 self.seeked.emit(x)
             else:

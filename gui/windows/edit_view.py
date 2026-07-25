@@ -7,7 +7,7 @@ to that baseline. The title shows a ``*`` whenever there are unsaved edits.
 
 Two kinds of edit, both reflected immediately in the waveform + detection:
 
-* Re-detect — set a threshold / duration type and click Apply (writes a manual
+* Re-detect - set a threshold / duration type and click Apply (writes a manual
   override / ``.MANUAL.srt``); "Auto-detect" finds the threshold automatically
   and shows it on the slider.
 * Delete a selected time range from the source WAV, which rewrites the file and
@@ -131,7 +131,7 @@ class EditRecordingView(QWidget):
         self.save_btn = QPushButton("Save")
         self.save_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.save_btn.setMinimumWidth(120)
-        self.save_btn.setToolTip("Commit your edits to this recording — Ctrl+S")
+        self.save_btn.setToolTip("Commit your edits to this recording - Ctrl+S")
         self.save_btn.clicked.connect(self._on_save)
         top.addWidget(self.save_btn)
         root.addLayout(top)
@@ -153,12 +153,12 @@ class EditRecordingView(QWidget):
         play_row.addSpacing(16)
         self.undo_btn = QPushButton("Undo")
         self.undo_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.undo_btn.setToolTip("Undo the last edit — Ctrl+Z")
+        self.undo_btn.setToolTip("Undo the last edit - Ctrl+Z")
         self.undo_btn.clicked.connect(self._on_undo)
         play_row.addWidget(self.undo_btn)
         self.redo_btn = QPushButton("Redo")
         self.redo_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.redo_btn.setToolTip("Redo — Ctrl+Y")
+        self.redo_btn.setToolTip("Redo - Ctrl+Y")
         self.redo_btn.clicked.connect(self._on_redo)
         play_row.addWidget(self.redo_btn)
         play_row.addStretch()
@@ -185,7 +185,7 @@ class EditRecordingView(QWidget):
             sc.setContext(Qt.ShortcutContext.WindowShortcut)
             sc.activated.connect(slot)
 
-        # Detection (threshold) group — dragging the threshold re-detects live.
+        # Detection (threshold) group - dragging the threshold re-detects live.
         # Re-detection is expensive (it reprocesses the whole clip), so the
         # threshold is applied on demand via the button, not live on every drag.
         det_group = QGroupBox("Detection (the blue overlay)")
@@ -228,11 +228,11 @@ class EditRecordingView(QWidget):
         self.delete_btn = QPushButton("Delete selected range")
         self.delete_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.delete_btn.setToolTip("Remove the selected part of the waveform "
-                                   "(also updates detection) — undoable, and not "
+                                   "(also updates detection) - undoable, and not "
                                    "saved until you click Save. Del")
         self.delete_btn.clicked.connect(self._on_delete_range)
         trim.addWidget(self.delete_btn)
-        trim_note = QLabel("Nothing is saved until you click Save — Back lets you "
+        trim_note = QLabel("Nothing is saved until you click Save - Back lets you "
                            "discard. Drag-select a range, then Delete it.")
         trim_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         trim.addWidget(trim_note)
@@ -262,7 +262,7 @@ class EditRecordingView(QWidget):
         self.slider_label.setText(f"{v} dBFS")
 
     def _sync_slider_from_file(self):
-        """Move the slider to whatever threshold is on disk — so after Auto-detect
+        """Move the slider to whatever threshold is on disk - so after Auto-detect
         it shows the value detection picked."""
         existing = read_min_dbfs(self.wav_path)
         self.slider.blockSignals(True)
@@ -281,7 +281,7 @@ class EditRecordingView(QWidget):
         """Tear a finished detection thread down safely. The worker emits its
         result as the LAST line of run(), so without waiting for the thread to
         actually return, dropping the reference here could delete a still-running
-        QThread (a hard crash) — wait() returns near-instantly and prevents it."""
+        QThread (a hard crash) - wait() returns near-instantly and prevents it."""
         w = self.worker
         self.worker = None
         if w is not None:
@@ -297,7 +297,7 @@ class EditRecordingView(QWidget):
         params = (self.slider.value(), self.duration_combo.currentData())
         if params == self._last_applied:
             self.status.setText("No change to apply.")
-            return  # nothing changed since the last detect — skip the expensive work
+            return  # nothing changed since the last detect - skip the expensive work
         self.stop_playback()
         self.history.checkpoint()
         self._last_applied = params
@@ -313,7 +313,7 @@ class EditRecordingView(QWidget):
             return
         self.stop_playback()
         self.history.checkpoint()
-        self._last_applied = None   # auto state — let the next threshold apply
+        self._last_applied = None   # auto state - let the next threshold apply
         self._set_busy(True)
         self.status.setText("Resetting to automatic detection…")
         self.worker = ResetWorker(self.wav_path, self.label)
@@ -326,7 +326,7 @@ class EditRecordingView(QWidget):
         if not sel or sel[1] - sel[0] <= 0:
             self.status.setText("Select a range on the waveform first.")
             return
-        # No confirm dialog — this is undoable (Ctrl+Z). Confirms are reserved
+        # No confirm dialog - this is undoable (Ctrl+Z). Confirms are reserved
         # for non-undoable deletes (whole recording / sound / model).
         if self.worker:
             return
@@ -522,7 +522,7 @@ class EditRecordingView(QWidget):
                 return
             if choice == QMessageBox.StandardButton.Save:
                 self.history.commit_baseline()
-            else:  # Discard — restore the recording to its last-saved state.
+            else:  # Discard - restore the recording to its last-saved state.
                 self.history.revert_to_baseline()
                 self.app_state.recordings_changed.emit()
         self.history.clear()   # undo history is per-editing-session

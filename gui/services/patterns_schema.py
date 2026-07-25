@@ -1,14 +1,14 @@
 """Validation for Talon patterns.json files.
 
-The schema authority is the user's own ``parrot_integration.py`` — it declares
+The schema authority is the user's own ``parrot_integration.py`` - it declares
 ``possible_keys`` and ``possible_thresholds`` frozensets which we parse out
 (`schema_from_integration`). When that fails we fall back to the known sets
 from chaosparrot's integration. Unknown-but-present data is never an error on
 its own: we are a guest in this file and must not fight a newer integration.
 
 Severities:
-- ``error``   — the integration would skip/crash on this pattern (won't save)
-- ``warning`` — suspicious but functional (saves, shown with a badge)
+- ``error``   - the integration would skip/crash on this pattern (won't save)
+- ``warning`` - suspicious but functional (saves, shown with a badge)
 """
 import re
 from dataclasses import dataclass
@@ -30,7 +30,7 @@ class Issue:
 
     def __str__(self):
         where = f"{self.pattern}: " if self.pattern else ""
-        return f"[{self.severity}] {where}{self.field} — {self.message}"
+        return f"[{self.severity}] {where}{self.field} - {self.message}"
 
 
 def schema_from_integration(integration_path):
@@ -68,7 +68,7 @@ def _check_threshold_dict(name, field, value, schema, issues):
         f = f"{field}.{op}"
         if op not in schema["threshold_ops"]:
             issues.append(Issue("warning", name, f,
-                                "unknown threshold key — the integration will ignore it"))
+                                "unknown threshold key - the integration will ignore it"))
         if not _is_number(num):
             issues.append(Issue("error", name, f, "threshold values must be numbers"))
             continue
@@ -77,7 +77,7 @@ def _check_threshold_dict(name, field, value, schema, issues):
         if op.endswith("power") and num < 0:
             issues.append(Issue("warning", name, f, "negative power never matches"))
         if op[1:] in ("f0", "f1", "f2") and not (0 <= num <= 8000):
-            issues.append(Issue("warning", name, f, "formant frequency outside 0–8000 Hz"))
+            issues.append(Issue("warning", name, f, "formant frequency outside 0-8000 Hz"))
 
 
 def validate(patterns, schema=None, model_sounds=None):
@@ -100,12 +100,12 @@ def validate(patterns, schema=None, model_sounds=None):
         for key in pattern:
             if key not in schema["keys"]:
                 issues.append(Issue("warning", name, key,
-                                    "unknown key — the integration will ignore it"))
+                                    "unknown key - the integration will ignore it"))
 
         sounds = pattern.get("sounds")
         if not isinstance(sounds, list) or not sounds:
             issues.append(Issue("error", name, "sounds",
-                                "at least one sound is required — the integration skips this pattern"))
+                                "at least one sound is required - the integration skips this pattern"))
         else:
             for sound in sounds:
                 if not isinstance(sound, str):
@@ -118,7 +118,7 @@ def validate(patterns, schema=None, model_sounds=None):
 
         if "threshold" not in pattern:
             issues.append(Issue("error", name, "threshold",
-                                "a threshold is required — the integration crashes without one"))
+                                "a threshold is required - the integration crashes without one"))
         else:
             _check_threshold_dict(name, "threshold", pattern["threshold"], schema, issues)
         if "grace_threshold" in pattern:
@@ -145,12 +145,12 @@ def validate(patterns, schema=None, model_sounds=None):
                         issues.append(Issue("warning", name, f, "unusually long throttle (> 5 s)"))
                     if target not in pattern_names:
                         issues.append(Issue("warning", name, f,
-                                            f"'{target}' is not a pattern name — this throttle does nothing"))
+                                            f"'{target}' is not a pattern name - this throttle does nothing"))
 
     for sound, owners in sound_owners.items():
         if len(owners) > 1:
             issues.append(Issue("warning", owners[0], "sounds",
-                                f"'{sound}' is used by multiple patterns ({', '.join(owners)}) — "
+                                f"'{sound}' is used by multiple patterns ({', '.join(owners)}) - "
                                 "fine if intentional (different thresholds)"))
 
     issues.sort(key=lambda i: (0 if i.severity == "error" else 1, i.pattern, i.field))

@@ -1,4 +1,4 @@
-"""Live view — Talon-truth frames, ported from talon-parrot-tester's frames
+"""Live view - Talon-truth frames, ported from talon-parrot-tester's frames
 table (its most valuable view). Captures listed on the left, one row per
 frame on the right with per-pattern probability, status, and a power bar.
 
@@ -129,11 +129,11 @@ class TalonLiveView(QWidget):
                       f"{hello.get('patterns', '?')} patterns")
             if wrapped:
                 self.status_label.setText(
-                    f"<span style='color:{t['accent']};'>Connected</span> — {detail}")
+                    f"<span style='color:{t['accent']};'>Connected</span> - {detail}")
             else:
                 self.status_label.setText(
                     f"<span style='color:#d3a45c;'>Connected, waiting for the "
-                    f"parrot integration to load</span> — {detail}")
+                    f"parrot integration to load</span> - {detail}")
         else:
             self.status_label.setText(
                 "Waiting for the Talon companion… (Talon running + companion "

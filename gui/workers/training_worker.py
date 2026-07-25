@@ -14,7 +14,7 @@ class TrainingWorker(QThread):
         self._stop_requested = False
 
     def run(self):
-        # Placeholder — full implementation in Phase 3
+        # Placeholder - full implementation in Phase 3
         try:
             self._train()
         except Exception as e:

@@ -28,7 +28,7 @@ class WaveformWidget(QWidget):
 
         # Live detection (the "blue overlay"): full-height shaded bands where the
         # recorder flagged the frame as sound, drawn with a recycled pool of
-        # LinearRegionItems (same as the static waveforms). Preliminary — the
+        # LinearRegionItems (same as the static waveforms). Preliminary - the
         # final regions are computed after Save.
         self._det_brush = QColor(90, 175, 245); self._det_brush.setAlpha(55)
         self._det_pen = pg.mkPen(QColor(90, 175, 245, 90))
@@ -272,7 +272,7 @@ class WaveformWidget(QWidget):
         self.cut_region.setRegion([self._cut_point, self.total_seconds()])
 
     def set_cut_enabled(self, enabled):
-        """Allow/disallow click-to-mark. Off by default — the live recording
+        """Allow/disallow click-to-mark. Off by default - the live recording
         view is a plain monitor; editing happens on the saved clip."""
         self._cut_enabled = enabled
 

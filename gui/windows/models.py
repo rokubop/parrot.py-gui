@@ -1,4 +1,4 @@
-"""Models tab — browse, manage, and train models.
+"""Models tab - browse, manage, and train models.
 
 Left: the list of trained models. Right: details for the selected model plus
 management actions (rename / clone / delete / reveal / inspect), and a panel to
@@ -275,7 +275,7 @@ class ModelsPage(QWidget):
                 "Recognizes: " + ", ".join(str(x) for x in meta["labels"]))
         else:
             self.detail_labels.setText(
-                "Sounds unknown — click Inspect to load them.")
+                "Sounds unknown - click Inspect to load them.")
         self._set_actions_enabled(True)
 
     def _set_actions_enabled(self, on):
@@ -448,7 +448,7 @@ class ModelsPage(QWidget):
         self.train_plot.add_point(epoch, loss, accuracy)
         best = " (new best!)" if is_best else ""
         self.train_status.setText(
-            f"Epoch {epoch + 1} — loss {loss:.4f} — accuracy {accuracy:.3f}{best}")
+            f"Epoch {epoch + 1} - loss {loss:.4f} - accuracy {accuracy:.3f}{best}")
 
     def _on_train_done(self):
         self.train_btn.setEnabled(True)

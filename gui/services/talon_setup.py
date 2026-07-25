@@ -2,10 +2,10 @@
 
 Closes the "get parrot_integration.py from the #beta channel on slack" gap:
 the GUI can install a complete working integration folder into the Talon
-user directory — integration file (shipped template), a trained model, and a
+user directory - integration file (shipped template), a trained model, and a
 patterns.json (empty or scaffolded with one starter pattern per model sound).
 
-Never overwrites an existing integration or patterns.json — these functions
+Never overwrites an existing integration or patterns.json - these functions
 create, the editor manages.
 """
 import os
@@ -33,7 +33,7 @@ def _pattern_name(sound):
 
 def scaffold_patterns(model_sounds):
     """One conservative starter pattern per triggerable model sound.
-    Thresholds err strict (high probability) — the editor + live view are
+    Thresholds err strict (high probability) - the editor + live view are
     how users tune down from safe, not up from noisy."""
     patterns = {}
     for sound in model_sounds or []:
@@ -72,7 +72,7 @@ def install_integration(talon_user_dir, model_source, subfolder=DEFAULT_SUBFOLDE
     dest_dir = os.path.join(talon_user_dir, subfolder)
     integration_dest = os.path.join(dest_dir, "parrot_integration.py")
     if os.path.exists(integration_dest):
-        raise OSError(f"{integration_dest} already exists — refusing to overwrite")
+        raise OSError(f"{integration_dest} already exists - refusing to overwrite")
 
     with open(template_path(), "r", encoding="utf-8") as f:
         source = f.read()

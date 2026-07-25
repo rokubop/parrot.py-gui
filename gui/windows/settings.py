@@ -2,7 +2,7 @@
 
 Edits the user-overridable config (persisted to data/code/config.py) and
 exposes the data folders. Most values are read by the engine at import time, so
-changes apply on the next launch — the page states this rather than pretending
+changes apply on the next launch - the page states this rather than pretending
 they're live.
 """
 import os
@@ -63,8 +63,8 @@ class SettingsPage(QWidget):
         form.addRow("Input device:", self.device_combo)
 
         self.threshold_combo = QComboBox()
-        self.threshold_combo.addItem("Strict — rapid back-to-back sounds", "strict")
-        self.threshold_combo.addItem("Lenient — more space between sounds", "lenient")
+        self.threshold_combo.addItem("Strict - rapid back-to-back sounds", "strict")
+        self.threshold_combo.addItem("Lenient - more space between sounds", "lenient")
         idx = self.threshold_combo.findData(THRESHOLD_DETECTION)
         if idx >= 0:
             self.threshold_combo.setCurrentIndex(idx)
@@ -72,15 +72,15 @@ class SettingsPage(QWidget):
 
         self.two_pass_combo = QComboBox()
         self.two_pass_combo.addItem(
-            "Two-pass — re-judge the whole recording once thresholds settle", True)
+            "Two-pass - re-judge the whole recording once thresholds settle", True)
         self.two_pass_combo.addItem(
-            "Single-pass — keep the live judgments as-is (legacy)", False)
+            "Single-pass - keep the live judgments as-is (legacy)", False)
         self.two_pass_combo.setCurrentIndex(0 if TWO_PASS_DETECTION else 1)
         form.addRow("Detection passes:", self.two_pass_combo)
 
         two_pass_desc = QLabel(
             "While you record, thresholds calibrate live and need roughly ten "
-            "sounds before they settle — so the first sounds of a take are "
+            "sounds before they settle - so the first sounds of a take are "
             "judged by weaker criteria. Two-pass re-judges the entire recording "
             "with the settled thresholds whenever it is saved or re-detected, "
             "so the start is segmented as accurately as the end. A manual "
@@ -199,7 +199,7 @@ class SettingsPage(QWidget):
         }
         try:
             user_config.write_user_config(updates)
-            self.status_label.setText("Saved — applies on next launch.")
+            self.status_label.setText("Saved - applies on next launch.")
         except Exception as exc:
             self.status_label.setText(f"Couldn't save: {exc}")
 

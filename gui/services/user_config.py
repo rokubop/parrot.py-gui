@@ -4,7 +4,7 @@
 assigned in ``data/code/config.py`` overrides ``lib/default_config.py``. This
 module manages that file as a set of simple ``KEY = <repr>`` lines so the
 Settings page can persist choices. Values that the app reads only at import
-time take effect on the next launch — the Settings page says so.
+time take effect on the next launch - the Settings page says so.
 """
 import os
 import ast

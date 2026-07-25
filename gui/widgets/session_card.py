@@ -216,7 +216,7 @@ class SessionCard(QFrame):
         # keyboard-only (F / Home / V) and the rest lives behind the … menu.
         if self._edit_enabled:
             self.edit_btn = self._icon_button(
-                "Edit", "Edit this recording — trim, re-detect, append", self._on_edit)
+                "Edit", "Edit this recording - trim, re-detect, append", self._on_edit)
             row.addWidget(self.edit_btn)
 
         title = session_name.split("__")[0]
@@ -372,7 +372,7 @@ class SessionCard(QFrame):
             return
         # Reuse the samples the preview already decoded for the waveform instead
         # of re-reading the whole WAV on the UI thread (which froze the first
-        # play). These are mono float32 in [-1, 1] — sounddevice plays them as-is.
+        # play). These are mono float32 in [-1, 1] - sounddevice plays them as-is.
         self.load_preview()
         samples, sample_rate = self.preview.playback_audio()
         if samples is None or sample_rate is None:

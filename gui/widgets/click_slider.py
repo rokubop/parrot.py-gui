@@ -3,7 +3,7 @@
 Default QSliders only step a page at a time when you click the groove, and the
 clickable target is the thin handle. ClickSlider instead jumps the handle to
 wherever you press (anywhere along its length, at any height) and tracks the
-cursor while dragging — what you'd expect from a modern slider.
+cursor while dragging - what you'd expect from a modern slider.
 """
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QSlider, QStyle, QStyleOptionSlider

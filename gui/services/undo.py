@@ -82,7 +82,7 @@ class UndoHistory:
         self._redo = []
 
     def discard_last_checkpoint(self):
-        """Drop the most recent checkpoint without restoring it — used when the
+        """Drop the most recent checkpoint without restoring it - used when the
         op it was taken for ended up failing (no real change)."""
         if self._undo:
             self._drop(self._undo.pop())
@@ -124,7 +124,7 @@ class UndoHistory:
     def begin_baseline(self):
         """Snapshot the current (saved) state so edits can be reverted to it.
         Edits still touch the real files, but ``revert_to_baseline`` undoes the
-        whole session — so nothing is permanent until ``commit_baseline``."""
+        whole session - so nothing is permanent until ``commit_baseline``."""
         if not self.wav_path:
             return
         if self._baseline is not None:

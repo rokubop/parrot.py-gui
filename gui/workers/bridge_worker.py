@@ -39,7 +39,7 @@ class BridgeWorker(QThread):
         except OSError as exc:
             self.status_changed.emit(
                 {"connected": False, "hello": None,
-                 "error": f"Couldn't listen on 127.0.0.1:{self.port} — {exc}"})
+                 "error": f"Couldn't listen on 127.0.0.1:{self.port} - {exc}"})
             return
 
         connected = False

@@ -8,7 +8,7 @@ record once, tweak, compare.
 
 Fidelity notes:
 - The recording contains exactly the frames that passed Talon's power gate.
-  Replaying with a LOWER ``>power`` than was deployed may under-report — the
+  Replaying with a LOWER ``>power`` than was deployed may under-report - the
   gated-out silent frames simply don't exist in the recording. Surfaced to
   the caller via ``ReplayResult.power_floor_warning``.
 - Talon resets duration/grace state when transitioning to silence (no forward
@@ -48,7 +48,7 @@ class _Frame:
 
 
 def _matching_functions(thresholds, sounds):
-    """Port of PatternBuilder.generate_matching_functions — same rule set,
+    """Port of PatternBuilder.generate_matching_functions - same rule set,
     same semantics, in the same order."""
     calls = []
     if '>probability' in thresholds:
@@ -83,7 +83,7 @@ def _matching_functions(thresholds, sounds):
 
 
 class _Pattern:
-    """Port of NoisePattern — identical field-for-field state transitions."""
+    """Port of NoisePattern - identical field-for-field state transitions."""
 
     def __init__(self, name, config):
         self.name = name

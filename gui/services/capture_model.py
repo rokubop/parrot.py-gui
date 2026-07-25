@@ -1,4 +1,4 @@
-"""Frame/capture model for Talon bridge data — a faithful port of
+"""Frame/capture model for Talon bridge data - a faithful port of
 talon-parrot-tester's Buffer / Capture / CaptureCollection semantics:
 
 - a rolling pre-roll buffer so a capture includes the 0.3 s *before* the
@@ -10,7 +10,7 @@ talon-parrot-tester's Buffer / Capture / CaptureCollection semantics:
   probabilities), status (detected / throttled / "") and the grace flag,
   sorted detected-first then by probability.
 
-Pure Python — shared by the Live view (streaming) and the Captures/A-B
+Pure Python - shared by the Live view (streaming) and the Captures/A-B
 workbench (recorded sessions).
 """
 
