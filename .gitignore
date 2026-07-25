@@ -20,3 +20,4 @@ data/README.md
 .venv
 .python
 .python.tmp
+data/notes.json
