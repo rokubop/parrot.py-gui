@@ -16,7 +16,6 @@ Two kinds of edit, both reflected immediately in the waveform + detection:
 Includes lightweight playback (whole clip or the current selection) so you can
 audition before and after an edit.
 """
-import sounddevice as sd
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, pyqtSignal
 from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
@@ -27,7 +26,7 @@ from PyQt6.QtWidgets import (
 from gui import theme
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui.widgets.click_slider import ClickSlider
-from gui.services import library_ops
+from gui.services import library_ops, playback
 from gui.services.undo import UndoHistory
 from gui.workers.segment_worker import (
     ReSegmentWorker, ResetWorker, TrimWorker, read_min_dbfs,
@@ -58,6 +57,7 @@ class EditRecordingView(QWidget):
         self._playing = False
         self._play_from = 0.0
         self._stop_at = None
+        self._latency = 0.0       # output buffer delay of the current play
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._tick)
@@ -481,8 +481,7 @@ class EditRecordingView(QWidget):
             self._play_from = max(0.0, min(self._play_from, self._duration))
         start = int(self._play_from * self._sr)
         end = int(self._stop_at * self._sr) if self._stop_at else len(self._audio)
-        sd.stop()
-        sd.play(self._audio[start:end], self._sr)
+        self._latency = playback.play(self._audio[start:end], self._sr)
         self._playing = True
         self.play_btn.setText("■ Stop")
         self.preview.set_playhead(self._play_from)
@@ -491,13 +490,20 @@ class EditRecordingView(QWidget):
 
     def stop_playback(self):
         if self._playing:
-            sd.stop()
+            playback.stop()
         self._playing = False
         self._timer.stop()
         self.play_btn.setText("▶ Play")
 
+    def _heard_position(self):
+        """Where playback has actually reached, in seconds. The clock starts
+        when play() is called but the audio only leaves the device a buffer
+        later, so without subtracting that the playhead sits ahead of what
+        you're hearing - and points past the blip you were auditioning."""
+        return self._play_from + max(0.0, self._clock.elapsed() / 1000.0 - self._latency)
+
     def _tick(self):
-        pos = self._play_from + self._clock.elapsed() / 1000.0
+        pos = self._heard_position()
         limit = self._stop_at if self._stop_at is not None else self._duration
         if pos >= limit:
             self.preview.set_playhead(limit)

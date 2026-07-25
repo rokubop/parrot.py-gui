@@ -35,9 +35,11 @@ an individual file when its line looks relevant.
 - [GUI design vocabulary](gui-design-vocabulary.md) - one primary accent action per screen, quiet secondary row, centered empty states, the data-quantity rating as shared language
 - [Training takes hours, not minutes](training-takes-hours.md) - 4-6 hrs for a real run; stopping early keeps the best model so far
 - [Qt traps paid for once](qt-traps.md) - top-level widget GC, stylesheet scoping, word-wrapped labels, pyqtgraph on the UI thread
+- [Preview playback avoids sd.play()](preview-playback-avoids-sd-play.md) - its Python callback needs the GIL and crackles while the playhead repaints; latency is compensated, never buffered away
 
 ### Decisions not to re-litigate
 - [Audio runs at 16 kHz](audio-rate-is-16khz.md) - the rate the whole parrot ecosystem uses; 48 kHz was tried and reverted
+- [Mic provenance is captured, not derived](mic-provenance-is-captured-not-derived.md) - `mici_<n>` is a mic index and must never be resolved to a device name after the fact; the name is written to a `_mic.json` sidecar at record time
 - [No live-stream splicing](no-live-stream-splicing.md) - every edit happens on a saved file, never on the running capture
 - [Two-pass detection is file-only](two-pass-detection-is-file-only.md) - live paths keep the online estimator, deliberately
 - [Ship a thin shell, not a bundle](ship-a-thin-shell-not-a-bundle.md) - torch makes a monolithic bundle 1-3+ GB and hardware-specific; install heavy wheels on first run

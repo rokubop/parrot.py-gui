@@ -2,14 +2,14 @@ import os
 import wave
 from datetime import datetime
 import numpy as np
-import sounddevice as sd
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QPointF, QRectF, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPolygonF, QColor
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMenu
 )
+from config.config import RATE
 from gui.widgets.audio_preview import AudioPreviewWidget
-from gui.services import library_ops
+from gui.services import library_ops, playback
 from gui import theme
 
 
@@ -69,15 +69,21 @@ def _dots_icon(color, size=13):
     return icon
 
 
-def _parse_date(session_name):
-    """Filenames end in __<unix-timestamp>; decode it to a readable date."""
+def _parse_when(session_name):
+    """Filenames end in __<unix-timestamp>; decode it to a readable date and
+    time. The time is not decoration: several takes of one sound in a sitting
+    is the normal way to record, and a date alone leaves those cards reading
+    identically."""
     tail = session_name.rsplit("__", 1)[-1]
     if not tail.isdigit():
         return ""
     try:
-        return datetime.fromtimestamp(int(tail)).strftime("%b %d, %Y")
+        stamp = datetime.fromtimestamp(int(tail))
     except (ValueError, OSError, OverflowError):
         return ""
+    # %-I / %#I differ between posix and Windows, so trim the zero by hand.
+    hour = stamp.strftime("%I").lstrip("0") or "12"
+    return stamp.strftime(f"%b %d, %Y, {hour}:%M %p")
 
 
 def _wav_duration(path):
@@ -132,6 +138,7 @@ class SessionCard(QFrame):
         self._sel_start = None     # selected range (seconds), or None
         self._sel_end = None
         self._stop_at = None       # playback stop bound for the current play
+        self._latency = 0.0        # output buffer delay of the current play
 
         self._timer = QTimer(self)
         self._timer.setInterval(16)
@@ -219,7 +226,10 @@ class SessionCard(QFrame):
                 "Edit", "Edit this recording - trim, re-detect, append", self._on_edit)
             row.addWidget(self.edit_btn)
 
-        title = session_name.split("__")[0]
+        # When it was recorded, not "mici_0": the mic index is a filename
+        # disambiguator for multi-mic takes, and naming it in the card's most
+        # prominent slot told the user nothing they could act on.
+        title = _parse_when(session_name) or session_name
         name = QLabel(title)
         name.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")
         row.addWidget(name)
@@ -267,12 +277,17 @@ class SessionCard(QFrame):
 
     def _build_meta_text(self, session_name):
         parts = []
-        date = _parse_date(session_name)
-        if date:
-            parts.append(date)
         length = _wav_duration(self.wav_path)
         if length:
             parts.append(f"{length:.1f}s")
+        info = library_ops.read_mic_info(self.wav_path) or {}
+        if info.get("mic_name"):
+            parts.append(info["mic_name"])
+        # Everything runs at 16 kHz by design, so the rate is worth showing
+        # only when a file departs from it (a few 48 kHz strays exist).
+        rate = info.get("sample_rate")
+        if rate and rate != RATE:
+            parts.append(f"{rate / 1000:g} kHz")
         return "   ·   ".join(parts)
 
     def _read_threshold(self, path):
@@ -415,8 +430,7 @@ class SessionCard(QFrame):
         else:
             clip = self._audio[start_sample:]
 
-        sd.stop()
-        sd.play(clip, self._sample_rate)
+        self._latency = playback.play(clip, self._sample_rate)
 
         self._playing = True
         self.play_btn.setIcon(self._pause_icon)
@@ -427,8 +441,8 @@ class SessionCard(QFrame):
 
     def pause(self):
         if self._playing:
-            sd.stop()
-            self._position = self._play_start + self._clock.elapsed() / 1000.0
+            playback.stop()
+            self._position = self._heard_position()
             self._position = max(0.0, min(self._position, self._duration))
         self._playing = False
         self._timer.stop()
@@ -439,7 +453,7 @@ class SessionCard(QFrame):
     def stop(self):
         """Stop playback without preserving position (used when another card plays)."""
         if self._playing:
-            sd.stop()
+            playback.stop()
         self._playing = False
         self._timer.stop()
         self.play_btn.setIcon(self._play_icon)
@@ -454,7 +468,7 @@ class SessionCard(QFrame):
     def seek_relative(self, delta_seconds):
         pos = self._position
         if self._playing:
-            pos = self._play_start + self._clock.elapsed() / 1000.0
+            pos = self._heard_position()
         self.play(from_seconds=pos + delta_seconds)
 
     def _on_seek(self, seconds):
@@ -466,8 +480,15 @@ class SessionCard(QFrame):
         if self._playing:
             self.play(from_seconds=self._position)
 
+    def _heard_position(self):
+        """Where playback has actually reached, in seconds. The clock starts
+        when play() is called but the audio only leaves the device a buffer
+        later, so without subtracting that the playhead sits ahead of what
+        you're hearing - and points past the blip you were auditioning."""
+        return self._play_start + max(0.0, self._clock.elapsed() / 1000.0 - self._latency)
+
     def _tick(self):
-        elapsed = self._play_start + self._clock.elapsed() / 1000.0
+        elapsed = self._heard_position()
         limit = self._stop_at if self._stop_at is not None else self._duration
         if elapsed >= limit:
             self.preview.set_playhead(limit)

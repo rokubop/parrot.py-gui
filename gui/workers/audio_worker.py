@@ -1,3 +1,4 @@
+import json
 import math
 import os
 import time
@@ -58,6 +59,14 @@ class AudioWorker(QThread):
         def callback(indata, frames, time_info, status):
             audio_queue.put(indata.tobytes())
 
+        # Resolve the mic's name now, while the stream is being opened on it.
+        # Device indices shift when hardware changes (see audio_devices.py), so
+        # mici_<n> in the filename cannot be turned back into a name later.
+        try:
+            mic_name = sd.query_devices(self.mic_index).get("name", "")
+        except Exception:
+            mic_name = ""
+
         stream = sd.InputStream(
             samplerate=RATE, channels=CHANNELS,
             dtype='int16', device=self.mic_index,
@@ -98,7 +107,28 @@ class AudioWorker(QThread):
             print(f"AudioWorker error: {e}")
         finally:
             self.recorder.stop()
+            self._write_mic_info(mic_name)
             self.recording_finished.emit(self.wav_path, self.srt_path)
+
+    def _write_mic_info(self, mic_name):
+        """Record what this take was captured with, beside its segment files.
+
+        Lives in segments/ as <base>_mic.json so library_ops picks it up by
+        prefix: rename, move and delete all carry it automatically. Skipped when
+        the take was empty and StreamRecorder deleted the wav, so no orphan is
+        left behind.
+        """
+        if not os.path.exists(self.wav_path):
+            return
+        base = os.path.splitext(os.path.basename(self.wav_path))[0]
+        path = os.path.join(os.path.dirname(self.srt_path), base + "_mic.json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"mic_index": self.mic_index,
+                           "mic_name": mic_name,
+                           "sample_rate": RATE}, f)
+        except OSError:
+            pass
 
     def request_stop(self):
         self._stop_requested = True

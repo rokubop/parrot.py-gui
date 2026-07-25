@@ -18,6 +18,7 @@ A model:
     data/models/<name>.pkl_<i>-weights.pth.tar
     data/models/<name>.pkl_<i>-BEST-weights.pth.tar
 """
+import json
 import os
 import re
 import sys
@@ -165,6 +166,24 @@ def recording_sibling_files(wav_path):
             if f.startswith(base) and f[len(base):len(base) + 1] in (".", "_"):
                 files.append(os.path.join(seg, f))
     return files
+
+
+def read_mic_info(wav_path):
+    """What a take was recorded with, from its ``<base>_mic.json`` sidecar, or
+    None. Recordings made before the sidecar existed return None rather than a
+    guess: the mic index in the filename cannot be resolved after the fact,
+    because device indices shift when hardware changes."""
+    base = recording_base(wav_path)
+    path = os.path.join(segments_dir(recording_label(wav_path)),
+                        base + "_mic.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def delete_recording(wav_path):
