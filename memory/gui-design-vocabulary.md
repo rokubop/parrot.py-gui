@@ -29,8 +29,13 @@ invents its own shape is the thing to avoid.
   the per-sound header, the training checklist, and the empty-state summaries -
   same words, same colours, everywhere. Reuse it rather than inventing another
   measure of readiness.
-- **Expert knobs fold away.** Net count sits behind an "Advanced" disclosure,
-  defaulted, with a sentence explaining what it buys.
+- **A knob folds away only when getting it wrong is cheap.** Net count is not
+  such a knob and no longer hides: at 1 net a single unlucky random start *is*
+  the model, with nothing to outvote it, and you only find out hours later. It
+  sits on the training page, defaults to 3, carries a sentence that rewrites
+  itself as the count changes, and has a diagram in Help (? -> Training a
+  model) showing one net being outvoted by the average. It used to sit behind
+  an "Advanced" disclosure, which read as "you can ignore this".
 - **Pages that render theme colours implement `refresh_theme()`.**
 
 **Why:** The app is aimed at someone who has never made a model and will return

@@ -155,40 +155,29 @@ class TrainView(QWidget):
         self.summary.setStyleSheet(f"color: {t['text_dim']};")
         v.addWidget(self.summary)
 
-        # Net count is a tuning knob, not a first-model decision - one click of
-        # noise for everyone else, so it starts folded away.
-        self.advanced_btn = QPushButton("▸  Advanced")
-        self.advanced_btn.setFlat(True)
-        self.advanced_btn.setCheckable(True)
-        self.advanced_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.advanced_btn.setStyleSheet(
-            f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
-            f"border: none; padding: 2px 0px; text-align: left; }} "
-            f"QPushButton:hover {{ color: {t['text_bright']}; }}")
-        self.advanced_btn.toggled.connect(self._on_advanced_toggled)
-        v.addWidget(self.advanced_btn, 0, Qt.AlignmentFlag.AlignLeft)
-
-        self.advanced_box = QWidget()
-        adv = QVBoxLayout(self.advanced_box)
-        adv.setContentsMargins(14, 0, 0, 0)
-        adv.setSpacing(4)
+        # Net count used to sit behind an "Advanced" disclosure, which read as
+        # "you can ignore this". It is closer to the opposite: at 1 net a single
+        # unlucky random start *is* the model, with nothing to outvote it. It is
+        # a real decision, so it is on the page, with the diagram in Help
+        # ( ? -> Training a model ) explaining what averaging buys.
         nets_row = QHBoxLayout()
-        nets_row.addWidget(QLabel("Nets:"))
+        nets_title = QLabel("Nets")
+        nets_title.setStyleSheet(
+            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
+        nets_row.addWidget(nets_title)
         self.net_spin = QSpinBox()
         self.net_spin.setRange(1, 10)
-        self.net_spin.setValue(1)
+        self.net_spin.setValue(3)
+        self.net_spin.valueChanged.connect(lambda _v: self._update_nets_help())
         nets_row.addWidget(self.net_spin)
         nets_row.addStretch()
-        adv.addLayout(nets_row)
-        nets_help = QLabel(
-            "How many networks to train and keep as an ensemble. More nets take "
-            "proportionally longer and buy a little accuracy. 1 is right for a "
-            "first model.")
-        nets_help.setWordWrap(True)
-        nets_help.setStyleSheet(f"color: {t['text_dim']};")
-        adv.addWidget(nets_help)
-        self.advanced_box.setVisible(False)
-        v.addWidget(self.advanced_box)
+        v.addLayout(nets_row)
+
+        self.nets_help = QLabel()
+        self.nets_help.setWordWrap(True)
+        self.nets_help.setStyleSheet(f"color: {t['text_dim']};")
+        v.addWidget(self.nets_help)
+        self._update_nets_help()
 
         self.readiness = QLabel("")
         self.readiness.setWordWrap(True)
@@ -317,9 +306,19 @@ class TrainView(QWidget):
         v.addLayout(row)
         return frame
 
-    def _on_advanced_toggled(self, on):
-        self.advanced_btn.setText("▾  Advanced" if on else "▸  Advanced")
-        self.advanced_box.setVisible(on)
+    def _update_nets_help(self):
+        """Say what this count actually buys, in the terms the choice is made
+        in: how outvoting works, and what it costs."""
+        count = self.net_spin.value()
+        if count == 1:
+            text = ("One net, so whatever it mishears, the model mishears. "
+                    "Fastest to train. Raise it if a sound needs to be reliable.")
+        else:
+            text = (f"{count} nets learn the same sounds from different random "
+                    f"starts and the model fires on their average, so one net "
+                    f"mishearing gets outvoted. Takes about {count}x as long as "
+                    f"a single net.")
+        self.nets_help.setText(text)
 
     # ---- sound checklist ------------------------------------------------
 

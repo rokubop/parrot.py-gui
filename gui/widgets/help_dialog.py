@@ -64,6 +64,12 @@ TRAIN_ROWS = (
                     "curve flattens and you keep it - a usable first pass in "
                     "a fraction of the time. Let it finish when you're "
                     "chasing the last few points."),
+    ("Nets", "Each net learns the same sounds from a different random start, "
+             "so they disagree on the hard frames. The model fires on their "
+             "average, which means a net that mishears something gets outvoted "
+             "instead of deciding on its own. At 1 net there is nobody to "
+             "outvote it. 3 is a good default and 5 is worth it once the "
+             "sounds matter; each net multiplies the training time."),
     ("Where", "Models tab. Retrain any time; old models are kept."),
 )
 CONNECT_ROWS = (
@@ -103,6 +109,8 @@ class FramesDiagram(QWidget):
     works on, with the label each frame comes out as. The point: your sound is
     never judged whole - it is judged 15 ms at a time, and the frames that no
     longer sound like it come out as background instead."""
+
+    CAPTION = "One “pop”, as detection sees it:"
 
     # How many frames to draw - purely an illustration length (10 x 15 ms =
     # 150 ms, about a lip pop). Deliberately not 16, which reads as if it were
@@ -229,9 +237,132 @@ def frames_diagram_widget():
     return FramesDiagram()
 
 
+class NetsDiagram(QWidget):
+    """Why net count is worth a thought: each net is trained from its own random
+    start on its own shuffle of the data, so they disagree. One net can be the
+    unlucky one - and with a net count of 1, the unlucky one is the model you
+    ship. Averaging their votes lets the others outvote it."""
+
+    # One frame of one sound, as scored by three independently trained nets.
+    # Deterministic, and picked so net 2 is confidently wrong: that is the case
+    # the picture exists to explain. The averaged row is computed, never typed,
+    # so the illustration cannot drift from the arithmetic it is claiming.
+    CAPTION = "One frame of a “pop”, scored by three separately trained nets:"
+
+    LABELS = ("pop", "ah", "silence")
+    TRUE_INDEX = 0
+    VOTES = (
+        (0.72, 0.18, 0.10),
+        (0.38, 0.45, 0.17),   # this one hears "ah" - on its own it misfires
+        (0.66, 0.21, 0.13),
+    )
+
+    TITLE_ROW = 16
+    BAR_AREA = 62
+    LABEL_ROW = 18
+    LEGEND_ROW = 16      # without it the three bars are unexplained shapes
+    PANEL_GAP = 8
+    GROUP_GAP = 26       # wider gap sets the averaged panel apart from the nets
+    BAR_GAP = 4
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(88 * (len(self.VOTES) + 1))
+        self.setFixedHeight(self.TITLE_ROW + self.BAR_AREA + self.LABEL_ROW
+                            + self.LEGEND_ROW + 6)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    @classmethod
+    def averaged(cls):
+        """What the ensemble actually does - TinyAudioNetEnsemble sums the nets
+        and divides by how many there are."""
+        return tuple(sum(v[i] for v in cls.VOTES) / len(cls.VOTES)
+                     for i in range(len(cls.LABELS)))
+
+    def _panels(self):
+        panels = [(f"Net {i + 1}", v) for i, v in enumerate(self.VOTES)]
+        panels.append(("Averaged", self.averaged()))
+        return panels
+
+    def paintEvent(self, _event):
+        t = theme.colors()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        panels = self._panels()
+        n = len(panels)
+        total_gap = self.PANEL_GAP * (n - 2) + self.GROUP_GAP
+        span = (self.width() - total_gap) / n
+
+        title_font = self.font()
+        title_font.setPointSizeF(max(8.5, title_font.pointSizeF() - 1.5))
+
+        accent = QColor(t["accent"])
+        wrong = QColor(theme.QUANTITY_COLORS["Sufficient"])  # shared caution amber
+        dim = QColor(t["text_dim"])
+
+        x = 0.0
+        for index, (title, votes) in enumerate(panels):
+            combined = index == n - 1
+            rect = QRectF(x, self.TITLE_ROW, span, self.BAR_AREA)
+
+            p.setFont(title_font)
+            p.setPen(dim)
+            p.drawText(QRectF(x, 0, span, self.TITLE_ROW),
+                       int(Qt.AlignmentFlag.AlignCenter), title)
+
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(t["plot_bg"]))
+            p.drawRect(rect)
+
+            winner = max(range(len(votes)), key=lambda i: votes[i])
+            correct = winner == self.TRUE_INDEX
+
+            bar_span = (rect.width() - self.BAR_GAP * (len(votes) + 1)) / len(votes)
+            for i, value in enumerate(votes):
+                height = max(2.0, (rect.height() - 6) * value)
+                bar = QRectF(rect.left() + self.BAR_GAP + i * (bar_span + self.BAR_GAP),
+                             rect.bottom() - height - 3, bar_span, height)
+                if i != winner:
+                    p.setBrush(QColor(t["border"]))
+                elif correct:
+                    p.setBrush(accent)
+                else:
+                    p.setBrush(wrong)
+                p.drawRect(bar)
+
+            p.setPen(QPen(accent if combined else QColor(t["border"]), 1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
+
+            # What this net (or the ensemble) would fire. The amber one is the
+            # whole argument for training more than one.
+            p.setFont(title_font)
+            p.setPen(accent if correct else wrong)
+            p.drawText(QRectF(x, rect.bottom() + 2, span, self.LABEL_ROW),
+                       int(Qt.AlignmentFlag.AlignCenter),
+                       self.LABELS[winner] + ("" if correct else "  ✗"))
+
+            x += span + (self.GROUP_GAP if index == n - 2 else self.PANEL_GAP)
+
+        p.setFont(title_font)
+        p.setPen(dim)
+        p.drawText(QRectF(0, self.TITLE_ROW + self.BAR_AREA + self.LABEL_ROW + 2,
+                          self.width(), self.LEGEND_ROW),
+                   int(Qt.AlignmentFlag.AlignCenter),
+                   "bar heights are how sure that net is of "
+                   + ", ".join(self.LABELS))
+
+        p.end()
+
+
+def nets_diagram_widget():
+    return NetsDiagram()
+
+
 TOPICS = {
     "record": ("Recording sounds", RECORD_ROWS, None),
-    "train": ("Training a model", TRAIN_ROWS, None),
+    "train": ("Training a model", TRAIN_ROWS, nets_diagram_widget),
     "connect": ("Connecting to Talon", CONNECT_ROWS, None),
     "sounds": ("Choosing sounds", SOUNDS_ROWS, frames_diagram_widget),
 }
@@ -309,10 +440,15 @@ def topic_content(key, parent=None):
     inner.setContentsMargins(0, 0, 0, 0)
     inner.setSpacing(12)
     if diagram is not None:
-        caption = QLabel("One “pop”, as detection sees it:")
-        caption.setStyleSheet(f"color: {theme.colors()['text_dim']};")
-        inner.addWidget(caption)
-        inner.addWidget(diagram())
+        # The caption belongs to the drawing, not to this slot - it was hard
+        # coded here and captioned the second diagram as if it were the first.
+        widget = diagram()
+        text = getattr(widget, "CAPTION", "")
+        if text:
+            caption = QLabel(text)
+            caption.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+            inner.addWidget(caption)
+        inner.addWidget(widget)
     body = QLabel(rows_html(rows))
     body.setWordWrap(True)
     body.setTextFormat(Qt.TextFormat.RichText)
