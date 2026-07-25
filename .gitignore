@@ -18,3 +18,5 @@ lib/private/*
 data/code/*
 data/README.md
 .venv
+.python
+.python.tmp

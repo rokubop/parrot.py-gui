@@ -4,6 +4,18 @@ set -e
 PYTHON_VERSION="3.13"
 VENV_DIR=".venv"
 
+# Prebuilt relocatable CPython (python-build-standalone, maintained by Astral).
+#
+# Deliberately PINNED rather than resolved to "latest" via the GitHub API:
+#   - the API is rate-limited to 60 req/hr per IP, so a shipped app behind a
+#     shared NAT could fail to bootstrap at all
+#   - two users installing a week apart would otherwise get different
+#     interpreters, which makes support harder
+# Bump these together with run.bat when you want a newer Python.
+PBS_REPO="astral-sh/python-build-standalone"
+PBS_TAG="20260718"
+PBS_PY="3.13.14"
+
 # -------------------------------------------------------
 # Git Bash / MINGW detection — redirect to run.bat
 # -------------------------------------------------------
@@ -56,37 +68,126 @@ err()   { echo -e "${RED}$1${RESET}"; }
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
     PLATFORM="windows"
     REQUIREMENTS="requirements-windows.txt"
-    VENV_PYTHON="$VENV_DIR/Scripts/python"
     VENV_ACTIVATE="$VENV_DIR/Scripts/activate"
 else
     PLATFORM="posix"
     REQUIREMENTS="requirements-posix.txt"
-    VENV_PYTHON="$VENV_DIR/bin/python"
     VENV_ACTIVATE="$VENV_DIR/bin/activate"
 fi
+
+# Detect OS family within posix. macOS must never take the apt/dpkg path:
+# /usr/bin/apt on macOS is Apple's stub launcher for the *Java* annotation
+# processing tool, so `sudo apt install ...` fails with "Unable to locate a
+# Java Runtime" rather than anything package-related.
+if [[ "$OSTYPE" == darwin* ]]; then
+    OS_FAMILY="macos"
+elif [[ -n "$WSL_DISTRO_NAME" ]]; then
+    OS_FAMILY="wsl"
+else
+    OS_FAMILY="linux"
+fi
+
+# Where the self-contained interpreter is cached. User-level rather than
+# project-local for two reasons: it survives fresh clones, and a future .app /
+# installed bundle is read-only (and code-signed), so it cannot store a Python
+# inside itself. Override with PARROT_PYTHON_DIR.
+resolve_python_dir() {
+    if [[ -n "$PARROT_PYTHON_DIR" ]]; then
+        echo "$PARROT_PYTHON_DIR"
+    elif [[ "$OS_FAMILY" == "macos" ]]; then
+        echo "$HOME/Library/Application Support/parrot.py/python/$PYTHON_VERSION"
+    else
+        echo "${XDG_DATA_HOME:-$HOME/.local/share}/parrot.py/python/$PYTHON_VERSION"
+    fi
+}
+
+PYTHON_DIR="$(resolve_python_dir)"
+
+# python-build-standalone's platform triple for this machine
+pbs_platform() {
+    local arch
+    arch=$(uname -m)
+    case "$OS_FAMILY" in
+        macos)
+            case "$arch" in
+                arm64|aarch64) echo "aarch64-apple-darwin" ;;
+                x86_64)        echo "x86_64-apple-darwin" ;;
+            esac
+            ;;
+        linux|wsl)
+            case "$arch" in
+                x86_64)        echo "x86_64-unknown-linux-gnu" ;;
+                aarch64|arm64) echo "aarch64-unknown-linux-gnu" ;;
+            esac
+            ;;
+    esac
+}
+
+# Only trust apt if it's a real Debian apt, not the macOS Java stub
+has_apt() {
+    [[ "$OS_FAMILY" != "macos" ]] && command -v apt &>/dev/null && command -v dpkg &>/dev/null
+}
+
+brew_prefix() {
+    if command -v brew &>/dev/null; then
+        brew --prefix
+    elif [[ -x /opt/homebrew/bin/brew ]]; then
+        echo "/opt/homebrew"
+    elif [[ -x /usr/local/bin/brew ]]; then
+        echo "/usr/local"
+    fi
+}
+
+load_brew() {
+    if ! command -v brew &>/dev/null; then
+        local prefix
+        prefix=$(brew_prefix)
+        if [[ -n "$prefix" && -x "$prefix/bin/brew" ]]; then
+            eval "$("$prefix/bin/brew" shellenv)"
+        fi
+    fi
+    # Must return 0: a bare `[[ ]] && cmd` tail would return 1 when brew is
+    # absent, and `set -e` would kill the script with no output at all.
+    return 0
+}
 
 # -------------------------------------------------------
 # Step 1: Check network connectivity (needed for installs)
 # -------------------------------------------------------
 check_network() {
     if ! curl -s --max-time 5 https://pypi.org > /dev/null 2>&1; then
-        if ! ping -c 1 -W 3 8.8.8.8 > /dev/null 2>&1; then
+        # macOS ping takes -W in milliseconds; use -t (deadline in seconds) there
+        if [[ "$OS_FAMILY" == "macos" ]]; then
+            PING_TIMEOUT=(-t 3)
+        else
+            PING_TIMEOUT=(-W 3)
+        fi
+        if ! ping -c 1 "${PING_TIMEOUT[@]}" 8.8.8.8 > /dev/null 2>&1; then
             err "No network connectivity detected."
             echo ""
-            echo "  If you're on WSL, this is often a DNS issue. Try:"
-            echo ""
-            echo "    echo \"nameserver 8.8.8.8\" | sudo tee /etc/resolv.conf"
-            echo ""
-            echo "  Then rerun: ./run.sh"
+            if [[ "$OS_FAMILY" == "macos" ]]; then
+                echo "  Check your Wi-Fi / Ethernet connection, then rerun: ./run.sh"
+            else
+                echo "  If you're on WSL, this is often a DNS issue. Try:"
+                echo ""
+                echo "    echo \"nameserver 8.8.8.8\" | sudo tee /etc/resolv.conf"
+                echo ""
+                echo "  Then rerun: ./run.sh"
+            fi
             exit 1
         else
             err "Network is reachable but DNS resolution is failing."
             echo ""
-            echo "  Fix DNS by running:"
-            echo ""
-            echo "    echo \"nameserver 8.8.8.8\" | sudo tee /etc/resolv.conf"
-            echo ""
-            echo "  Then rerun: ./run.sh"
+            if [[ "$OS_FAMILY" == "macos" ]]; then
+                echo "  Check your DNS settings in System Settings > Network,"
+                echo "  then rerun: ./run.sh"
+            else
+                echo "  Fix DNS by running:"
+                echo ""
+                echo "    echo \"nameserver 8.8.8.8\" | sudo tee /etc/resolv.conf"
+                echo ""
+                echo "  Then rerun: ./run.sh"
+            fi
             exit 1
         fi
     fi
@@ -104,6 +205,12 @@ load_pyenv() {
 }
 
 find_python() {
+    # Our own cached self-contained interpreter wins — it's the one we manage
+    if [[ -x "$PYTHON_DIR/bin/python${PYTHON_VERSION}" ]]; then
+        echo "$PYTHON_DIR/bin/python${PYTHON_VERSION}"
+        return 0
+    fi
+
     load_pyenv
 
     # Check pyenv versions directly by path first (most reliable)
@@ -119,6 +226,18 @@ find_python() {
                     fi
                 fi
             done
+        done
+    fi
+
+    # Check Homebrew prefixes directly — brew may not be on PATH yet in this shell
+    if [[ "$OS_FAMILY" == "macos" ]]; then
+        for prefix in "$(brew_prefix)" /opt/homebrew /usr/local; do
+            [[ -z "$prefix" ]] && continue
+            local brew_bin="$prefix/bin/python${PYTHON_VERSION}"
+            if [[ -x "$brew_bin" ]]; then
+                echo "$brew_bin"
+                return 0
+            fi
         done
     fi
 
@@ -148,17 +267,41 @@ install_python_pyenv() {
         echo ""
 
         # Check for build dependencies
-        local missing_deps=()
-        for pkg in build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev liblzma-dev; do
-            if ! dpkg -s "$pkg" &>/dev/null; then
-                missing_deps+=("$pkg")
+        if [[ "$OS_FAMILY" == "macos" ]]; then
+            load_brew
+            if ! command -v brew &>/dev/null; then
+                err "  Homebrew is required to build Python with pyenv on macOS."
+                echo ""
+                echo "  Install Homebrew first:"
+                echo ""
+                echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                echo ""
+                echo "  Then rerun: ./run.sh"
+                exit 1
             fi
-        done
+            local missing_deps=()
+            for pkg in openssl readline sqlite3 xz zlib; do
+                if ! brew list --formula "$pkg" &>/dev/null; then
+                    missing_deps+=("$pkg")
+                fi
+            done
+            if [[ ${#missing_deps[@]} -gt 0 ]]; then
+                info "Installing build dependencies: ${missing_deps[*]}"
+                brew install "${missing_deps[@]}"
+            fi
+        elif has_apt; then
+            local missing_deps=()
+            for pkg in build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev liblzma-dev; do
+                if ! dpkg -s "$pkg" &>/dev/null; then
+                    missing_deps+=("$pkg")
+                fi
+            done
 
-        if [[ ${#missing_deps[@]} -gt 0 ]]; then
-            info "Installing build dependencies: ${missing_deps[*]}"
-            sudo apt update -qq
-            sudo apt install -y -qq "${missing_deps[@]}"
+            if [[ ${#missing_deps[@]} -gt 0 ]]; then
+                info "Installing build dependencies: ${missing_deps[*]}"
+                sudo apt update -qq
+                sudo apt install -y -qq "${missing_deps[@]}"
+            fi
         fi
 
         curl -fsSL https://pyenv.run | bash
@@ -195,6 +338,68 @@ install_python_pyenv() {
     pyenv shell "$PYTHON_VERSION"
 }
 
+# Download URL for the pinned prebuilt Python. PARROT_PYTHON_URL overrides it
+# (useful for testing a different build or an internal mirror).
+pbs_url() {
+    local plat="$1"
+    if [[ -n "$PARROT_PYTHON_URL" ]]; then
+        echo "$PARROT_PYTHON_URL"
+    else
+        echo "https://github.com/$PBS_REPO/releases/download/${PBS_TAG}/cpython-${PBS_PY}+${PBS_TAG}-${plat}-install_only.tar.gz"
+    fi
+}
+
+# Download a self-contained, relocatable CPython into PYTHON_DIR.
+# No sudo, no system changes, nothing outside PYTHON_DIR — which is what makes
+# an unattended GUI bootstrap possible (a progress window cannot answer a
+# sudo password prompt).
+install_python_standalone() {
+    local plat url tmp
+    plat=$(pbs_platform)
+
+    if [[ -z "$plat" ]]; then
+        err "  No prebuilt Python is available for $(uname -s) $(uname -m)."
+        echo "  Choose the pyenv or manual option instead."
+        return 1
+    fi
+
+    url=$(pbs_url "$plat")
+    tmp="${TMPDIR:-/tmp}/parrot-python-$$"
+    rm -rf "$tmp"
+    mkdir -p "$tmp"
+
+    echo ""
+    info "  Downloading a self-contained Python $PYTHON_VERSION (~25 MB, no admin password needed)..."
+    if ! curl -fL --progress-bar --max-time 300 "$url" -o "$tmp/python.tar.gz"; then
+        err "  Download failed."
+        echo "  URL: $url"
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    info "  Extracting..."
+    if ! tar -xzf "$tmp/python.tar.gz" -C "$tmp"; then
+        err "  Could not extract the archive."
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    # Archive contains a single top-level python/ directory
+    if [[ ! -x "$tmp/python/bin/python${PYTHON_VERSION}" ]]; then
+        err "  Unexpected archive layout — no bin/python${PYTHON_VERSION} inside."
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    rm -rf "$PYTHON_DIR"
+    mkdir -p "$(dirname "$PYTHON_DIR")"
+    mv "$tmp/python" "$PYTHON_DIR"
+    rm -rf "$tmp"
+
+    ok "  Installed to $PYTHON_DIR"
+    return 0
+}
+
 PYTHON_CMD=$(find_python) || true
 
 if [[ -z "$PYTHON_CMD" ]]; then
@@ -207,52 +412,74 @@ if [[ -z "$PYTHON_CMD" ]]; then
 
     echo "  How would you like to install Python $PYTHON_VERSION?"
     echo ""
-    echo "    [1] Install automatically with pyenv (recommended)"
-    echo "    [2] I'll install it myself"
+    echo "    [1] Download a self-contained Python (recommended)"
+    echo "        ~25 MB, no admin password, nothing installed system-wide"
+    echo "    [2] Build from source with pyenv (slower, needs a compiler)"
+    echo "    [3] I'll install it myself"
+    if [[ -n "$WSL_DISTRO_NAME" ]]; then
+        echo "    [4] Exit — I'll run from Windows instead (run.bat)"
+    fi
     echo ""
 
     if [[ -n "$WSL_DISTRO_NAME" ]]; then
-        echo "    [3] Exit — I'll run from Windows instead (run.bat)"
-        echo ""
+        read -rp "  Choose [1/2/3/4] (default 1): " choice
+    else
+        read -rp "  Choose [1/2/3] (default 1): " choice
     fi
-
-    read -rp "  Choose [1/2$([ -n "$WSL_DISTRO_NAME" ] && echo '/3')]: " choice
     echo ""
 
-    case "$choice" in
+    installed=false
+    case "${choice:-1}" in
         1)
-            install_python_pyenv
-            PYTHON_CMD=$(find_python) || true
-            if [[ -z "$PYTHON_CMD" ]]; then
-                err "  Python $PYTHON_VERSION still not found after install."
-                echo "  Try opening a new terminal and rerunning: ./run.sh"
+            if install_python_standalone; then
+                installed=true
+            else
                 exit 1
             fi
             ;;
-        3)
-            info "  Run from Windows with: run.bat"
-            exit 0
+        2)
+            install_python_pyenv
+            installed=true
             ;;
-        *)
-            echo "  Install Python $PYTHON_VERSION using one of these methods:"
-            echo ""
-            echo "    pyenv:              pyenv install $PYTHON_VERSION && pyenv global $PYTHON_VERSION"
-            echo "    Official installer: https://www.python.org/downloads/"
+        4)
             if [[ -n "$WSL_DISTRO_NAME" ]]; then
-                echo "    Windows native:     run.bat (from PowerShell or cmd)"
+                info "  Run from Windows with: run.bat"
+                exit 0
             fi
-            echo ""
-            echo "  Then rerun: ./run.sh"
-            exit 1
             ;;
     esac
+
+    if [[ "$installed" == true ]]; then
+        PYTHON_CMD=$(find_python) || true
+        if [[ -z "$PYTHON_CMD" ]]; then
+            err "  Python $PYTHON_VERSION still not found after install."
+            echo "  Try opening a new terminal and rerunning: ./run.sh"
+            exit 1
+        fi
+    else
+        echo "  Install Python $PYTHON_VERSION using one of these methods:"
+        echo ""
+        echo "    pyenv:              pyenv install $PYTHON_VERSION && pyenv global $PYTHON_VERSION"
+        echo "    Official installer: https://www.python.org/downloads/"
+        if [[ "$OS_FAMILY" == "macos" ]]; then
+            echo "    Homebrew:           brew install python@$PYTHON_VERSION"
+        fi
+        if [[ -n "$WSL_DISTRO_NAME" ]]; then
+            echo "    Windows native:     run.bat (from PowerShell or cmd)"
+        fi
+        echo ""
+        echo "  Then rerun: ./run.sh"
+        exit 1
+    fi
 fi
 
-ok "  Python: $PYTHON_CMD ($($PYTHON_CMD --version))"
+ok "  Python: $PYTHON_CMD ($("$PYTHON_CMD" --version))"
 
 # -------------------------------------------------------
-# Step 3: Create venv (or recreate if from a different platform)
+# Step 3: Discard a venv built for a different platform
 # -------------------------------------------------------
+MARKER="$VENV_DIR/.deps_installed"
+
 if [[ -d "$VENV_DIR/Scripts" && ! -d "$VENV_DIR/bin" ]]; then
     echo ""
     warn "  Existing virtual environment was created on Windows and is"
@@ -266,33 +493,29 @@ if [[ -d "$VENV_DIR/Scripts" && ! -d "$VENV_DIR/bin" ]]; then
     info "  Recreating venv for $(uname -s)..."
     rm -rf "$VENV_DIR"
 fi
-if [[ ! -f "$VENV_PYTHON" ]]; then
-    info "  Creating virtual environment..."
-    "$PYTHON_CMD" -m venv "$VENV_DIR"
-    rm -f "$MARKER"
-fi
-
-source "$VENV_ACTIVATE"
-ok "  Venv: $VENV_DIR"
 
 # -------------------------------------------------------
-# Step 4: Install dependencies (skip if up to date)
+# Step 4: Hand venv creation + dependency install to bootstrap.py
+#
+# bootstrap.py owns this step so the logic lives in one place instead of being
+# duplicated in run.sh and run.bat. It shows a progress window (stdlib tkinter,
+# so it works before PyQt6 exists) and falls back to plain text when there's no
+# display. Pass --console to force text mode.
 # -------------------------------------------------------
-MARKER="$VENV_DIR/.deps_installed"
-if [[ ! -f "$MARKER" || "$REQUIREMENTS" -nt "$MARKER" ]]; then
+if ! "$PYTHON_CMD" bootstrap.py --check; then
     echo ""
     info "  Dependencies need to be installed from $REQUIREMENTS."
     echo ""
-    read -rp "  Install now? [Y/n]: " deps_choice
+    read -rp "  Set up now? [Y/n]: " deps_choice
     if [[ "$deps_choice" =~ ^[nN] ]]; then
         echo "  Skipped. Run again when ready."
         exit 1
     fi
-    info "  Installing dependencies..."
 
-    # Install system libraries on Linux
-    if [[ "$PLATFORM" == "posix" ]] && command -v apt &>/dev/null; then
-        # Core dependencies (all Linux with apt)
+    # Linux system libraries Qt and PortAudio link against. Must happen before
+    # pip runs. macOS needs none of these: the sounddevice wheel bundles
+    # PortAudio and PyQt6 ships its own Qt frameworks.
+    if [[ "$PLATFORM" == "posix" ]] && has_apt; then
         sys_deps=()
         for pkg in libgl1 libegl1 libxkbcommon0 libdbus-1-3 libportaudio2; do
             if ! dpkg -s "$pkg" &>/dev/null 2>&1; then
@@ -316,20 +539,33 @@ if [[ ! -f "$MARKER" || "$REQUIREMENTS" -nt "$MARKER" ]]; then
         fi
     fi
 
-    # Use --only-binary for PyQt6 to avoid building from source (needs qmake)
-    # Show progress (no -q) so the user can see what's happening
-    pip install --only-binary=PyQt6 --progress-bar on -r "$REQUIREMENTS" --disable-pip-version-check
-    touch "$MARKER"
+    set +e
+    "$PYTHON_CMD" bootstrap.py "$@"
+    bootstrap_code=$?
+    set -e
+    if [[ $bootstrap_code -ne 0 ]]; then
+        echo ""
+        if [[ $bootstrap_code -eq 2 ]]; then
+            warn "  Setup cancelled."
+        else
+            err "  Setup failed."
+        fi
+        exit $bootstrap_code
+    fi
 else
     ok "  Dependencies: up to date"
 fi
+
+source "$VENV_ACTIVATE"
+ok "  Venv: $VENV_DIR"
 
 # -------------------------------------------------------
 # Step 5: Launch
 # -------------------------------------------------------
 
-# Check display server on Linux
-if [[ "$PLATFORM" == "posix" ]]; then
+# Check display server on Linux. macOS has no DISPLAY/WAYLAND_DISPLAY — Qt uses
+# the native Cocoa backend, so this check must not run there.
+if [[ "$PLATFORM" == "posix" && "$OS_FAMILY" != "macos" ]]; then
     if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" ]]; then
         err "  No display server detected."
         echo ""
@@ -379,9 +615,12 @@ if [[ $EXIT_CODE -ne 0 ]]; then
             info "  Reinstalling dependencies..."
             echo ""
             rm -f "$MARKER"
-            pip install --only-binary=PyQt6 --progress-bar on -r "$REQUIREMENTS" --disable-pip-version-check
-            if [[ $? -eq 0 ]]; then
-                touch "$MARKER"
+            set +e
+            "$PYTHON_CMD" bootstrap.py "$@"
+            retry_code=$?
+            set -e
+            if [[ $retry_code -eq 0 ]]; then
+                source "$VENV_ACTIVATE"
                 echo ""
                 info "  Retrying launch..."
                 echo ""
@@ -391,13 +630,12 @@ if [[ $EXIT_CODE -ne 0 ]]; then
         2)
             info "  Recreating venv from scratch..."
             rm -rf "$VENV_DIR"
-            "$PYTHON_CMD" -m venv "$VENV_DIR"
-            source "$VENV_ACTIVATE"
-            info "  Installing dependencies..."
-            echo ""
-            pip install --only-binary=PyQt6 --progress-bar on -r "$REQUIREMENTS" --disable-pip-version-check
-            if [[ $? -eq 0 ]]; then
-                touch "$MARKER"
+            set +e
+            "$PYTHON_CMD" bootstrap.py "$@"
+            retry_code=$?
+            set -e
+            if [[ $retry_code -eq 0 ]]; then
+                source "$VENV_ACTIVATE"
                 echo ""
                 info "  Retrying launch..."
                 echo ""
