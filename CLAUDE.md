@@ -27,7 +27,7 @@
 
 ## GUI Architecture
 
-- **Pages**: QStackedWidget in MainWindow — **Sounds** (read-only library, default landing), Recording, Training. (`gui/windows/home.py` HomePage exists but is not wired in.)
+- **Pages**: QStackedWidget in MainWindow — **Home** (default landing: 1-2-3 workflow bubbles, active-model/Talon status, notes), **Sounds** (read-only library), Models, Talon, Settings, About, plus Recording/Edit sub-views.
 - **State**: AppState (QObject with signals: recordings_changed, models_changed, talon_status_changed)
 - **Widgets**: pyqtgraph-based (audio preview, session card, waveform, segment bar, duration bar, training plot)
 - **Workers**: QThread subclasses for recording, training, re-segmentation

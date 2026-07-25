@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt
 import sounddevice as sd
 from config.config import INPUT_DEVICE_INDEX
 from gui.models.app_state import AppState
+from gui.windows.home import HomePage
 from gui.windows.library import SoundLibraryPage
 from gui import theme
 
@@ -22,11 +23,16 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        # Only the landing page (Sounds) is built eagerly. The other tabs and
-        # the recording/edit sub-views are constructed on first use so startup
-        # shows the library as fast as possible (each of the others costs
-        # ~30-200 ms to build, incl. an audio-device query for the recording
-        # views). See _page() / the lazy getters below.
+        # Only the landing page (Home) and the Sounds library are built eagerly.
+        # The other tabs and the recording/edit sub-views are constructed on
+        # first use so startup is fast (each of the others costs ~30-200 ms to
+        # build, incl. an audio-device query for the recording views). See the
+        # lazy getters below.
+        self.home_page = HomePage(self.app_state, self)
+        self.stack.addWidget(self.home_page)
+        self.home_page.navigate.connect(self._go_to_tab)
+        self.home_page.record_requested.connect(self._open_recording)
+
         self.library_page = SoundLibraryPage(self.app_state, self)
         self.stack.addWidget(self.library_page)
         self.library_page.record_requested.connect(self._open_recording)
@@ -49,17 +55,18 @@ class MainWindow(QMainWindow):
         self._nav_group.setExclusive(True)
 
         self.nav_actions = {}
-        for text in ("Sounds", "Models", "Talon", "Settings", "About"):
+        for text in ("Home", "Sounds", "Models", "Talon", "Settings", "About"):
             action = QAction(text, self)
             action.setCheckable(True)
             action.triggered.connect(lambda _checked, t=text: self._show_tab(t))
             self._nav_group.addAction(action)
             toolbar.addAction(action)
             self.nav_actions[text] = action
-        self.nav_actions["Sounds"].setChecked(True)
+        self.nav_actions["Home"].setChecked(True)
 
-        # Start on the Sounds library
-        self.stack.setCurrentWidget(self.library_page)
+        # Land on Home: it re-orients a returning user (and welcomes a new one)
+        # before they drop into the Sounds library.
+        self.stack.setCurrentWidget(self.home_page)
 
         # Status bar: audio device (left) + the active keybindings for whatever
         # view is showing (right). The keybinding hint is the single, always-in-
@@ -121,8 +128,17 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(self.edit_view)
         return self.edit_view
 
+    def _go_to_tab(self, name):
+        """Programmatic navigation (e.g. from Home's action buttons): keep the
+        toolbar's checked state in sync with the page being shown."""
+        if name in self.nav_actions:
+            self.nav_actions[name].setChecked(True)
+            self._show_tab(name)
+
     def _show_tab(self, name):
-        if name == "Sounds":
+        if name == "Home":
+            self.stack.setCurrentWidget(self.home_page)
+        elif name == "Sounds":
             self.stack.setCurrentWidget(self.library_page)
         elif name == "Models":
             self.stack.setCurrentWidget(self._get_models_page())

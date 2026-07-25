@@ -60,6 +60,10 @@ def colors():
 _STYLESHEET = Template("""
     * { font-size: 13px; }
     QMainWindow, QWidget { background-color: $window; color: $text; }
+    /* The QWidget rule above matches subclasses too, which makes every QLabel
+       paint an opaque $window rectangle — visible as flat dark boxes on top of
+       gradient panels (sound header, session cards). Labels must stay clear. */
+    QLabel { background-color: transparent; }
     QToolBar {
         background-color: $toolbar;
         border-bottom: 1px solid $border;
