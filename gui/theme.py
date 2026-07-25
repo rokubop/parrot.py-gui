@@ -44,6 +44,16 @@ THEMES = {
 
 _current = "fabfilter"
 
+# Data-quantity rating colors, dimmest -> best. Shared so a rating means the
+# same thing (and looks the same) wherever it appears - the Sounds list, the
+# per-sound header, and the training checklist.
+QUANTITY_COLORS = {
+    "Not enough": "#e05a5a",
+    "Sufficient": "#e0b020",
+    "Good": "#5ac8e0",
+    "Excellent": "#41d97f",
+}
+
 
 def names():
     return list(THEMES.keys())

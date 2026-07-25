@@ -218,6 +218,23 @@ def move_recording(wav_path, dest_label):
     return new_wav
 
 
+def newest_recording_mtime(label):
+    """When this sound was last recorded, or None. Used to tell whether a model
+    predates the data it was trained on."""
+    source_dir = os.path.join(RECORDINGS_FOLDER, label, "source")
+    newest = None
+    if os.path.isdir(source_dir):
+        for f in os.listdir(source_dir):
+            if f.endswith(".wav"):
+                try:
+                    mtime = os.path.getmtime(os.path.join(source_dir, f))
+                except OSError:
+                    continue
+                if newest is None or mtime > newest:
+                    newest = mtime
+    return newest
+
+
 # ---- model operations -------------------------------------------------
 
 def model_files(name):

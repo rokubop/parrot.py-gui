@@ -9,8 +9,9 @@ from PyQt6.QtWidgets import (
     QScrollArea, QSizePolicy
 )
 
-from config.config import CLASSIFIER_FOLDER, RECORDINGS_FOLDER
+from config.config import CLASSIFIER_FOLDER
 from gui import theme
+from gui.services import library_ops
 from gui.widgets import help_dialog
 from gui.services.talon_discovery import find_matching_local_model
 
@@ -31,19 +32,7 @@ def _ago(timestamp):
     return f"{days / 365.25:.1f} years ago"
 
 
-def _newest_wav_mtime(label):
-    source_dir = os.path.join(RECORDINGS_FOLDER, label, "source")
-    newest = None
-    if os.path.isdir(source_dir):
-        for f in os.listdir(source_dir):
-            if f.endswith(".wav"):
-                try:
-                    mtime = os.path.getmtime(os.path.join(source_dir, f))
-                except OSError:
-                    continue
-                if newest is None or mtime > newest:
-                    newest = mtime
-    return newest
+_newest_wav_mtime = library_ops.newest_recording_mtime
 
 
 class _ModelSoundsWorker(QThread):

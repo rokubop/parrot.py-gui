@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self.about_page = None
         self.recording_view = None
         self.edit_view = None
+        self.train_view = None
 
         self.stack.currentChanged.connect(self._on_stack_changed)
 
@@ -99,6 +100,8 @@ class MainWindow(QMainWindow):
         if self.models_page is None:
             from gui.windows.models import ModelsPage
             self.models_page = ModelsPage(self.app_state, self)
+            self.models_page.train_requested.connect(self._open_train)
+            self.models_page.navigate.connect(self._go_to_tab)
             self.stack.addWidget(self.models_page)
         return self.models_page
 
@@ -145,6 +148,15 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(self.edit_view)
         return self.edit_view
 
+    def _get_train_view(self):
+        if self.train_view is None:
+            from gui.windows.train_view import TrainView
+            self.train_view = TrainView(self.app_state, self)
+            self.train_view.done.connect(self._return_to_models)
+            self.train_view.navigate.connect(self._go_to_tab)
+            self.stack.addWidget(self.train_view)
+        return self.train_view
+
     def _go_to_tab(self, name):
         """Navigation from page buttons: keeps the toolbar checked state in sync."""
         if name in self.nav_actions:
@@ -179,6 +191,18 @@ class MainWindow(QMainWindow):
         view = self._get_edit_view()
         view.start_for(wav_path)
         self.stack.setCurrentWidget(view)
+
+    def _open_train(self):
+        view = self._get_train_view()
+        view.start()
+        self.stack.setCurrentWidget(view)
+
+    def _return_to_models(self, model_name):
+        page = self._get_models_page()
+        self.stack.setCurrentWidget(page)
+        self.nav_actions["Models"].setChecked(True)
+        if model_name:
+            page.select_model(model_name)
 
     def _return_to_sounds(self, label):
         self.stack.setCurrentWidget(self.library_page)

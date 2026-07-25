@@ -505,13 +505,9 @@ class SoundLibraryPage(QWidget):
 
     # ---- selection / playback coordination -----------------------------
 
-    # Color cues for the data-quantity rating, dimmest -> best.
-    _QUANTITY_COLORS = {
-        "Not enough": "#e05a5a",
-        "Sufficient": "#e0b020",
-        "Good": "#5ac8e0",
-        "Excellent": "#41d97f",
-    }
+    # Color cues for the data-quantity rating - shared with the training
+    # checklist so a rating reads identically in both places.
+    _QUANTITY_COLORS = theme.QUANTITY_COLORS
 
     def _update_sound_header(self, label, recordings):
         self.sound_title.setText(label)

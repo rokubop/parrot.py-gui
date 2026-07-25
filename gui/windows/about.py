@@ -74,15 +74,15 @@ class AboutPage(QWidget):
                     f"font-weight:bold;'>{name}</td>"
                     f"<td style='padding:3px 0; color:{dim};'>{rng}</td></tr>")
 
-        # Colors must match SoundLibraryPage._QUANTITY_COLORS.
+        q = theme.QUANTITY_COLORS
         ratings = (
-            rating_row("#e05a5a", "Not enough",
+            rating_row(q["Not enough"], "Not enough",
                        f"under {_SUFFICIENT_S:g}s of detected sound"),
-            rating_row("#e0b020", "Sufficient",
+            rating_row(q["Sufficient"], "Sufficient",
                        f"{_SUFFICIENT_S:g}s - {_GOOD_S:g}s"),
-            rating_row("#5ac8e0", "Good",
+            rating_row(q["Good"], "Good",
                        f"{_GOOD_S:g}s - {_EXCELLENT_S:g}s"),
-            rating_row("#41d97f", "Excellent",
+            rating_row(q["Excellent"], "Excellent",
                        f"{_EXCELLENT_S:g}s and above"),
         )
 
