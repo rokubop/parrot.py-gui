@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import (
-    QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel
+    QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel, QWidget,
+    QSizePolicy
 )
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt
@@ -28,7 +29,6 @@ class MainWindow(QMainWindow):
         self.home_page = HomePage(self.app_state, self)
         self.stack.addWidget(self.home_page)
         self.home_page.navigate.connect(self._go_to_tab)
-        self.home_page.record_requested.connect(self._open_recording)
 
         self.library_page = SoundLibraryPage(self.app_state, self)
         self.stack.addWidget(self.library_page)
@@ -61,6 +61,20 @@ class MainWindow(QMainWindow):
             self.nav_actions[text] = action
         self.nav_actions["Home"].setChecked(True)
         self.stack.setCurrentWidget(self.home_page)
+
+        # notes drawer: pops in/out on any page, right side
+        from gui.widgets.notes_dock import NotesDock
+        self.notes_dock = NotesDock(self.app_state, self)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.notes_dock)
+        self.notes_dock.hide()
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+        notes_action = QAction("Notes", self)
+        notes_action.setCheckable(True)
+        notes_action.toggled.connect(self.notes_dock.setVisible)
+        self.notes_dock.visibilityChanged.connect(notes_action.setChecked)
+        toolbar.addAction(notes_action)
 
         # Status bar: audio device (left) + the active keybindings for whatever
         # view is showing (right). The keybinding hint is the single, always-in-

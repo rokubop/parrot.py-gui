@@ -1,12 +1,12 @@
 """Home landing page. Re-orients a user returning after months away:
-workflow steps with live state, active model + Talon status, notes to self."""
+workflow steps with live state, expectations for new users, model + Talon status."""
 import os
 import time
 
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QTextEdit, QSizePolicy
+    QScrollArea, QSizePolicy
 )
 
 from config.config import CLASSIFIER_FOLDER, RECORDINGS_FOLDER
@@ -127,22 +127,15 @@ class _StepCard(QFrame):
 
 
 class HomePage(QWidget):
-    navigate = pyqtSignal(str)          # tab name, handled by MainWindow
-    record_requested = pyqtSignal(str)  # "" = new sound
+    navigate = pyqtSignal(str)   # tab name, handled by MainWindow
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
         self.app_state = app_state
         self._sounds_worker = None
         self._loaded_sounds = {}   # model name -> labels ([] = unreadable)
-        self._notes_loaded = False
 
         self._setup_ui()
-
-        self._notes_timer = QTimer(self)
-        self._notes_timer.setSingleShot(True)
-        self._notes_timer.setInterval(800)
-        self._notes_timer.timeout.connect(self._save_notes)
 
         self.app_state.recordings_changed.connect(self._refresh)
         # retrained/renamed models may have different labels
@@ -189,7 +182,7 @@ class HomePage(QWidget):
             1, "Record sounds",
             "Record short noises — clicks, pops, hisses. Each sound becomes "
             "a label the model learns. You need at least two.",
-            "Record a sound")
+            "Open Sounds")
         self.step_train = _StepCard(
             2, "Train a model",
             "Turn your recorded sounds into a model that recognizes them "
@@ -200,12 +193,17 @@ class HomePage(QWidget):
             "Deploy the model and patterns to Talon so your sounds trigger "
             "real actions.",
             "Open Talon setup")
-        self.step_record.action.clicked.connect(lambda: self.record_requested.emit(""))
+        self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
         self.step_connect.action.clicked.connect(lambda: self.navigate.emit("Talon"))
         for card in (self.step_record, self.step_train, self.step_connect):
             steps_row.addWidget(card, 1)
         v.addLayout(steps_row)
+
+        # expectations for new users; hides once they have 2+ sounds
+        self.prep_panel, self.prep_title, self.prep_body = \
+            self._make_panel("Before you start")
+        v.addWidget(self.prep_panel)
 
         guide_row = QHBoxLayout()
         self.guide_label = QLabel("New to this, or forgot how it works?")
@@ -231,20 +229,6 @@ class HomePage(QWidget):
         status_row.addWidget(self.model_panel, 1)
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
-
-        self.notes_title = QLabel("Notes to your future self")
-        v.addWidget(self.notes_title)
-        self.notes_hint = QLabel(
-            "Anything you'll want to know in six months — which model works "
-            "best, what to avoid retraining, mic quirks. Saved automatically.")
-        self.notes_hint.setWordWrap(True)
-        v.addWidget(self.notes_hint)
-        self.notes_edit = QTextEdit()
-        self.notes_edit.setPlaceholderText("e.g. \"cluck model v3 is the good one — "
-                                           "don't retrain whistle, it only got worse\"")
-        self.notes_edit.setMaximumHeight(120)
-        self.notes_edit.textChanged.connect(self._on_notes_changed)
-        v.addWidget(self.notes_edit)
 
         v.addStretch()
         self._apply_theme_styles()
@@ -273,16 +257,14 @@ class HomePage(QWidget):
         self.guide_btn.setStyleSheet(
             f"QPushButton {{ color: {t['accent']}; background: transparent; "
             f"border: none; padding: 2px 4px; text-decoration: underline; }}")
-        for label in (self.status_title, self.notes_title):
-            label.setStyleSheet(
-                f"font-size: 16px; font-weight: bold; color: {t['text_bright']}; "
-                f"margin-top: 8px;")
-        self.notes_hint.setStyleSheet(f"color: {t['text_dim']};")
-        for panel in (self.model_panel, self.talon_panel):
+        self.status_title.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {t['text_bright']}; "
+            f"margin-top: 8px;")
+        for panel in (self.model_panel, self.talon_panel, self.prep_panel):
             panel.setStyleSheet(
                 f"QFrame#homePanel {{ background-color: {t['card']}; "
                 f"border: 1px solid {t['border']}; border-radius: 8px; }}")
-        for label in (self.model_panel_title, self.talon_panel_title):
+        for label in (self.model_panel_title, self.talon_panel_title, self.prep_title):
             label.setStyleSheet(
                 f"font-size: 14px; font-weight: bold; color: {t['text_bright']}; border: none;")
 
@@ -343,8 +325,10 @@ class HomePage(QWidget):
         self.step_record.set_state(step1_done, current == 0, s1)
         self.step_train.set_state(step2_done, current == 1, s2)
         self.step_connect.set_state(step3_done, current == 2, s3)
-        self.step_record.action.setText(
-            "Record your first sound" if not labels else "Record a sound")
+
+        self.prep_panel.setVisible(not step1_done)
+        if not step1_done:
+            self.prep_body.setText(self._prep_html(t))
 
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
@@ -352,12 +336,28 @@ class HomePage(QWidget):
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
 
-        if not self._notes_loaded:
-            notes = self.app_state.load_notes()
-            self.notes_edit.blockSignals(True)
-            self.notes_edit.setPlainText(notes.get("global_notes", ""))
-            self.notes_edit.blockSignals(False)
-            self._notes_loaded = True
+    def _prep_html(self, t):
+        dim, text = t["text_dim"], t["text"]
+        rows = (
+            ("Setup", "a quiet room, and the mic you'll actually use day to day "
+                      "(pick it in Settings). Avoid dynamic mics — takes vary too "
+                      "much between sessions."),
+            ("Good sounds", "tongue clicks, lip pops, palate clicks, “sh” / “ss” "
+                            "hisses, short vowels. Distinct from each other and "
+                            "from normal speech."),
+            ("Goal", "record each sound until its Data rating says Excellent "
+                     "(~80 s of detected sound). More data beats more sounds."),
+            ("How many", "2 sounds minimum to train. A daily-driver setup is "
+                         "usually 10–20."),
+            ("Time", "a real commitment — 1 hr+ of recording spread over multiple "
+                     "days, 4 hr+ for a full model. Bursts are fine; every "
+                     "recording is saved as you go."),
+        )
+        return "<table cellspacing='0' cellpadding='2'>" + "".join(
+            f"<tr><td style='color:{dim}; font-weight:bold; padding-right:12px; "
+            f"white-space:nowrap; vertical-align:top;'>{label}</td>"
+            f"<td style='color:{text};'>{body}</td></tr>"
+            for label, body in rows) + "</table>"
 
     def _latest_model(self):
         best, best_mtime = None, 0
@@ -459,13 +459,3 @@ class HomePage(QWidget):
             lines.append(f"<span style='color:{warn};'>⚠ Talon's model {msg}</span>")
         self.talon_panel_body.setText("<br>".join(lines))
 
-    # ---- notes -------------------------------------------------------------
-
-    def _on_notes_changed(self):
-        self._notes_timer.start()
-
-    def _save_notes(self):
-        # re-read first: don't clobber model notes edited elsewhere
-        notes = self.app_state.load_notes()
-        notes["global_notes"] = self.notes_edit.toPlainText()
-        self.app_state.save_notes(notes)
