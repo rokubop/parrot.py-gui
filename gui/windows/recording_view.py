@@ -277,6 +277,8 @@ class RecordingView(QWidget):
         return group
 
     def _populate_devices(self):
+        # default to the device toolbar's pick, still overridable per session
+        from gui.services import audio_devices
         self.device_combo.clear()
         try:
             for i, dev in enumerate(sd.query_devices()):
@@ -285,9 +287,9 @@ class RecordingView(QWidget):
         except Exception:
             pass
         if self.device_combo.count() == 0:
-            self.device_combo.addItem(f"[{INPUT_DEVICE_INDEX}] Default",
-                                      INPUT_DEVICE_INDEX)
-        idx = self.device_combo.findData(INPUT_DEVICE_INDEX)
+            self.device_combo.addItem(f"[{audio_devices.input_index}] Default",
+                                      audio_devices.input_index)
+        idx = self.device_combo.findData(audio_devices.input_index)
         if idx >= 0:
             self.device_combo.setCurrentIndex(idx)
 

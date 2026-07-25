@@ -20,19 +20,9 @@ class MainWindow(QMainWindow):
 
         self.app_state = AppState(self)
 
-        # Central column: persistent transport strip above the page stack
-        from gui.widgets.transport_bar import TransportBar
+        # Central stacked widget
         self.stack = QStackedWidget()
-        self.transport = TransportBar()
-        self.transport.record_clicked.connect(self._transport_record)
-        self.transport.play_clicked.connect(self._transport_play)
-        central = QWidget()
-        central_layout = QVBoxLayout(central)
-        central_layout.setContentsMargins(0, 0, 0, 0)
-        central_layout.setSpacing(0)
-        central_layout.addWidget(self.transport)
-        central_layout.addWidget(self.stack)
-        self.setCentralWidget(central)
+        self.setCentralWidget(self.stack)
 
         # only Home + Sounds build eagerly; other tabs cost 30-200 ms each
         # (some query audio devices), so they build lazily on first use
@@ -80,6 +70,11 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
+        # Audacity-style device pickers, right side of the top bar
+        from gui.widgets.device_bar import DeviceBar
+        self.device_bar = DeviceBar()
+        self.device_bar.input_changed.connect(lambda _i: self._update_status_bar())
+        toolbar.addWidget(self.device_bar)
         notes_action = QAction("📝 Notes", self)
         notes_action.setCheckable(True)
         notes_action.toggled.connect(self.notes_dock.setVisible)
@@ -193,19 +188,6 @@ class MainWindow(QMainWindow):
             self.recording_view.stop_worker()
         if self.edit_view is not None and current is not self.edit_view:
             self.edit_view.stop_playback()
-        # recording view owns the mic: the transport monitor must let go
-        if self.recording_view is not None and current is self.recording_view:
-            self.transport.stop_monitor()
-
-    # ---- transport -------------------------------------------------------
-
-    def _transport_record(self):
-        self.transport.stop_monitor()
-        self._open_recording(self.library_page._current_label() or "")
-
-    def _transport_play(self):
-        self._go_to_tab("Sounds")
-        self.library_page.play_selected()
         self._refresh_keybindings()
 
     # ---- keybinding status bar -----------------------------------------
@@ -224,9 +206,11 @@ class MainWindow(QMainWindow):
         self.keys_label.setText(getter() if callable(getter) else "")
 
     def _update_status_bar(self):
+        from gui.services import audio_devices
+        index = audio_devices.input_index
         try:
-            device_info = sd.query_devices(INPUT_DEVICE_INDEX)
+            device_info = sd.query_devices(index)
             device_name = device_info['name'] if device_info else "Unknown"
         except Exception:
             device_name = "No device"
-        self.status_bar.showMessage(f"Audio device: {device_name} (index {INPUT_DEVICE_INDEX})")
+        self.status_bar.showMessage(f"Audio device: {device_name} (index {index})")

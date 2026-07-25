@@ -486,13 +486,6 @@ class SoundLibraryPage(QWidget):
                 self._load_timer.start()
             return
 
-    def play_selected(self):
-        """Toggle playback of the selected (or first) card. Used by the
-        transport bar."""
-        target = self._selected_card or (self._cards[0] if self._cards else None)
-        if target is not None:
-            target.toggle_play()
-
     # ---- keyboard ------------------------------------------------------
 
     def keyPressEvent(self, event):
