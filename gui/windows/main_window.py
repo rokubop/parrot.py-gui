@@ -130,6 +130,10 @@ class MainWindow(QMainWindow):
             self.recording_view.done.connect(self._return_to_sounds)
             self._wire_keybindings(self.recording_view)
             self.stack.addWidget(self.recording_view)
+            # its mic readout mirrors the top device bar
+            view = self.recording_view
+            self.device_bar.input_changed.connect(lambda _i: view.refresh_mic_label())
+            self.device_bar.extras_changed.connect(lambda _e: view.refresh_mic_label())
         return self.recording_view
 
     def _get_edit_view(self):

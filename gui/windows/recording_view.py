@@ -23,8 +23,9 @@ from PyQt6.QtWidgets import (
     QLineEdit, QGroupBox, QFormLayout, QMessageBox
 )
 
-from config.config import INPUT_DEVICE_INDEX, RATE
+from config.config import RATE
 from gui import theme
+from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui.widgets.confirm_dialog import confirm_destructive
@@ -56,13 +57,18 @@ class RecordingView(QWidget):
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
         self.app_state = app_state
-        self.worker = None              # AudioWorker (recording a segment)
+        self.worker = None              # primary AudioWorker (drives the UI)
         self._seg_worker = None         # Append/Trim worker (re-detect)
         self.history = UndoHistory()
         self._label = None
         self._new_mode = False
         self._take_wav = None           # the growing take file, or None
         self._take_srt = None
+        # multi-mic session: extras record in parallel, one take file per mic
+        self._session_mics = None       # (primary, [extras]) locked at first segment
+        self._extra_workers = []        # live AudioWorkers for extra mics
+        self._extra_takes = {}          # mic index -> {"wav": ..., "srt": ...}
+        self._extra_seg_workers = []    # AppendWorkers stitching extra takes
         self._pending_action = None     # 'pause' | 'done' while a segment stops
         self._state = "idle"
         self._last_status_draw = 0.0
@@ -137,12 +143,13 @@ class RecordingView(QWidget):
         name_layout.addStretch()
         root.addWidget(self.name_row)
 
-        # Device + strategy
+        # Device (from the top device bar) + strategy
         opts = QHBoxLayout()
         opts.addWidget(QLabel("Microphone:"))
-        self.device_combo = QComboBox()
-        self._populate_devices()
-        opts.addWidget(self.device_combo, 2)
+        self.mic_label = QLabel("")
+        self.mic_label.setStyleSheet(
+            f"color: {theme.colors()['text_bright']}; font-weight: bold;")
+        opts.addWidget(self.mic_label, 2)
         opts.addSpacing(12)
         opts.addWidget(QLabel("Strategy:"))
         self.strategy_combo = QComboBox()
@@ -276,22 +283,21 @@ class RecordingView(QWidget):
         group.setMaximumWidth(280)
         return group
 
-    def _populate_devices(self):
-        # default to the device toolbar's pick, still overridable per session
-        from gui.services import audio_devices
-        self.device_combo.clear()
-        try:
-            for i, dev in enumerate(sd.query_devices()):
-                if dev.get("max_input_channels", 0) > 0:
-                    self.device_combo.addItem(f"[{i}] {dev['name']}", i)
-        except Exception:
-            pass
-        if self.device_combo.count() == 0:
-            self.device_combo.addItem(f"[{audio_devices.input_index}] Default",
-                                      audio_devices.input_index)
-        idx = self.device_combo.findData(audio_devices.input_index)
-        if idx >= 0:
-            self.device_combo.setCurrentIndex(idx)
+    def refresh_mic_label(self):
+        """Mirror the top device bar. Once a take exists the session's mics are
+        locked so every segment of the take uses the same devices."""
+        if self._session_mics is not None:
+            primary, extras = self._session_mics
+            suffix = "  (locked for this take)"
+        else:
+            primary, extras = audio_devices.recording_mics()
+            suffix = "  ·  change in the top bar"
+        text = audio_devices.input_name(primary)
+        if extras:
+            text += f"  + {len(extras)} more"
+        self.mic_label.setText(text + suffix)
+        names = [audio_devices.input_name(i) for i in (primary, *extras)]
+        self.mic_label.setToolTip("\n".join(names))
 
     def _reset(self, take):
         self.stop_playback()
@@ -299,6 +305,9 @@ class RecordingView(QWidget):
         self._take_srt = self._srt_for(take) if take else None
         self._pending_action = None
         self._audio = None
+        self._session_mics = None
+        self._extra_takes = {}
+        self.refresh_mic_label()
         if take:
             self.history.bind(take)
         else:
@@ -355,14 +364,19 @@ class RecordingView(QWidget):
         self.start_over_btn.setVisible(self._take_wav is not None)
         self.start_over_btn.setEnabled(reviewing)
         self.play_btn.setVisible(reviewing)
-        self.delete_sel_btn.setVisible(reviewing)
-        self.undo_btn.setVisible(reviewing)
-        self.redo_btn.setVisible(reviewing)
+        # Selection editing only touches the primary take; with extra mics that
+        # would desync the per-mic files, so it's off for multi-mic sessions.
+        multi = bool(self._extra_takes) or (
+            self._session_mics is not None and bool(self._session_mics[1]))
+        for btn in (self.delete_sel_btn, self.undo_btn, self.redo_btn):
+            btn.setVisible(reviewing and not multi)
         if reviewing:
             self._update_undo_buttons()
-        # Lock device/strategy/name once a take exists.
+            if multi:
+                self.hint.setText("Multi-mic take: editing is off so the mic "
+                                  "files stay in sync. Resume / Start over only.")
+        # Lock strategy/name once a take exists.
         locked = state != "idle"
-        self.device_combo.setEnabled(not locked)
         self.strategy_combo.setEnabled(not locked)
         if recording:
             self.name_input.setEnabled(False)
@@ -453,20 +467,38 @@ class RecordingView(QWidget):
         if not label:
             return
         self._label = label
-        mic = self.device_combo.currentData()
+        if self._session_mics is None:
+            self._session_mics = audio_devices.recording_mics()
+            self.refresh_mic_label()
+        mic, extras = self._session_mics
         strategy = strategies.strategy_for_label(self.strategy_combo.currentText())
 
         self.stop_playback()
         self._seed_or_clear_live()
 
-        self.worker = AudioWorker(label, mic, strategy)
+        # one timestamp for all mics: their files read as one take
+        time_string = str(int(time.time()))
+        self.worker = AudioWorker(label, mic, strategy, time_string)
         self.worker.frame_recorded.connect(self.waveform.append_live_data)
         self.worker.status_updated.connect(self._on_status)
         self.worker.recording_finished.connect(self._on_segment_finished)
         self.worker.start()
 
+        # extra mics record headless; the primary drives the live view
+        for extra in extras:
+            w = AudioWorker(label, extra, strategy, time_string)
+            w.recording_finished.connect(
+                lambda wav, srt, m=extra, wk=w:
+                    self._on_extra_segment_finished(m, wk, wav, srt))
+            self._extra_workers.append(w)
+            w.start()
+
         self._set_state("recording")
-        self.hint.setText("Recording… Space (or Pause) to stop and review.")
+        if extras:
+            self.hint.setText(f"Recording with {1 + len(extras)} mics… "
+                              "Space (or Pause) to stop and review.")
+        else:
+            self.hint.setText("Recording… Space (or Pause) to stop and review.")
 
     def _pause(self):
         self._stop_segment("pause")
@@ -482,10 +514,12 @@ class RecordingView(QWidget):
             return
         self.stop_playback()
         name = library_ops.recording_base(self._take_wav)
+        extra_note = (f" (including {len(self._extra_takes)} extra mic "
+                      f"file(s))" if self._extra_takes else "")
         if not confirm_destructive(
                 self, title="Start over?",
-                body=f"This deletes the current take “{name}” and everything "
-                     f"recorded into it, so you can record it again.",
+                body=f"This deletes the current take “{name}”{extra_note} and "
+                     f"everything recorded into it, so you can record it again.",
                 confirm_label="Delete take"):
             return
         try:
@@ -493,6 +527,11 @@ class RecordingView(QWidget):
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't delete the take", str(exc))
             return
+        for take in self._extra_takes.values():
+            try:
+                library_ops.delete_recording(take["wav"])
+            except library_ops.LibraryOpError:
+                pass
         self.history.clear()
         self.app_state.recordings_changed.emit()
         self._reset(take=None)
@@ -506,6 +545,8 @@ class RecordingView(QWidget):
         self.finish_btn.setEnabled(False)
         self.hint.setText("Finalizing…")
         self.worker.request_stop()
+        for w in self._extra_workers:
+            w.request_stop()
 
     def _on_segment_finished(self, seg_wav, seg_srt):
         self.worker = None
@@ -527,6 +568,43 @@ class RecordingView(QWidget):
             self._seg_worker.failed.connect(
                 lambda msg, src=seg_wav, srt=seg_srt: self._on_append_failed(msg, src, srt))
             self._seg_worker.start()
+
+    # ---- extra-mic takes (headless mirrors of the primary flow) ---------
+
+    def _on_extra_segment_finished(self, mic, worker, seg_wav, seg_srt):
+        if worker in self._extra_workers:
+            self._extra_workers.remove(worker)
+        worker.wait()
+        worker.deleteLater()
+        take = self._extra_takes.get(mic)
+        if take is None:
+            self._extra_takes[mic] = {"wav": seg_wav, "srt": seg_srt}
+            self.app_state.recordings_changed.emit()
+            return
+        seg = AppendWorker(take["wav"], seg_wav, self._label)
+        self._extra_seg_workers.append(seg)
+        seg.finished_ok.connect(
+            lambda srt, s=seg, m=mic, src=seg_wav:
+                self._on_extra_appended(s, m, src, srt))
+        # on failure the segment stays as its own recording, same as primary
+        seg.failed.connect(lambda _msg, s=seg: self._finish_extra_seg_worker(s))
+        seg.start()
+
+    def _on_extra_appended(self, seg, mic, source_wav, srt_path):
+        self._finish_extra_seg_worker(seg)
+        try:
+            library_ops.delete_recording(source_wav)
+        except library_ops.LibraryOpError:
+            pass
+        if mic in self._extra_takes:
+            self._extra_takes[mic]["srt"] = srt_path
+        self.app_state.recordings_changed.emit()
+
+    def _finish_extra_seg_worker(self, seg):
+        if seg in self._extra_seg_workers:
+            self._extra_seg_workers.remove(seg)
+        seg.wait()
+        seg.deleteLater()
 
     def _finish_seg_worker(self):
         """Tear down a finished Append/Trim thread safely - the worker emits its
@@ -746,6 +824,7 @@ class RecordingView(QWidget):
         self.done.emit(self._label or "")
 
     def stop_worker(self):
+        changed = False
         if self.worker:
             # Don't let a queued segment-finish run our handler after we've left;
             # the recorder still writes the file, so the take is saved either way.
@@ -756,6 +835,18 @@ class RecordingView(QWidget):
             self.worker.request_stop()
             self.worker.wait(2000)
             self.worker = None
+            changed = True
+        if self._extra_workers:
+            changed = True
+        for w in self._extra_workers:
+            try:
+                w.recording_finished.disconnect()
+            except TypeError:
+                pass
+            w.request_stop()
+            w.wait(2000)
+        self._extra_workers = []
+        if changed:
             self.app_state.recordings_changed.emit()
 
     def refresh_theme(self):

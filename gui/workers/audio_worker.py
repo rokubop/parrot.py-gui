@@ -19,11 +19,13 @@ class AudioWorker(QThread):
     status_updated = pyqtSignal(object)  # DetectionState
     recording_finished = pyqtSignal(str, str)  # wav_path, srt_path
 
-    def __init__(self, label, mic_index=None, strategy=None, parent=None):
+    def __init__(self, label, mic_index=None, strategy=None, time_string=None, parent=None):
         super().__init__(parent)
         self.label = label
         self.mic_index = mic_index if mic_index is not None else INPUT_DEVICE_INDEX
         self.strategy = strategy or CURRENT_DETECTION_STRATEGY
+        # shared across simultaneous multi-mic workers so files group as one take
+        self.time_string = time_string or str(int(time.time()))
         self._stop_requested = False
         self._pause_requested = False
         self._clear_requested = False
@@ -40,7 +42,7 @@ class AudioWorker(QThread):
         for d in [label_dir, source_dir, segments_dir]:
             os.makedirs(d, exist_ok=True)
 
-        time_string = str(int(time.time()))
+        time_string = self.time_string
         self.wav_path = os.path.join(source_dir, f"mici_{self.mic_index}__{time_string}.wav")
         self.srt_path = os.path.join(segments_dir, f"mici_{self.mic_index}__{time_string}.v{CURRENT_VERSION}.srt")
 
