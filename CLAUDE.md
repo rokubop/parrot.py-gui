@@ -1,5 +1,41 @@
 # Parrot.py — Development Notes
 
+## Where things live
+
+| | Holds | Shape |
+|---|---|---|
+| [`memory/`](memory/MEMORY.md) | Facts that are true **now** | Revised in place, never appended to |
+| [`sessions/`](sessions/README.md) | What was done and decided, per session | Dated, append-only, never edited after |
+| [`BACKLOG.md`](BACKLOG.md) | Open work beyond the next session | Pruned as things land |
+| `git log` | What happened when | — |
+
+**Starting a session:** read `memory/MEMORY.md` (an index — open only what looks
+relevant), then the newest entry in `sessions/` for its *Next steps*.
+
+**"wrap"** — when Roku says this, write the session record before anything else,
+following the protocol in [`sessions/README.md`](sessions/README.md): create the
+dated file, promote anything durable into `memory/`, move longer-horizon items
+to `BACKLOG.md`, update the index, and state what was *not* verified as plainly
+as what was. "wrap" means all of it, not just the file.
+
+## Project memory — read this first
+
+Durable facts about this repo live in **`memory/`**, committed to git so they
+survive across machines. Start at [`memory/MEMORY.md`](memory/MEMORY.md): it is
+an index of one-line hooks, so read it in full and open only the entries that
+look relevant.
+
+Two that change how you should read everything else:
+
+- **`data/` is gitignored and differs on every machine.** Never infer project
+  state from a checkout — check `ls data/recordings data/models` first.
+- **Write durable context to `memory/`, not to assistant user-level memory**,
+  which is stored per machine and does not follow this workflow.
+
+When something durable is learned, add a file to `memory/` and a line to its
+index. Keep entries as facts that are true *now*, revised in place — `git log`
+is the record of what happened when.
+
 ## Run Scripts: run.sh and run.bat
 
 **IMPORTANT**: `run.sh` (Linux/WSL/macOS) and `run.bat` (Windows) must be kept in sync. When modifying one, always update the other to match. They should have feature parity for:
@@ -58,6 +94,19 @@ Two decisions worth not re-litigating:
 User-level rather than project-local because an installed bundle is read-only
 and code-signed, so it cannot store an interpreter inside itself.
 
+**Clean-room test.** Because nothing lands outside the cache dir, a true
+first-run state is repeatable:
+
+```bash
+rm -rf .venv "~/Library/Application Support/parrot.py"   # macOS
+```
+
+Don't install a system Python or Homebrew on a machine you want to keep as a
+clean-room target — that's what makes it a valid test of the zero-install path.
+Validated end to end on macOS 14 arm64 from a machine with no Python 3.13, no
+Homebrew and no build toolchain: download → venv → ~1.4 GB of deps → app
+launches.
+
 ### Platform-specific differences (expected)
 
 - `run.sh` (Linux/WSL): pyenv for Python install, apt for system deps, display server check, Qt platform selection for WSL
@@ -91,7 +140,8 @@ and code-signed, so it cannot store an interpreter inside itself.
 - **Workers**: QThread subclasses for recording, training, re-segmentation
 - **Services**: gui/services/talon_discovery.py — standalone Talon integration discovery
 - **Theme**: gui/theme.py — live-switchable themes; pages may implement `refresh_theme()`
-- **Lifetime gotcha**: top-level widgets need a strong Python reference or GC will delete them mid-run — the `MainWindow` is held via `app._main_window` in `gui/app.py`.
+- **Lazy construction**: only Home + Sounds build eagerly; every other tab and sub-view constructs on first use via `main_window` getters (window build ~1031 ms → ~322 ms; the remaining ~1.1 s is the unavoidable PyQt6/sounddevice import).
+- **Lifetime gotcha**: top-level widgets need a strong Python reference or GC will delete them mid-run — the `MainWindow` is held via `app._main_window` in `gui/app.py`. More traps of this kind in [`memory/qt-traps.md`](memory/qt-traps.md).
 
 ## Status & Planning
 
