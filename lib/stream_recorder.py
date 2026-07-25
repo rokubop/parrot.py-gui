@@ -77,6 +77,7 @@ class StreamRecorder:
         # This is used to modify the wave file directly
         CHUNK_SIZE_OFFSET = 4
         DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
+        DATA_OFFSET = 44   # canonical PCM header; the payload starts here
         LITTLE_ENDIAN_INT = struct.Struct('<I')
 
         byteString = b''.join(self.total_audio_frames)
@@ -91,11 +92,19 @@ class StreamRecorder:
         # Thanks to hydrogen18.com for the explanation and code
         appendTotalFile = open(self.total_wav_filename, 'r+b')
         appendTotalFile.seek(0,2)
-        chunk_size = appendTotalFile.tell() - 8
+        file_size = appendTotalFile.tell()
+        chunk_size = file_size - 8
         appendTotalFile.seek(CHUNK_SIZE_OFFSET)
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(chunk_size))
         appendTotalFile.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-        sample_length = 2 * ( self.index * self.length_per_frame )
+        # Measured from the file, not recomputed from the frame counter.
+        # length_per_frame is already a byte count ( the stream hands over
+        # indata.tobytes() ), so the old `2 * ( index * length_per_frame )`
+        # applied the 16-bit sample width a second time and declared twice the
+        # real length. Takes that were never re-written by AppendWorker kept
+        # that header, and anything trusting it read the take as double its
+        # duration.
+        sample_length = file_size - DATA_OFFSET
 
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(sample_length))
         appendTotalFile.close()
@@ -153,14 +162,16 @@ class StreamRecorder:
                 # Overwrite the total recording length
                 CHUNK_SIZE_OFFSET = 4
                 DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
+                DATA_OFFSET = 44   # canonical PCM header; the payload starts here
                 LITTLE_ENDIAN_INT = struct.Struct('<I')
 
                 f.seek(0,2)
-                chunk_size = f.tell() - 8
+                file_size = f.tell()
+                chunk_size = file_size - 8
                 f.seek(CHUNK_SIZE_OFFSET)
                 f.write(LITTLE_ENDIAN_INT.pack(chunk_size))
                 f.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-                sample_length = 2 * ( self.index * self.length_per_frame )
+                sample_length = file_size - DATA_OFFSET   # see persist_total_wav_file
                 f.write(LITTLE_ENDIAN_INT.pack(sample_length))
 
         return should_resume
