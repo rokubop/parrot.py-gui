@@ -147,6 +147,20 @@ class AudioNetTrainer:
                     with torch.set_grad_enabled(True):
                         st_batch= time.time()
                         for local_batch, local_labels in self.train_loaders[j]:
+                            # A trailing batch of one kills the run: the net opens
+                            # with BatchNorm1d, which cannot compute a variance
+                            # from a single sample while training ( "Expected more
+                            # than 1 value per channel" ). It happens whenever the
+                            # training split is 1 more than a multiple of the batch
+                            # size, so it strikes at random depending on how much
+                            # was recorded. Skipped rather than drop_last=True,
+                            # which would silently discard every batch - and so
+                            # train on nothing - for a dataset smaller than one
+                            # batch. Validation is unaffected: it runs in eval
+                            # mode, where BatchNorm uses its running statistics.
+                            if local_batch.size(0) < 2:
+                                continue
+
                             # Transfer to GPU
                             local_batch, local_labels = local_batch.to(self.device), local_labels.to(self.device)
 
@@ -170,7 +184,10 @@ class AudioNetTrainer:
 
                             if( i % 10 == 0 ):
                                 correct_in_minibatch = ( local_labels == output.max(dim = 1)[1] ).sum()
-                                print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/self.batch_size))
+                                # Divide by the batch actually seen, not the
+                                # nominal size: the last batch of an epoch is
+                                # usually short, which understated its accuracy.
+                                print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/local_labels.size(0)))
                                 running_loss[j] = 0.0
 
                 epoch_loss = epoch_loss / ( self.dataset_size * (1 - self.validation_split) )
