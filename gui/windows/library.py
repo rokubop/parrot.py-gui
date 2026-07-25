@@ -716,17 +716,29 @@ class SoundLibraryPage(QWidget):
                                    QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
+        ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        ok.setObjectName("primaryAction")
         # Typing a name and pressing Enter has to create the sound. Setting Ok
         # as the default button is not enough on its own: the box re-picks a
         # default when the dialog is shown and Cancel wins, so Enter silently
         # cancelled and looked like nothing happening. Take Cancel out of the
         # running and accept straight from the field.
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)
+        ok.setDefault(True)
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setAutoDefault(False)
-        edit.returnPressed.connect(dlg.accept)
         row.addWidget(buttons)
         v.addLayout(row)
 
+        def sync_ok():
+            """There is nothing to confirm until the field holds a name, so Ok
+            only lights up as the accent action once it does - and Enter follows
+            the same rule rather than accepting an empty name."""
+            ready = bool(edit.text().strip())
+            ok.setEnabled(ready)
+            ok.setStyleSheet(self._primary_button_style() if ready else "")
+
+        edit.textChanged.connect(sync_ok)
+        edit.returnPressed.connect(lambda: dlg.accept() if ok.isEnabled() else None)
+        sync_ok()
         edit.setFocus()
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None
