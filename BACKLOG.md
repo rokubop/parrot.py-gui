@@ -19,9 +19,16 @@ grouped by area, not prioritised beyond the first section.
 - **The Talon companion inside a running Talon.** Needs a real session: install
   companion → Live tab shows frames → record → A/B replay. Everything else in
   the Talon tab was verified offscreen against the real setup.
-- **A real end-to-end training run**, plus model details / stale markers /
-  ensemble combine against real model files - needs a machine with recorded
-  sounds and trained models.
+- **A real end-to-end training run** - blocking, and the first thing to do once
+  proper sounds exist. GUI training was broken from the start (it imported a
+  `load_data` that does not exist in `lib.machinelearning`); the worker now
+  mirrors `lib/learn_data.py`'s Audio Net branch, but no full run has completed
+  through the GUI yet. Also covers model details, stale markers and ensemble
+  combine against real model files.
+  - Synthetic fixtures are a dead end here: the active strategy
+    (`auto_dBFS_secondary_dBFS_reject_cont_45ms_repair`) rejects anything that
+    reads as continuous, and hand-built bursts kept segmenting to zero
+    detections. Record two real sounds instead.
 
 ## Training performance
 

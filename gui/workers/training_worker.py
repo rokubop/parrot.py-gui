@@ -23,23 +23,26 @@ class TrainingWorker(QThread):
         self.training_finished.emit()
 
     def _train(self):
+        """Mirror lib/learn_data.py's Audio Net branch exactly.
+
+        This used to call a `load_data` that does not exist in
+        lib.machinelearning, so every GUI training run died at the import. The
+        real entry point is load_pytorch_data + an AudioDataset wrapper, and the
+        settings dict comes from the same helper the CLI uses so a GUI-trained
+        model is byte-comparable with a CLI-trained one.
+        """
+        # torch-importing modules stay function-local: pytorch is optional for
+        # the rest of the app, and on Windows it must load before Qt.
         from lib.audio_net import AudioNetTrainer
-        from lib.machinelearning import load_data
-        from config.config import (
-            RECORDINGS_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT,
-            FEATURE_ENGINEERING_TYPE, RATE, CHANNELS
-        )
+        from lib.audio_dataset import AudioDataset
+        from lib.load_data import load_pytorch_data
+        from lib.combine_models import get_current_default_settings
 
-        audio_settings = {
-            'version': 3,
-            'RATE': RATE,
-            'CHANNELS': CHANNELS,
-            'RECORD_SECONDS': RECORD_SECONDS,
-            'SLIDING_WINDOW_AMOUNT': SLIDING_WINDOW_AMOUNT,
-            'FEATURE_ENGINEERING_TYPE': FEATURE_ENGINEERING_TYPE
-        }
+        audio_settings = get_current_default_settings()
 
-        dataset = load_data(self.labels, RECORDINGS_FOLDER, RECORD_SECONDS, FEATURE_ENGINEERING_TYPE)
+        data = load_pytorch_data(self.labels,
+                                 audio_settings['FEATURE_ENGINEERING_TYPE'])
+        dataset = AudioDataset(data)
         trainer = AudioNetTrainer(dataset, self.net_count, audio_settings)
 
         def progress_callback(epoch, loss, accuracy, per_label_accuracy, is_new_best):
@@ -48,7 +51,12 @@ class TrainingWorker(QThread):
         def stop_check():
             return self._stop_requested
 
-        trainer.train(self.model_name, progress_callback=progress_callback, stop_check=stop_check)
+        # The trainer derives every weight file from this name, and the library
+        # expects <name>.pkl + <name>.pkl_<i>-BEST-weights.pth.tar - so the
+        # extension belongs in the filename, exactly as the CLI passes it.
+        trainer.train(self.model_name + ".pkl",
+                      progress_callback=progress_callback,
+                      stop_check=stop_check)
 
     def request_stop(self):
         self._stop_requested = True
