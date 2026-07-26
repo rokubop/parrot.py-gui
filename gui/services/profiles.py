@@ -195,6 +195,21 @@ def set_current(name):
         f.write(name + "\n")
 
 
+def export_copy(source_data_dir, dest_parent):
+    """Complete copy of a data tree into dest_parent, for backups.
+    Returns the created folder; auto-suffixes rather than overwriting."""
+    if not os.path.isdir(source_data_dir):
+        raise ProfileError(f"Nothing to export at {source_data_dir}")
+    base = os.path.join(dest_parent, "parrot-data")
+    dest = base
+    counter = 2
+    while os.path.exists(dest):
+        dest = f"{base}-{counter}"
+        counter += 1
+    _copy_data_tree(source_data_dir, dest)
+    return dest
+
+
 # ---- bringing in an outside setup -------------------------------------
 #
 # CLI veterans have a year-old checkout somewhere on disk. Importing copies

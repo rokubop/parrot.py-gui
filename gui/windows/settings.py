@@ -136,6 +136,30 @@ class SettingsPage(QWidget):
         profiles_layout.addWidget(manage_profiles_btn)
         layout.addWidget(profiles_group)
 
+        # ---- Back up ----
+        backup_group = QGroupBox("Back up")
+        backup_layout = QVBoxLayout(backup_group)
+        backup_desc = QLabel(
+            "Everything you make is in one folder: sounds, models, patterns, "
+            "settings, notes. Copy that folder anywhere, or make it a git "
+            "repo, and you have all of it.")
+        backup_desc.setWordWrap(True)
+        backup_layout.addWidget(backup_desc)
+        backup_row = QHBoxLayout()
+        open_data_btn = QPushButton("Open data folder")
+        open_data_btn.clicked.connect(self._on_open_data_folder)
+        backup_row.addWidget(open_data_btn)
+        export_btn = QPushButton("Export a copy...")
+        export_btn.setToolTip("A complete copy in a folder you pick")
+        export_btn.clicked.connect(self._on_export_copy)
+        backup_row.addWidget(export_btn)
+        self.backup_status = QLabel("")
+        self.backup_status.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+        backup_row.addWidget(self.backup_status)
+        backup_row.addStretch()
+        backup_layout.addLayout(backup_row)
+        layout.addWidget(backup_group)
+
         # ---- Save ----
         save_row = QHBoxLayout()
         save_row.addStretch()
@@ -156,6 +180,44 @@ class SettingsPage(QWidget):
         else:
             from gui.windows.profiles import ProfilesDialog
             ProfilesDialog(self.app_state, self).exec()
+
+    def _on_open_data_folder(self):
+        from config.config import DATA_DIR
+        try:
+            library_ops.open_in_file_manager(os.path.abspath(DATA_DIR))
+        except library_ops.LibraryOpError as exc:
+            self.backup_status.setText(str(exc))
+
+    def _on_export_copy(self):
+        from PyQt6.QtWidgets import QFileDialog
+        from config.config import DATA_DIR
+        from gui.services import profiles
+        from gui.windows.profiles import _OpWorker
+        dest_parent = QFileDialog.getExistingDirectory(self, "Export to")
+        if not dest_parent:
+            return
+        self.backup_status.setText("Copying...")
+        result = {}
+
+        def copy():
+            result["path"] = profiles.export_copy(DATA_DIR, dest_parent)
+
+        self._export_worker = _OpWorker(copy, self)
+        self._export_worker.done.connect(
+            lambda error: self._on_export_done(error, result))
+        self._export_worker.start()
+
+    def _on_export_done(self, error, result):
+        self._export_worker = None
+        if error:
+            self.backup_status.setText(error)
+            return
+        path = result.get("path", "")
+        self.backup_status.setText(f"Copied to {path}")
+        try:
+            library_ops.open_in_file_manager(path)
+        except library_ops.LibraryOpError:
+            pass
 
     def _folder_row(self, name, path):
         row = QHBoxLayout()
