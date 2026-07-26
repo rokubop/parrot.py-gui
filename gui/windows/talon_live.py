@@ -22,8 +22,9 @@ from gui import theme
 from gui.services import capture_model
 from gui.workers.bridge_worker import BridgeWorker
 from gui.services.talon_companion import BRIDGE_PORT
+from config.config import DATA_DIR
 
-CAPTURES_DIR = os.path.join("data", "talon", "captures")
+CAPTURES_DIR = os.path.join(DATA_DIR, "talon", "captures")
 
 _STATUS_COLOR = {"detected": "#41d97f", "grace_detected": "#5ab0f5",
                  "throttled": "#d3a45c", "": "#8a8f98"}

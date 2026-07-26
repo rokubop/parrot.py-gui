@@ -17,8 +17,9 @@ from PyQt6.QtWidgets import (
 
 from gui import theme
 from gui.services import patterns_replay, patterns_store, session_stats
+from config.config import DATA_DIR
 
-CAPTURES_DIR = os.path.join("data", "talon", "captures")
+CAPTURES_DIR = os.path.join(DATA_DIR, "talon", "captures")
 
 
 class TalonCapturesView(QWidget):

@@ -15,7 +15,10 @@ from gui import theme
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Parrot.py")
+        from gui.services import profiles
+        profile = profiles.current_profile()
+        self.setWindowTitle(
+            "Parrot.py" if profile is None else f"Parrot.py (profile: {profile})")
         self.setMinimumSize(1200, 800)
 
         self.app_state = AppState(self)
@@ -38,6 +41,7 @@ class MainWindow(QMainWindow):
         self.models_page = None
         self.talon_page = None
         self.settings_page = None
+        self.profiles_page = None
         self.about_page = None
         self.recording_view = None
         self.edit_view = None
@@ -53,7 +57,7 @@ class MainWindow(QMainWindow):
         self._nav_group.setExclusive(True)
 
         self.nav_actions = {}
-        for text in ("Home", "Sounds", "Models", "Talon", "Settings", "About"):
+        for text in ("Home", "Sounds", "Models", "Talon", "Settings", "Profiles", "About"):
             action = QAction(text, self)
             action.setCheckable(True)
             action.triggered.connect(lambda _checked, t=text: self._show_tab(t))
@@ -119,6 +123,13 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(self.settings_page)
         return self.settings_page
 
+    def _get_profiles_page(self):
+        if self.profiles_page is None:
+            from gui.windows.profiles import ProfilesPage
+            self.profiles_page = ProfilesPage(self.app_state, self)
+            self.stack.addWidget(self.profiles_page)
+        return self.profiles_page
+
     def _get_about_page(self):
         if self.about_page is None:
             from gui.windows.about import AboutPage
@@ -174,6 +185,10 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self._get_talon_page())
         elif name == "Settings":
             self.stack.setCurrentWidget(self._get_settings_page())
+        elif name == "Profiles":
+            page = self._get_profiles_page()
+            page._refresh()
+            self.stack.setCurrentWidget(page)
         elif name == "About":
             self.stack.setCurrentWidget(self._get_about_page())
 

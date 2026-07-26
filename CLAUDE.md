@@ -134,7 +134,8 @@ launches.
 
 ## GUI Architecture
 
-- **Pages**: QStackedWidget in MainWindow — **Home** (default landing: 1-2-3 workflow bubbles, active-model/Talon status, notes), **Sounds** (read-only library), Models, Talon, Settings, About, plus Recording/Edit sub-views.
+- **Pages**: QStackedWidget in MainWindow — **Home** (default landing: 1-2-3 workflow bubbles, active-model/Talon status, notes), **Sounds** (read-only library), Models, Talon, Settings, Profiles, About, plus Recording/Edit sub-views.
+- **Profiles**: every data path derives from `DATA_DIR` (`PARROT_DATA_DIR`, default `data`) in `lib/default_config.py`; a profile is a full data tree under `data-profiles/<name>/` and switching relaunches the GUI with the env var set (`gui/services/profiles.py`). `PARROT_TALON_HOME=none` simulates no Talon; the toggle for it shows with `PARROT_DEBUG=1`.
 - **State**: AppState (QObject with signals: recordings_changed, models_changed, talon_status_changed)
 - **Widgets**: pyqtgraph-based (audio preview, session card, waveform, segment bar, duration bar, training plot)
 - **Workers**: QThread subclasses for recording, training, re-segmentation

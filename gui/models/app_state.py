@@ -5,13 +5,13 @@ import json
 import filecmp
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
-from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import DATA_DIR, RECORDINGS_FOLDER, CLASSIFIER_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from lib.srt import count_total_label_ms, ms_to_srt_timestring
 from lib.stream_processing import CURRENT_VERSION
 from gui.services import library_ops
 from gui.services.talon_discovery import discover_talon, compare_model_files, TalonDiscoveryResult
 
-NOTES_PATH = os.path.join("data", "notes.json")
+NOTES_PATH = os.path.join(DATA_DIR, "notes.json")
 
 
 class AppState(QObject):

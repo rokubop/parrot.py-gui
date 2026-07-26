@@ -47,8 +47,8 @@ class SettingsPage(QWidget):
             f"font-size: 20px; font-weight: bold; color: {theme.colors()['text_bright']};")
         layout.addWidget(title)
 
-        note = QLabel("Changes are saved to data/code/config.py and take effect "
-                      "the next time you launch Parrot.py.")
+        note = QLabel(f"Changes are saved to {user_config.USER_CONFIG_PATH} "
+                      "and take effect the next time you launch Parrot.py.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         layout.addWidget(note)

@@ -520,7 +520,8 @@ class TalonPage(QWidget):
         """Observed per-pattern stats from the newest recorded session,
         cached by (path, mtime). Empty dict when there are no sessions."""
         from gui.services import session_stats
-        captures_dir = os.path.join("data", "talon", "captures")
+        from config.config import DATA_DIR
+        captures_dir = os.path.join(DATA_DIR, "talon", "captures")
         newest = None
         if os.path.isdir(captures_dir):
             sessions = [os.path.join(captures_dir, n)

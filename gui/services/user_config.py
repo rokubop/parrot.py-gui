@@ -9,7 +9,9 @@ time take effect on the next launch - the Settings page says so.
 import os
 import ast
 
-USER_CONFIG_PATH = os.path.join("data", "code", "config.py")
+from config.config import DATA_DIR
+
+USER_CONFIG_PATH = os.path.join(DATA_DIR, "code", "config.py")
 
 # Keys the Settings page is allowed to manage. Anything else already in the file
 # is preserved untouched.

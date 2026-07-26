@@ -47,6 +47,14 @@ def _get_wsl_windows_appdata() -> Optional[str]:
 
 
 def get_talon_home() -> Optional[str]:
+    # Debug override set by the profile switcher: "none" simulates a machine
+    # without Talon; any other value stands in for the real ~/.talon.
+    override = os.environ.get("PARROT_TALON_HOME")
+    if override is not None:
+        if override.strip().lower() in ("", "none"):
+            return None
+        return override if os.path.isdir(override) else None
+
     candidates = []
 
     if sys.platform == "win32":

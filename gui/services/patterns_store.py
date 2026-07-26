@@ -16,7 +16,9 @@ import re
 import shutil
 import time
 
-TALON_DATA_DIR = os.path.join("data", "talon")
+from config.config import DATA_DIR
+
+TALON_DATA_DIR = os.path.join(DATA_DIR, "talon")
 SNAPSHOT_DIR = os.path.join(TALON_DATA_DIR, "snapshots")
 VARIANTS_DIR = os.path.join(TALON_DATA_DIR, "variants")
 
