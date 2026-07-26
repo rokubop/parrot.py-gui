@@ -179,7 +179,12 @@ class HomePage(QWidget):
         self.hero_sub.setWordWrap(True)
         v.addWidget(self.hero_sub)
 
-        steps_row = QHBoxLayout()
+        # steps live on their own widget so the whole row can compact to a
+        # one-line strip once every step is done - a veteran's dashboard
+        # should lead with their stuff, not with onboarding
+        self.steps_widget = QWidget()
+        steps_row = QHBoxLayout(self.steps_widget)
+        steps_row.setContentsMargins(0, 0, 0, 0)
         steps_row.setSpacing(12)
         self.step_record = _StepCard(1, "Record sounds", "Open Sounds")
         self.step_train = _StepCard(2, "Train a model", "Train a model")
@@ -192,7 +197,12 @@ class HomePage(QWidget):
         self.step_connect.help_btn.clicked.connect(lambda: self._show_help("connect"))
         for card in (self.step_record, self.step_train, self.step_connect):
             steps_row.addWidget(card, 1)
-        v.addLayout(steps_row)
+        v.addWidget(self.steps_widget)
+        self.compact_steps_when_done = True
+        self.allset_label = QLabel("")
+        self.allset_label.setWordWrap(True)
+        self.allset_label.setVisible(False)
+        v.addWidget(self.allset_label)
 
         # expectations for new users; hides once they have 2+ sounds
         self.prep_panel, self.prep_title, self.prep_body = \
@@ -216,7 +226,7 @@ class HomePage(QWidget):
         # Manage profiles > Import, so late linkers lose nothing. Nothing is
         # auto-scanned until they ask.
         from gui.services import profiles as profiles_service
-        self.import_panel, _, self.import_body = self._make_panel(
+        self.import_panel, self.import_title, self.import_body = self._make_panel(
             "Already used Parrot.py before?")
         self.import_body.setText(
             "Bring the sounds and models of an existing install in as a "
@@ -239,6 +249,13 @@ class HomePage(QWidget):
         self.status_title = QLabel("Where you're at")
         status_title_row.addWidget(self.status_title)
         status_title_row.addStretch()
+        self.open_talon_btn = QPushButton("Open Talon folder")
+        self.open_talon_btn.setFlat(True)
+        self.open_talon_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.open_talon_btn.setToolTip("Your Talon user folder")
+        self.open_talon_btn.clicked.connect(self._on_open_talon_folder)
+        self.open_talon_btn.setVisible(False)
+        status_title_row.addWidget(self.open_talon_btn)
         self.open_data_btn = QPushButton("Open data folder")
         self.open_data_btn.setFlat(True)
         self.open_data_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -259,6 +276,20 @@ class HomePage(QWidget):
         status_row.addWidget(self.model_panel, 1)
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
+
+        # only rendered when a check fires; silence means all good
+        self.attention_panel = QFrame()
+        self.attention_panel.setObjectName("homePanel")
+        av = QVBoxLayout(self.attention_panel)
+        av.setContentsMargins(16, 12, 16, 14)
+        av.setSpacing(4)
+        self.attention_title = QLabel("Needs attention")
+        av.addWidget(self.attention_title)
+        self.attention_rows = QVBoxLayout()
+        self.attention_rows.setSpacing(2)
+        av.addLayout(self.attention_rows)
+        self.attention_panel.setVisible(False)
+        v.addWidget(self.attention_panel)
 
         # Non-zero factor: leftover height belongs at the bottom of the page,
         # not distributed into the step cards (which would stretch them tall
@@ -291,6 +322,38 @@ class HomePage(QWidget):
             library_ops.open_in_file_manager(os.path.abspath(DATA_DIR))
         except library_ops.LibraryOpError:
             pass
+
+    def _on_open_talon_folder(self):
+        if getattr(self, "_talon_dir", None):
+            try:
+                library_ops.open_in_file_manager(self._talon_dir)
+            except library_ops.LibraryOpError:
+                pass
+
+    def _render_attention(self, items, t):
+        while self.attention_rows.count():
+            taken = self.attention_rows.takeAt(0)
+            if taken.widget() is not None:
+                taken.widget().deleteLater()
+        for item in items:
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            text = QLabel(item["text"])
+            text.setWordWrap(True)
+            text.setStyleSheet(f"color: {t['text']}; border: none;")
+            h.addWidget(text, 1)
+            btn = QPushButton(item["action"])
+            btn.setFlat(True)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setStyleSheet(
+                f"QPushButton {{ color: {t['accent']}; background: transparent; "
+                f"border: none; padding: 2px 4px; }}")
+            btn.clicked.connect(
+                lambda _checked, tab=item["tab"]: self.navigate.emit(tab))
+            h.addWidget(btn)
+            self.attention_rows.addWidget(row)
+        self.attention_panel.setVisible(bool(items))
 
     def _on_dismiss_import(self):
         from gui.services import profiles as profiles_service
@@ -332,13 +395,17 @@ class HomePage(QWidget):
         self.status_title.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {t['text_bright']}; "
             f"margin-top: 8px;")
-        for panel in (self.model_panel, self.talon_panel, self.prep_panel):
+        for panel in (self.model_panel, self.talon_panel, self.prep_panel,
+                      self.import_panel, self.attention_panel):
             panel.setStyleSheet(
                 f"QFrame#homePanel {{ background-color: {t['card']}; "
                 f"border: 1px solid {t['border']}; border-radius: 8px; }}")
-        for label in (self.model_panel_title, self.talon_panel_title, self.prep_title):
+        for label in (self.model_panel_title, self.talon_panel_title,
+                      self.prep_title, self.import_title, self.attention_title):
             label.setStyleSheet(
                 f"font-size: 14px; font-weight: bold; color: {t['text_bright']}; border: none;")
+        self.allset_label.setStyleSheet(
+            f"color: {t['text_dim']}; font-size: 13px; padding: 2px 0;")
 
     def refresh_theme(self):
         self._apply_theme_styles()
@@ -399,11 +466,31 @@ class HomePage(QWidget):
         if not step1_done:
             self.prep_body.setText(self._prep_html(t))
 
+        # veteran view: steps collapse to one line of what you have
+        all_done = step1_done and step2_done and step3_done
+        compact = all_done and self.compact_steps_when_done
+        self.steps_widget.setVisible(not compact)
+        self.allset_label.setVisible(compact)
+        if compact:
+            total_min = round(sum(self.app_state.get_label_duration_ms(l)
+                                  for l in labels) / 60000)
+            count = len(talon.patterns.get("patterns", talon.patterns) or {})
+            self.allset_label.setText(
+                f"✓ Set up · {len(labels)} sounds, {total_min} min recorded · "
+                f"{len(model_names)} models · Talon running “{deployed_name}” "
+                f"with {count} patterns")
+
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
+        self.open_talon_btn.setVisible(bool(talon.talon_home))
+        self._talon_dir = talon.talon_user_dir or talon.talon_home
         if not first_run:
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
+
+        from gui.services import attention
+        items = attention.compute(self.app_state, talon, self._loaded_sounds.get)
+        self._render_attention(items, t)
 
     def _prep_html(self, t):
         return help_dialog.rows_html(help_dialog.PREP_ROWS)
