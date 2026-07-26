@@ -1,11 +1,15 @@
 import os
+import sys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 import pyqtgraph as pg
 from gui.windows.main_window import MainWindow
 from gui import theme
 
-ICON_PATH = os.path.join(os.path.dirname(__file__), "assets", "parrot.png")
+# macOS docks expect the rounded-tile version (a free-form mark renders
+# oversized next to other apps); Windows and Linux use the bare head.
+_ICON_FILE = "parrot-tile.png" if sys.platform == "darwin" else "parrot.png"
+ICON_PATH = os.path.join(os.path.dirname(__file__), "assets", _ICON_FILE)
 
 
 def create_app(argv):
