@@ -210,9 +210,11 @@ class HomePage(QWidget):
         guide_row.addStretch()
         v.addLayout(guide_row)
 
-        # CLI veterans land here with a year-old setup elsewhere on disk.
-        # Offer to copy it in as a profile; nothing is auto-scanned until
-        # they ask. Gone once dismissed or once any profile exists.
+        # A pre-existing setup can arrive at any time (download the old repo
+        # a year after installing the app), so the card is not tied to app
+        # state: it stays until dismissed or until one import has been done -
+        # after that the flow is known from Manage profiles. Nothing is
+        # auto-scanned until they ask.
         from gui.services import profiles as profiles_service
         self.import_panel, _, self.import_body = self._make_panel(
             "Already used Parrot.py before?")
@@ -231,8 +233,7 @@ class HomePage(QWidget):
         import_row.addStretch()
         self.import_panel.layout().addLayout(import_row)
         self.import_panel.setVisible(
-            not profiles_service.list_profiles()
-            and not profiles_service.import_card_dismissed())
+            not profiles_service.import_card_dismissed())
         v.addWidget(self.import_panel)
 
         self.status_title = QLabel("Where you're at")
@@ -263,7 +264,8 @@ class HomePage(QWidget):
         window = self.window()
         if hasattr(window, "_refresh_profile_chip"):
             window._refresh_profile_chip()
-        if profiles_service.list_profiles():
+        if dialog.imported:
+            profiles_service.dismiss_import_card()
             self.import_panel.setVisible(False)
 
     def _on_dismiss_import(self):
