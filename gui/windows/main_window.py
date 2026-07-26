@@ -4,8 +4,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt
-import sounddevice as sd
-from config.config import INPUT_DEVICE_INDEX
 from gui.models.app_state import AppState
 from gui.windows.home import HomePage
 from gui.windows.library import SoundLibraryPage
@@ -75,27 +73,26 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
-        # Audacity-style device pickers, right side of the top bar
-        from gui.widgets.device_bar import DeviceBar
-        self.device_bar = DeviceBar()
-        self.device_bar.input_changed.connect(lambda _i: self._update_status_bar())
-        toolbar.addWidget(self.device_bar)
         notes_action = QAction("📝 Notes", self)
         notes_action.setCheckable(True)
         notes_action.toggled.connect(self.notes_dock.setVisible)
         self.notes_dock.visibilityChanged.connect(notes_action.setChecked)
         toolbar.addAction(notes_action)
 
-        # Status bar: audio device (left) + the active keybindings for whatever
-        # view is showing (right). The keybinding hint is the single, always-in-
-        # the-same-place home for shortcuts - each page reports its own.
+        # Status bar: Audacity-style device pickers (left) + the active
+        # keybindings for whatever view is showing (right). The keybinding hint
+        # is the single, always-in-the-same-place home for shortcuts - each page
+        # reports its own. Nothing may call showMessage() here: temporary
+        # messages hide left-side (non-permanent) widgets, i.e. the pickers.
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        from gui.widgets.device_bar import DeviceBar
+        self.device_bar = DeviceBar()
+        self.status_bar.addWidget(self.device_bar)
         self.keys_label = QLabel("")
         self.keys_label.setStyleSheet(f"color: {theme.colors()['text_dim']}; padding-right: 8px;")
         self.status_bar.addPermanentWidget(self.keys_label)
         self._wire_keybindings(self.library_page)
-        self._update_status_bar()
         self._refresh_keybindings()
 
     # ---- lazy page construction ---------------------------------------
@@ -247,13 +244,3 @@ class MainWindow(QMainWindow):
         page = self.stack.currentWidget()
         getter = getattr(page, "keybinding_hint", None)
         self.keys_label.setText(getter() if callable(getter) else "")
-
-    def _update_status_bar(self):
-        from gui.services import audio_devices
-        index = audio_devices.input_index
-        try:
-            device_info = sd.query_devices(index)
-            device_name = device_info['name'] if device_info else "Unknown"
-        except Exception:
-            device_name = "No device"
-        self.status_bar.showMessage(f"Audio device: {device_name} (index {index})")
