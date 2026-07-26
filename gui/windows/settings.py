@@ -123,6 +123,19 @@ class SettingsPage(QWidget):
         folder_layout.addLayout(self._folder_row("Models", CLASSIFIER_FOLDER))
         layout.addWidget(folder_group)
 
+        # ---- Profiles ----
+        profiles_group = QGroupBox("Profiles")
+        profiles_layout = QHBoxLayout(profiles_group)
+        profiles_desc = QLabel("Separate complete setups: sounds, models, notes "
+                               "and settings kept apart. Once one exists, the "
+                               "switcher lives in the top right corner.")
+        profiles_desc.setWordWrap(True)
+        profiles_layout.addWidget(profiles_desc, stretch=1)
+        manage_profiles_btn = QPushButton("Manage profiles...")
+        manage_profiles_btn.clicked.connect(self._on_manage_profiles)
+        profiles_layout.addWidget(manage_profiles_btn)
+        layout.addWidget(profiles_group)
+
         # ---- Save ----
         save_row = QHBoxLayout()
         save_row.addStretch()
@@ -135,6 +148,14 @@ class SettingsPage(QWidget):
         layout.addLayout(save_row)
 
         layout.addStretch()
+
+    def _on_manage_profiles(self):
+        window = self.window()
+        if hasattr(window, "open_profiles_dialog"):
+            window.open_profiles_dialog()  # also refreshes the toolbar chip
+        else:
+            from gui.windows.profiles import ProfilesDialog
+            ProfilesDialog(self.app_state, self).exec()
 
     def _folder_row(self, name, path):
         row = QHBoxLayout()

@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel, QWidget,
-    QSizePolicy, QVBoxLayout
+    QSizePolicy, QVBoxLayout, QToolButton, QMenu, QApplication
 )
 from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from gui.models.app_state import AppState
+from gui.services import profiles
 from gui.windows.home import HomePage
 from gui.windows.library import SoundLibraryPage
 from gui import theme
@@ -13,7 +14,6 @@ from gui import theme
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        from gui.services import profiles
         profile = profiles.current_profile()
         self.setWindowTitle(
             "Parrot.py" if profile is None else f"Parrot.py (profile: {profile})")
@@ -39,7 +39,6 @@ class MainWindow(QMainWindow):
         self.models_page = None
         self.talon_page = None
         self.settings_page = None
-        self.profiles_page = None
         self.about_page = None
         self.recording_view = None
         self.edit_view = None
@@ -55,7 +54,7 @@ class MainWindow(QMainWindow):
         self._nav_group.setExclusive(True)
 
         self.nav_actions = {}
-        for text in ("Home", "Sounds", "Models", "Talon", "Settings", "Profiles", "About"):
+        for text in ("Home", "Sounds", "Models", "Talon", "Settings", "About"):
             action = QAction(text, self)
             action.setCheckable(True)
             action.triggered.connect(lambda _checked, t=text: self._show_tab(t))
@@ -73,6 +72,16 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
+        # Profile chip: who you are + the switcher, Chrome-style. Hidden until
+        # a profile exists so the common single-setup case never sees it;
+        # the entry point for creating one is in Settings.
+        self.profile_chip = QToolButton()
+        self.profile_chip.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._profile_menu = QMenu(self)
+        self._profile_menu.aboutToShow.connect(self._build_profile_menu)
+        self.profile_chip.setMenu(self._profile_menu)
+        toolbar.addWidget(self.profile_chip)
+        self._refresh_profile_chip()
         notes_action = QAction("📝 Notes", self)
         notes_action.setCheckable(True)
         notes_action.toggled.connect(self.notes_dock.setVisible)
@@ -119,13 +128,6 @@ class MainWindow(QMainWindow):
             self.settings_page = SettingsPage(self.app_state, self)
             self.stack.addWidget(self.settings_page)
         return self.settings_page
-
-    def _get_profiles_page(self):
-        if self.profiles_page is None:
-            from gui.windows.profiles import ProfilesPage
-            self.profiles_page = ProfilesPage(self.app_state, self)
-            self.stack.addWidget(self.profiles_page)
-        return self.profiles_page
 
     def _get_about_page(self):
         if self.about_page is None:
@@ -182,10 +184,6 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self._get_talon_page())
         elif name == "Settings":
             self.stack.setCurrentWidget(self._get_settings_page())
-        elif name == "Profiles":
-            page = self._get_profiles_page()
-            page._refresh()
-            self.stack.setCurrentWidget(page)
         elif name == "About":
             self.stack.setCurrentWidget(self._get_about_page())
 
@@ -229,6 +227,40 @@ class MainWindow(QMainWindow):
         if self.edit_view is not None and current is not self.edit_view:
             self.edit_view.stop_playback()
         self._refresh_keybindings()
+
+    # ---- profile chip ---------------------------------------------------
+
+    def _refresh_profile_chip(self):
+        current = profiles.current_profile()
+        self.profile_chip.setText(f"👤 {current or 'Main'}")
+        self.profile_chip.setVisible(
+            bool(profiles.list_profiles()) or current is not None)
+
+    def _build_profile_menu(self):
+        menu = self._profile_menu
+        menu.clear()
+        current = profiles.current_profile()
+        for name in [None] + profiles.list_profiles():
+            action = menu.addAction(name or "Main")
+            action.setCheckable(True)
+            action.setChecked(name == current)
+            if name == current:
+                action.setEnabled(False)
+            else:
+                action.triggered.connect(
+                    lambda _checked, n=name: self._switch_profile(n))
+        menu.addSeparator()
+        menu.addAction("Manage profiles...", self.open_profiles_dialog)
+
+    def _switch_profile(self, name):
+        profiles.spawn_into(name)
+        QTimer.singleShot(0, QApplication.instance().quit)
+
+    def open_profiles_dialog(self):
+        from gui.windows.profiles import ProfilesDialog
+        dialog = ProfilesDialog(self.app_state, self)
+        dialog.exec()
+        self._refresh_profile_chip()
 
     # ---- keybinding status bar -----------------------------------------
 

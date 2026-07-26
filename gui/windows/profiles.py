@@ -1,4 +1,4 @@
-"""Profiles page.
+"""Manage-profiles dialog, reached from the toolbar profile chip and Settings.
 
 Lists the Main data plus every profile under data-profiles/, with what each
 one has (sounds, models). Switching relaunches the GUI with PARROT_DATA_DIR
@@ -10,7 +10,7 @@ import os
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QGroupBox, QComboBox, QInputDialog, QMessageBox,
     QApplication
 )
@@ -36,24 +36,21 @@ class _OpWorker(QThread):
             self.done.emit(str(exc))
 
 
-class ProfilesPage(QWidget):
+class ProfilesDialog(QDialog):
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
         self.app_state = app_state
         self._worker = None
+        self.setWindowTitle("Profiles")
+        self.resize(720, 460)
         self._setup_ui()
         self._refresh()
 
     def _setup_ui(self):
         t = theme.colors()
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
-
-        title = QLabel("Profiles")
-        title.setStyleSheet(
-            f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
-        layout.addWidget(title)
 
         note = QLabel(
             "Each profile is a complete separate setup: sounds, models, notes, "
