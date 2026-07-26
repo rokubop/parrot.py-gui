@@ -236,8 +236,19 @@ class HomePage(QWidget):
             not profiles_service.import_card_dismissed())
         v.addWidget(self.import_panel)
 
+        status_title_row = QHBoxLayout()
         self.status_title = QLabel("Where you're at")
-        v.addWidget(self.status_title)
+        status_title_row.addWidget(self.status_title)
+        status_title_row.addStretch()
+        self.open_data_btn = QPushButton("Open data folder")
+        self.open_data_btn.setFlat(True)
+        self.open_data_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.open_data_btn.setToolTip(
+            "Everything you make, in one folder: sounds, models, patterns, "
+            "settings, notes")
+        self.open_data_btn.clicked.connect(self._on_open_data_folder)
+        status_title_row.addWidget(self.open_data_btn)
+        v.addLayout(status_title_row)
         self.status_row_widget = QWidget()
         status_row = QHBoxLayout(self.status_row_widget)
         status_row.setContentsMargins(0, 0, 0, 0)
@@ -267,6 +278,13 @@ class HomePage(QWidget):
         if dialog.imported:
             profiles_service.dismiss_import_card()
             self.import_panel.setVisible(False)
+
+    def _on_open_data_folder(self):
+        from config.config import DATA_DIR
+        try:
+            library_ops.open_in_file_manager(os.path.abspath(DATA_DIR))
+        except library_ops.LibraryOpError:
+            pass
 
     def _on_dismiss_import(self):
         from gui.services import profiles as profiles_service
