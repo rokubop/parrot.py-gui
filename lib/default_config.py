@@ -53,10 +53,52 @@ TYPE_FEATURE_ENGINEERING_NORM_MFCC = 3
 TYPE_FEATURE_ENGINEERING_NORM_MFSC = 4
 FEATURE_ENGINEERING_TYPE = TYPE_FEATURE_ENGINEERING_NORM_MFSC
 
-# Every piece of user data lives under this one root, so pointing it at a
-# different folder makes the whole app act as a different user. GUI profiles
-# set PARROT_DATA_DIR before relaunching; leave it unset for the real data/.
-DATA_DIR = os.environ.get("PARROT_DATA_DIR", "data")
+# Every piece of user data lives under one root, so pointing it at a
+# different folder makes the whole app act as a different user.
+#
+# The root: a checkout (a ./data dir in cwd, which .gitkeep guarantees)
+# keeps today's relative paths so the CLI and existing setups never move;
+# an installed app has no writable cwd, so the root is the platform
+# user-data dir - the same three locations the Python bootstrap caches to.
+def _default_data_root():
+    if os.path.isdir("data"):
+        return ""  # checkout: paths stay exactly "data/...", CLI-compatible
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "parrot.py")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/parrot.py")
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "parrot.py")
+
+
+def _read_current_profile(profiles_dir):
+    """data-profiles/current names the active profile so the choice survives
+    a fresh launch (the switcher's env var only lives in its relaunch chain).
+    A stale name (deleted profile) falls back to Main rather than erroring."""
+    try:
+        with open(os.path.join(profiles_dir, "current"), encoding="utf-8") as f:
+            name = f.read().strip()
+    except OSError:
+        return None
+    if name and os.path.isdir(os.path.join(profiles_dir, name)):
+        return name
+    return None
+
+
+DATA_ROOT = _default_data_root()
+PROFILES_DIR = os.path.join(DATA_ROOT, "data-profiles")
+
+# Active data dir: explicit env override (dev / the switcher's relaunch)
+# beats the persisted pointer, which beats the Main default.
+_env_data_dir = os.environ.get("PARROT_DATA_DIR")
+_current_profile = None if _env_data_dir else _read_current_profile(PROFILES_DIR)
+if _env_data_dir:
+    DATA_DIR = _env_data_dir
+elif _current_profile:
+    DATA_DIR = os.path.join(PROFILES_DIR, _current_profile)
+else:
+    DATA_DIR = os.path.join(DATA_ROOT, "data")
 DATASET_FOLDER = os.path.join(DATA_DIR, "recordings")
 RECORDINGS_FOLDER = DATASET_FOLDER
 REPLAYS_FOLDER = os.path.join(DATA_DIR, "replays")

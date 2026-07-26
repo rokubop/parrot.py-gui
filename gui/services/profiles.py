@@ -23,12 +23,12 @@ import shutil
 import subprocess
 import sys
 
-from config.config import DATA_DIR
+from config.config import DATA_DIR, DATA_ROOT, PROFILES_DIR
 
-PROFILES_DIR = "data-profiles"
-MAIN_DATA_DIR = "data"
+MAIN_DATA_DIR = os.path.join(DATA_ROOT, "data")
 META_FILE = "profile.json"
 BASELINE_DIR = ".baseline"
+CURRENT_POINTER = os.path.join(PROFILES_DIR, "current")
 
 # Names double as folder names, same rules as pattern variants.
 _VALID_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,60}$")
@@ -99,6 +99,9 @@ def write_meta(name, meta):
 def _check_new_name(name):
     if not _VALID_NAME.match(name or ""):
         raise ProfileError("Profile names use letters, numbers, spaces, . _ -")
+    if name == "current":
+        # would collide with the data-profiles/current pointer file
+        raise ProfileError("current is reserved; pick another name")
     if name in list_profiles():
         raise ProfileError(f"A profile named {name} already exists")
 
@@ -170,6 +173,26 @@ def delete(name):
     if not os.path.isdir(root):
         raise ProfileError(f"No profile named {name}")
     shutil.rmtree(root)
+    # a stale pointer would fall back to Main anyway; keep it truthful
+    try:
+        with open(CURRENT_POINTER, encoding="utf-8") as f:
+            if f.read().strip() == name:
+                os.remove(CURRENT_POINTER)
+    except OSError:
+        pass
+
+
+def set_current(name):
+    """Persist which profile fresh launches should land on (None for Main)."""
+    if name is None:
+        try:
+            os.remove(CURRENT_POINTER)
+        except OSError:
+            pass
+        return
+    os.makedirs(PROFILES_DIR, exist_ok=True)
+    with open(CURRENT_POINTER, "w", encoding="utf-8") as f:
+        f.write(name + "\n")
 
 
 # ---- bringing in an outside setup -------------------------------------
@@ -254,8 +277,10 @@ def spawn_into(name):
     """Start a fresh GUI process running as `name` (None for Main).
 
     The caller quits the current app afterwards; the new process is detached
-    so it survives that.
+    so it survives that. The choice is also persisted so launches from the
+    dock/start menu land on the same profile.
     """
+    set_current(name)
     env = dict(os.environ)
     if name is None:
         env.pop("PARROT_DATA_DIR", None)
