@@ -210,10 +210,10 @@ class HomePage(QWidget):
         guide_row.addStretch()
         v.addLayout(guide_row)
 
-        # A pre-existing setup can arrive at any time (download the old repo
-        # a year after installing the app), so the card is not tied to app
-        # state: it stays until dismissed or until one import has been done -
-        # after that the flow is known from Manage profiles. Nothing is
+        # For exactly one moment: a fresh empty install owned by someone whose
+        # real setup lives elsewhere. Once anything is recorded or trained the
+        # card is gone for good - the capability itself stays reachable via
+        # Manage profiles > Import, so late linkers lose nothing. Nothing is
         # auto-scanned until they ask.
         from gui.services import profiles as profiles_service
         self.import_panel, _, self.import_body = self._make_panel(
@@ -232,8 +232,7 @@ class HomePage(QWidget):
         import_row.addWidget(dismiss_btn)
         import_row.addStretch()
         self.import_panel.layout().addLayout(import_row)
-        self.import_panel.setVisible(
-            not profiles_service.import_card_dismissed())
+        self.import_panel.setVisible(self._import_card_due())
         v.addWidget(self.import_panel)
 
         status_title_row = QHBoxLayout()
@@ -266,6 +265,13 @@ class HomePage(QWidget):
         # and strand their buttons far below the status line).
         v.addStretch(1)
         self._apply_theme_styles()
+
+    def _import_card_due(self):
+        from config.config import DATA_DIR
+        from gui.services import profiles as profiles_service
+        if profiles_service.import_card_dismissed():
+            return False
+        return profiles_service.stats(DATA_DIR) == (0, 0)
 
     def _on_find_setup(self):
         from gui.services import profiles as profiles_service
@@ -345,6 +351,7 @@ class HomePage(QWidget):
         model_names = self.app_state.get_model_names()
         talon = self.app_state.get_talon_status()
         t = theme.colors()
+        self.import_panel.setVisible(self._import_card_due())
 
         deployed_name = None
         if talon.model_path_from_talon:
