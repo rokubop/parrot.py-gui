@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QGroupBox, QComboBox, QInputDialog, QMessageBox,
-    QApplication
+    QApplication, QFileDialog
 )
 
 from gui import theme
@@ -34,6 +34,146 @@ class _OpWorker(QThread):
             self.done.emit("")
         except Exception as exc:
             self.done.emit(str(exc))
+
+
+class _ScanWorker(QThread):
+    found = pyqtSignal(list)
+
+    def run(self):
+        try:
+            self.found.emit(profiles.find_existing_setups())
+        except Exception:
+            self.found.emit([])
+
+
+class ImportSetupDialog(QDialog):
+    """Bring an outside Parrot.py setup in as a profile, by copy.
+
+    Scans common folders for the data/recordings shape on open; a folder
+    picker covers everything the scan misses. The source is never modified.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Bring in an existing setup")
+        self.resize(640, 380)
+        self._worker = None
+        self.imported = None  # profile name on success
+
+        t = theme.colors()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        note = QLabel(
+            "Copies the sounds and models of another Parrot.py into a "
+            "profile here. The original folder is not changed.")
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: {t['text_dim']};")
+        layout.addWidget(note)
+
+        self.list = QListWidget()
+        self.list.currentItemChanged.connect(lambda *_: self._update_buttons())
+        self.list.itemDoubleClicked.connect(lambda _i: self._on_import())
+        layout.addWidget(self.list, stretch=1)
+
+        row = QHBoxLayout()
+        choose_btn = QPushButton("Choose folder...")
+        choose_btn.setToolTip("Pick a Parrot.py folder the scan didn't find")
+        choose_btn.clicked.connect(self._on_choose)
+        row.addWidget(choose_btn)
+        row.addStretch()
+        self.status_label = QLabel("Scanning the usual folders...")
+        self.status_label.setStyleSheet(f"color: {t['text_dim']};")
+        row.addWidget(self.status_label)
+        self.import_btn = QPushButton("Import")
+        self.import_btn.setEnabled(False)
+        self.import_btn.clicked.connect(self._on_import)
+        row.addWidget(self.import_btn)
+        layout.addLayout(row)
+
+        self._scanner = _ScanWorker(self)
+        self._scanner.found.connect(self._on_scan_done)
+        self._scanner.start()
+
+    def _add_candidate(self, setup, select=False):
+        text = (f"{setup['label']}    "
+                f"{setup['sounds']} sounds, {setup['models']} models")
+        item = QListWidgetItem(text)
+        item.setData(Qt.ItemDataRole.UserRole, setup["data_dir"])
+        self.list.addItem(item)
+        if select:
+            self.list.setCurrentItem(item)
+
+    def _on_scan_done(self, setups):
+        existing = {self.list.item(i).data(Qt.ItemDataRole.UserRole)
+                    for i in range(self.list.count())}
+        for setup in setups:
+            if setup["data_dir"] not in existing:
+                self._add_candidate(setup)
+        self.status_label.setText(
+            "" if self.list.count() else
+            "Nothing found. Choose the folder yourself.")
+        self._update_buttons()
+
+    def _on_choose(self):
+        path = QFileDialog.getExistingDirectory(self, "Parrot.py folder")
+        if not path:
+            return
+        data_dir = profiles.resolve_setup_dir(path)
+        if data_dir is None:
+            QMessageBox.warning(
+                self, "Not a Parrot.py setup",
+                "No recordings there. Pick the folder that holds "
+                "data/recordings, or the data folder itself.")
+            return
+        sounds, models = profiles.stats(data_dir)
+        home = os.path.expanduser("~")
+        self._add_candidate({
+            "data_dir": os.path.abspath(data_dir),
+            "label": data_dir.replace(home, "~", 1),
+            "sounds": sounds, "models": models}, select=True)
+
+    def _update_buttons(self):
+        self.import_btn.setEnabled(
+            self._worker is None and self.list.currentItem() is not None)
+
+    def _on_import(self):
+        item = self.list.currentItem()
+        if item is None or self._worker is not None:
+            return
+        data_dir = item.data(Qt.ItemDataRole.UserRole)
+        # the checkout folder usually carries the meaningful name
+        default = os.path.basename(os.path.dirname(data_dir)) or "imported"
+        name, ok = QInputDialog.getText(
+            self, "Import as profile", "Profile name:", text=default)
+        name = name.strip() if ok and name.strip() else None
+        if not name:
+            return
+        self.status_label.setText("Copying...")
+        self._worker = _OpWorker(
+            lambda: profiles.duplicate(data_dir, name), self)
+        self._worker.done.connect(
+            lambda error: self._on_import_done(name, error))
+        self._update_buttons()
+        self._worker.start()
+
+    def _on_import_done(self, name, error):
+        self._worker = None
+        self.status_label.setText("")
+        if error:
+            QMessageBox.warning(self, "Import failed", error)
+            self._update_buttons()
+            return
+        self.imported = name
+        answer = QMessageBox.question(
+            self, "Imported",
+            f"{name} is ready. Switch to it now? Parrot restarts, "
+            "about a second.")
+        if answer == QMessageBox.StandardButton.Yes:
+            profiles.spawn_into(name)
+            QTimer.singleShot(0, QApplication.instance().quit)
+        self.accept()
 
 
 class ProfilesDialog(QDialog):
@@ -79,6 +219,11 @@ class ProfilesDialog(QDialog):
         self.dup_btn.setToolTip("A new profile copied from the selected one")
         self.dup_btn.clicked.connect(self._on_duplicate)
         actions.addWidget(self.dup_btn)
+
+        self.import_btn = QPushButton("Import...")
+        self.import_btn.setToolTip("Copy in the setup of another Parrot.py on this machine")
+        self.import_btn.clicked.connect(self._on_import)
+        actions.addWidget(self.import_btn)
 
         self.freeze_btn = QPushButton("Freeze")
         self.freeze_btn.setToolTip("Save the profile as it is now; Reset returns here")
@@ -153,6 +298,7 @@ class ProfilesDialog(QDialog):
         self.switch_btn.setEnabled(not busy and name != current)
         self.new_btn.setEnabled(not busy)
         self.dup_btn.setEnabled(not busy)
+        self.import_btn.setEnabled(not busy)
         self.freeze_btn.setEnabled(not busy and is_profile)
         self.reset_btn.setEnabled(not busy and is_profile)
         self.delete_btn.setEnabled(not busy and is_profile and name != current)
@@ -203,6 +349,11 @@ class ProfilesDialog(QDialog):
             src_dir = self._data_dir_of(src)
             self._run(lambda: profiles.duplicate(src_dir, name, talon),
                       "Copying...")
+
+    def _on_import(self):
+        dialog = ImportSetupDialog(self)
+        dialog.exec()
+        self._refresh()
 
     def _on_freeze(self):
         name = self._selected()

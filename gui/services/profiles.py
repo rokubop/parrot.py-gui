@@ -172,6 +172,84 @@ def delete(name):
     shutil.rmtree(root)
 
 
+# ---- bringing in an outside setup -------------------------------------
+#
+# CLI veterans have a year-old checkout somewhere on disk. Importing copies
+# its data tree in as a profile via duplicate(); the original folder is
+# never touched. The Home card offering this is dismissible per data root.
+
+IMPORT_CARD_MARKER = ".import-card-dismissed"
+
+
+def import_card_dismissed():
+    return os.path.exists(os.path.join(DATA_DIR, IMPORT_CARD_MARKER))
+
+
+def dismiss_import_card():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(os.path.join(DATA_DIR, IMPORT_CARD_MARKER), "w"):
+        pass
+
+
+def resolve_setup_dir(path):
+    """Accepts a checkout root or a data dir; returns the data dir or None."""
+    for candidate in (os.path.join(path, "data"), path):
+        if os.path.isdir(os.path.join(candidate, "recordings")):
+            return candidate
+    return None
+
+
+_SCAN_SKIP = {"node_modules", "__pycache__", "Library", "Applications",
+              "Movies", "Music", "Pictures", "AppData"}
+
+
+def find_existing_setups():
+    """Parrot data trees in the usual places: shallow scan of the home dir
+    and common code folders, looking for the <dir>/data/recordings shape.
+    Returns [{data_dir, label, sounds, models}], fullest setups first."""
+    home = os.path.expanduser("~")
+    roots = [home] + [os.path.join(home, d) for d in
+                      ("dev", "code", "projects", "src", "repos", "git",
+                       "Documents", "Desktop", "Downloads")]
+    own = {os.path.realpath(DATA_DIR), os.path.realpath(PROFILES_DIR)}
+    results, seen = [], set()
+
+    def visit(directory, depth):
+        data_dir = os.path.join(directory, "data")
+        if os.path.isdir(os.path.join(data_dir, "recordings")):
+            real = os.path.realpath(data_dir)
+            if real not in seen and real not in own:
+                seen.add(real)
+                sounds, models = stats(data_dir)
+                if sounds or models:
+                    label = data_dir.replace(home, "~", 1)
+                    results.append({"data_dir": os.path.abspath(data_dir),
+                                    "label": label,
+                                    "sounds": sounds, "models": models})
+            return  # a checkout; no nested checkouts expected
+        if depth == 0:
+            return
+        try:
+            entries = os.scandir(directory)
+        except OSError:
+            return
+        with entries:
+            for entry in entries:
+                if (entry.name.startswith(".") or entry.name in _SCAN_SKIP):
+                    continue
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        visit(entry.path, depth - 1)
+                except OSError:
+                    continue
+
+    for root in roots:
+        if os.path.isdir(root):
+            visit(root, 2)
+    results.sort(key=lambda r: r["sounds"] + r["models"], reverse=True)
+    return results
+
+
 def spawn_into(name):
     """Start a fresh GUI process running as `name` (None for Main).
 

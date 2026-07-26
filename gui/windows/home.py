@@ -210,6 +210,31 @@ class HomePage(QWidget):
         guide_row.addStretch()
         v.addLayout(guide_row)
 
+        # CLI veterans land here with a year-old setup elsewhere on disk.
+        # Offer to copy it in as a profile; nothing is auto-scanned until
+        # they ask. Gone once dismissed or once any profile exists.
+        from gui.services import profiles as profiles_service
+        self.import_panel, _, self.import_body = self._make_panel(
+            "Already used Parrot.py before?")
+        self.import_body.setText(
+            "Bring the sounds and models of an existing install in as a "
+            "profile. The original folder is not changed.")
+        import_row = QHBoxLayout()
+        find_setup_btn = QPushButton("Find my setup")
+        find_setup_btn.clicked.connect(self._on_find_setup)
+        import_row.addWidget(find_setup_btn)
+        dismiss_btn = QPushButton("No thanks")
+        dismiss_btn.setFlat(True)
+        dismiss_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        dismiss_btn.clicked.connect(self._on_dismiss_import)
+        import_row.addWidget(dismiss_btn)
+        import_row.addStretch()
+        self.import_panel.layout().addLayout(import_row)
+        self.import_panel.setVisible(
+            not profiles_service.list_profiles()
+            and not profiles_service.import_card_dismissed())
+        v.addWidget(self.import_panel)
+
         self.status_title = QLabel("Where you're at")
         v.addWidget(self.status_title)
         self.status_row_widget = QWidget()
@@ -229,6 +254,22 @@ class HomePage(QWidget):
         # and strand their buttons far below the status line).
         v.addStretch(1)
         self._apply_theme_styles()
+
+    def _on_find_setup(self):
+        from gui.services import profiles as profiles_service
+        from gui.windows.profiles import ImportSetupDialog
+        dialog = ImportSetupDialog(self)
+        dialog.exec()
+        window = self.window()
+        if hasattr(window, "_refresh_profile_chip"):
+            window._refresh_profile_chip()
+        if profiles_service.list_profiles():
+            self.import_panel.setVisible(False)
+
+    def _on_dismiss_import(self):
+        from gui.services import profiles as profiles_service
+        profiles_service.dismiss_import_card()
+        self.import_panel.setVisible(False)
 
     def _make_panel(self, title):
         panel = QFrame()

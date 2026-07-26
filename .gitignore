@@ -21,4 +21,5 @@ data/README.md
 .python
 .python.tmp
 data/notes.json
+data/.import-card-dismissed
 data-profiles/
