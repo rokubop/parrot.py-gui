@@ -4,29 +4,23 @@ description: PyQt6/pyqtgraph failure modes this project has already paid for onc
 type: project
 ---
 
-Each of these cost a real debugging session. They present as unrelated symptoms.
+Each of these cost a real debugging session, and they present as unrelated
+symptoms.
 
 - **A top-level widget needs a strong Python reference or the GC deletes it
-  mid-run.** `create_app()` once held only a local reference to `MainWindow`,
-  which surfaced as intermittent `wrapped C/C++ object ... has been deleted`
-  errors on child widgets, especially when clicking fast. Held now via
-  `app._main_window = window` in `gui/app.py`. If "deleted C++ object" errors
-  reappear, suspect a missing reference to a top-level widget, not teardown
-  order.
+  mid-run**, surfacing as intermittent `wrapped C/C++ object ... has been
+  deleted` on child widgets. Held via `app._main_window` in `gui/app.py`.
 - **A selector-less stylesheet on an ancestor silently breaks `:checked`
-  background-color on descendant buttons.** Always scope container stylesheets:
-  `QWidget#id { ... }`, never a bare `{ ... }`.
-- **A word-wrapped `QLabel` reports a one-line `sizeHint`**, so a layout that is
-  not asked for `heightForWidth` clips it. Pin the width and set
-  `setMinimumHeight(label.heightForWidth(width))` - and re-set it whenever the
-  text changes, since the needed height changes with the copy.
-- **pyqtgraph plots must be built on the UI thread**, so the only wins available
-  are *deferring and spreading* the work, never moving it off-thread. Cards
-  build cheaply with a placeholder and load progressively, one per event-loop
-  tick; teardown of a replaced view is deferred to the next tick, because
-  destroying the previous view's plots blocks the new one from appearing.
+  background-color on descendant buttons.** Always scope: `QWidget#id { ... }`.
+- **A word-wrapped `QLabel` reports a one-line `sizeHint`**, so a layout not
+  asked for `heightForWidth` clips it. Fixed width: set
+  `setMinimumHeight(heightForWidth(width))`, and re-set it when the text changes.
+  Variable width: use `help_dialog.WrappedBody`, which re-asks in `resizeEvent`;
+  `sizePolicy.setHeightForWidth(True)` alone does **not** work, the parent chain
+  does not propagate it. Centred in a stretchy box, also give it a minimum width
+  or it collapses to a tall thin ribbon.
+- **pyqtgraph plots must be built on the UI thread**, so the only wins are
+  deferring and spreading the work, never moving it off-thread.
 - **Anything that unpickles a model (joblib/torch) stutters the UI.** Read model
-  labels and accuracy in a `QThread` and cache per model name; cache the
-  unreadable result too, so a broken model does not retry forever.
-
-Related: [[gui-design-vocabulary]]
+  labels and accuracy in a `QThread` and cache per name, including the unreadable
+  result so a broken model does not retry forever.

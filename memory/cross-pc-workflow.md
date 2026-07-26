@@ -1,32 +1,18 @@
 ---
 name: cross-pc-workflow
-description: Development happens on several machines across all three platforms; data/ is gitignored and differs per checkout
+description: Several machines across all three platforms, so any checkout is a partial view and whole features cannot be exercised locally
 type: project
 ---
 
-Roku develops parrot.py from **several machines and tests on all three
-platforms** (Windows, macOS, Linux/WSL). Any given checkout is therefore a
-partial view: a machine may be a fresh install, or the primary one with the full
-library and a live Talon setup.
+Roku develops from **several machines and tests on all three platforms**. A given
+checkout may be a fresh install or the primary machine with a full library and a
+live Talon setup, so whole categories of behaviour - model details, stale
+markers, ensembles, a real training run - are simply unreachable on some of them.
 
-`data/` is gitignored (`data/recordings/*`, `data/models/*`, `data/talon/*`,
-`data/code/*`, `data/notes.json`). Its contents describe **that machine**, not
-the project.
+Say which machine a claim is about, and never write per-machine counts into repo
+docs. When a populated-state path cannot be exercised locally, say so rather than
+implying it was verified.
 
-**Why:** `status.md` recorded "20 sound directories / 6 models" as though it were
-a project fact. On the 2026-07-25 macOS machine the truth was one sound (`pop`,
-~4 s) and zero models, and that claim was about to be repeated back as the
-current state. It also means whole categories of behaviour - model details,
-stale-recording markers, ensembles, an actual training run - simply cannot be
-reached on a fresh checkout.
-
-**How to apply:** Run `ls data/recordings data/models` before making any claim
-about available data, and say which machine a claim is about. Never write
-per-machine counts into repo docs. When a populated-state path cannot be
-exercised locally, say so plainly rather than implying it was verified. A
-throwaway workspace is available if one is needed: the config resolves
-`RECORDINGS_FOLDER` / `CLASSIFIER_FOLDER` relative to the current working
-directory, so running from a temp dir gives an isolated library without touching
-the real one.
-
-Related: [[repo-memory-not-user-memory]]
+An isolated workspace is available when one is needed: the config resolves
+`RECORDINGS_FOLDER` / `CLASSIFIER_FOLDER` relative to the working directory, so
+running from a temp dir gives a throwaway library.

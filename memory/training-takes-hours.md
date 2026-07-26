@@ -1,34 +1,31 @@
 ---
 name: training-takes-hours
-description: A full training run is 4-6 hours, not minutes; stopping early is a supported workflow because the best checkpoint is saved on every improvement
+description: A full training run is 4-6 hours; the training page now measures its own ETA, and stopping early keeps the best model so far
 type: project
 ---
 
-**Roughly 4-6 hours** for Roku's real setup: 14 sounds, 5 nets, running all 300
-epochs (`max_epochs = 300`, `lib/audio_net.py:76`). Sound count, recorded volume
-and net count each multiply it, and it varies with how far you push for the last
-few accuracy points.
+**Roughly 4-6 hours** for Roku's real setup: 14 sounds, 5 nets, all 300 epochs
+(`max_epochs`, `lib/audio_net.py`). Sound count, recorded volume and net count
+each multiply it. The GUI help said *"Minutes, not hours"* until 2026-07-25 and
+was simply wrong, so anything stating a duration should match this entry.
 
-The GUI help said *"Minutes, not hours"* until 2026-07-25 - it was simply wrong,
-and got echoed into the new Models copy before Roku caught it. Anything stating a
-duration should now match this entry.
+**The page measures the run rather than repeating that figure.** Since
+2026-07-26 it shows time remaining and a finish clock, timed from the first
+reported epoch so the one-off cost of loading recordings does not inflate it.
+Prefer that number once a run has produced one.
 
-**Stopping early is a real workflow, not an abort.** `AudioNetTrainer` calls
-`torch.save` every time a net beats its own best accuracy (`audio_net.py:245-250`),
-so the best-so-far checkpoint is always on disk. Stop once the accuracy curve
-flattens and you keep a usable rough model in a fraction of the time; let it run
-out when chasing the last few points. The live plot exists to make that call
-visible, and `Stop` is worded and tooltipped accordingly.
+Before a run starts there is only a guess:
+`TRAIN_SECONDS_PER_AUDIO_SECOND_PER_NET` in `gui/windows/train_view.py`, anchored
+on the figure above plus an unmeasured assumption about how much audio those 14
+sounds held. **Replace it with a real value from the first completed run.**
 
-**Open question - is the GPU actually being used?** The trainer selects CUDA when
-`torch.cuda.is_available()` (`audio_net.py:79`), but both requirements files pin
-plain `torch` from PyPI with no CUDA index URL, and on this macOS machine
-`torch.version.cuda` is `None` (CPU-only build; the code does not use MPS either,
-so Apple GPUs go unused regardless). If the Windows box is also on a CPU-only
-wheel, those 4-6 hour runs are leaving a good GPU idle. Check on Windows with:
+**Stopping early is a real workflow, not an abort.** `AudioNetTrainer` saves
+every time a net beats its own best accuracy, so the best-so-far checkpoint is
+always on disk. Stop once the accuracy curve flattens and you keep a usable
+rough model in a fraction of the time.
 
-```
-.venv\Scripts\python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
-```
+**The GPU may be idle for every one of those hours** - both requirements files
+pin plain `torch` with no CUDA index URL, and the trainer never checks MPS. See
+BACKLOG, "Training performance", for the one-line check.
 
 Related: [[cross-pc-workflow]] · [[ship-a-thin-shell-not-a-bundle]]

@@ -5,6 +5,13 @@ class TrainingWorker(QThread):
     epoch_complete = pyqtSignal(int, float, float, dict, bool)  # epoch, loss, accuracy, per_label_dict, is_best
     training_finished = pyqtSignal()
     error_occurred = pyqtSignal(str)
+    # Reading and feature-extracting every recording happens before the first
+    # epoch and takes long enough to look like a hang, so it says so.
+    stage_changed = pyqtSignal(str)
+    # Emitted once the trainer exists, carrying its epoch ceiling. The view
+    # needs it to turn elapsed time into "how much is left", and it comes from
+    # the trainer rather than a copy of 300 in the GUI.
+    run_started = pyqtSignal(int)
 
     def __init__(self, model_name, labels, net_count=1, parent=None):
         super().__init__(parent)
@@ -40,10 +47,14 @@ class TrainingWorker(QThread):
 
         audio_settings = get_current_default_settings()
 
+        noun = "sound" if len(self.labels) == 1 else "sounds"
+        self.stage_changed.emit(
+            f"Reading every recording of {len(self.labels)} {noun}…")
         data = load_pytorch_data(self.labels,
                                  audio_settings['FEATURE_ENGINEERING_TYPE'])
         dataset = AudioDataset(data)
         trainer = AudioNetTrainer(dataset, self.net_count, audio_settings)
+        self.run_started.emit(trainer.max_epochs)
 
         def progress_callback(epoch, loss, accuracy, per_label_accuracy, is_new_best):
             self.epoch_complete.emit(epoch, loss, accuracy, per_label_accuracy, is_new_best)

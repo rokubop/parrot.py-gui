@@ -77,6 +77,43 @@ the net count.
 - Net count should only appear for Audio Net.
 - The CLI's post-train confusion matrix is already superseded by the GUI's
   Test accuracy dialog.
+- The training setup screen now has a column of its own and a live balance
+  picture, so a "quick check vs full run" choice has somewhere to live. Random
+  Forest must be framed as a test and never as a model, since Talon requires
+  Audio Net.
+
+## Smaller things noticed 2026-07-26
+
+- **Per sound accuracy during training is the last net's**, not the ensemble's
+  (`accuracy_batch` falls out of the per-net loop in `audio_net.py` and is what
+  the progress callback passes). Fine for spotting which sound is failing, wrong
+  if ever read as the model's real per sound accuracy.
+- **`models.py`'s ready-to-train empty state still says "It runs unattended for
+  hours"**, which the measured estimate can now contradict for a small library.
+- **Nothing keeps the machine awake during a run.** The app says to turn sleep
+  off; `caffeinate` on macOS and `SetThreadExecutionState` on Windows would do it
+  properly.
+
+## Models as things you can edit
+
+Raised and scoped 2026-07-26, deliberately deferred in favour of the teaching
+work. The diagnosis: a trained model is an immutable artifact ( the net's output
+layer is sized to the label count, so adding a sound is a full retrain from
+scratch, not an edit ), but nothing records *what it was trained from*. Labels
+are recoverable by unpickling; net count is inferred by counting weight files;
+the date, wall-clock duration, epochs run and audio settings are simply lost.
+
+- **A `<name>.json` sidecar written at train time**, holding sounds, net count,
+  settings, date, duration and epochs reached. Cheap, and it unlocks the rest.
+- **Retrain**, opening the training page prefilled from the sidecar and
+  suggesting a new name rather than overwriting. Retraining the same name
+  currently overwrites a 4-6 hour asset that Talon may be running live, behind a
+  single confirm.
+- **A richer model header** from the sidecar: "trained 3 days ago, 4h20m, stopped
+  at epoch 180", and a stale check that compares against a recorded timestamp
+  instead of file mtimes.
+- Framing to keep: the artifact is permanent, the *recipe* is editable. The verb
+  is "Retrain", never "Edit", because the cost is hours.
 
 ## GUI features
 

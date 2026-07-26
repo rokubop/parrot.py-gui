@@ -64,13 +64,30 @@ TRAIN_ROWS = (
                     "curve flattens and you keep it - a usable first pass in "
                     "a fraction of the time. Let it finish when you're "
                     "chasing the last few points."),
-    ("Nets", "Each net learns the same sounds from a different random start, "
-             "so they disagree on the hard frames. The model fires on their "
-             "average, which means a net that mishears something gets outvoted "
-             "instead of deciding on its own. At 1 net there is nobody to "
-             "outvote it. 3 is a good default and 5 is worth it once the "
-             "sounds matter; each net multiplies the training time."),
+    ("Nets", "Each net learns the same sounds from a different random start, so "
+             "a net that mishears something gets outvoted by the others rather "
+             "than deciding alone. 3 is a good default, and each net multiplies "
+             "the training time."),
+    ("Stay awake", "The app has to stay open and the machine awake for the whole "
+                   "run. Turn sleep off before leaving it overnight; closing a "
+                   "laptop lid stops it."),
     ("Where", "Models tab. Retrain any time; old models are kept."),
+)
+
+# What the training page teaches, as three things you can look at rather than
+# read. A block is a question, a picture that answers it, and one line - the
+# rule being that anything needing a paragraph is not on the page at all, since
+# a paragraph on a setup screen does not get read. Everything cut from here that
+# is about *which* noises to pick already lives in "Choosing sounds", on the
+# dialog where a sound gets created.
+TRAINING_BLOCKS = (
+    ("How it picks a sound", "labels",
+     "It always answers with one of the sounds it knows. Nothing is ever "
+     "rejected."),
+    ("How much of each", "balance",
+     "Sounds far past the line lose the excess. Even them out."),
+    ("How many nets", "nets",
+     "More nets outvote a bad one. Each net costs the whole run again."),
 )
 CONNECT_ROWS = (
     ("What", "Talon (talonvoice.com) runs your model live and maps each "
@@ -103,6 +120,30 @@ SOUNDS_ROWS = (
                     "nothing."),
     ("Plan", "Use 📝 Notes to keep notes."),
 )
+
+class WrappedBody(QLabel):
+    """Word-wrapped rich text that keeps the height its copy actually needs.
+
+    A word-wrapped QLabel reports a one-line sizeHint, so a layout that is not
+    asked for heightForWidth clips it ( memory/qt-traps.md ). The remedy there is
+    to pin the width and set the minimum height from heightForWidth, which works
+    for a label whose width is fixed. This is the same fix for one whose width is
+    not: re-ask at whatever width it was just given. It stays correct through a
+    window resize and through a change of text, which the pinned version has to
+    be reminded about by hand.
+    """
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setWordWrap(True)
+        self.setTextFormat(Qt.TextFormat.RichText)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        needed = self.heightForWidth(self.width())
+        if needed > 0 and needed != self.minimumHeight():
+            self.setMinimumHeight(needed)
+
 
 class FramesDiagram(QWidget):
     """One “pop” drawn as a waveform, cut into the 15 ms frames the model really
@@ -360,11 +401,135 @@ def nets_diagram_widget():
     return NetsDiagram()
 
 
+class ClosedSetDiagram(QWidget):
+    """Why a noise you do not want still needs recording.
+
+    The model is a *closed set*: a softmax spreads one frame's 100% across the
+    sounds it was trained on, and there is no share left over for "none of
+    these". Stating that on its own teaches nobody anything, so this draws the
+    consequence instead - the same table bump, into two models that differ only
+    by whether it was ever recorded. Without it the bump has to come out as one
+    of the real sounds and fires it. With it, there is somewhere harmless for the
+    bump to land, and that spare class has a name: a distractor.
+    """
+
+    SOURCE = "a table bump"
+    # ( heading, boxes, index the bump lands in, is that the harmless outcome )
+    GROUPS = (
+        ("If you never recorded the bump", ("pop", "hiss"), 0, False),
+        ("If you did", ("pop", "hiss", "table bump"), 2, True),
+    )
+    DISTRACTOR_NOTE = "distractor"
+
+    HEAD_ROW = 17
+    CHIP_ROW = 15
+    ARROW_ROW = 18
+    BOX_ROW = 32
+    NOTE_ROW = 15
+    GROUP_GAP = 12
+    BOX_WIDTH = 118
+    BOX_GAP = 8
+    HEAD = 7             # arrowhead half-width
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        widest = max(len(boxes) for _h, boxes, _i, _ok in self.GROUPS)
+        self.setMinimumWidth(widest * (self.BOX_WIDTH + self.BOX_GAP) + 20)
+        self.setFixedHeight(len(self.GROUPS) * self._group_height()
+                            + (len(self.GROUPS) - 1) * self.GROUP_GAP)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def _group_height(self):
+        return (self.HEAD_ROW + self.CHIP_ROW + self.ARROW_ROW + self.BOX_ROW
+                + self.NOTE_ROW)
+
+    def _box_rect(self, index, top):
+        left = index * (self.BOX_WIDTH + self.BOX_GAP)
+        return QRectF(left, top, self.BOX_WIDTH, self.BOX_ROW)
+
+    def paintEvent(self, _event):
+        t = theme.colors()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        accent = QColor(t["accent"])
+        wrong = QColor(theme.QUANTITY_COLORS["Sufficient"])   # shared caution amber
+        dim = QColor(t["text_dim"])
+
+        small = self.font()
+        small.setPointSizeF(max(8.5, small.pointSizeF() - 1.5))
+
+        y = 0.0
+        for heading, boxes, target, harmless in self.GROUPS:
+            highlight = accent if harmless else wrong
+
+            p.setFont(small)
+            p.setPen(dim)
+            p.drawText(QRectF(0, y, self.width(), self.HEAD_ROW),
+                       int(Qt.AlignmentFlag.AlignLeft
+                           | Qt.AlignmentFlag.AlignVCenter), heading)
+
+            chip_top = y + self.HEAD_ROW
+            box_top = chip_top + self.CHIP_ROW + self.ARROW_ROW
+            landing = self._box_rect(target, box_top)
+
+            # The incoming noise sits directly over the box it ends up in, so the
+            # arrow can be a straight drop and never crosses a box it missed.
+            p.setPen(highlight)
+            p.drawText(QRectF(landing.left(), chip_top, landing.width(),
+                              self.CHIP_ROW),
+                       int(Qt.AlignmentFlag.AlignCenter), self.SOURCE)
+            x = landing.center().x()
+            top, bottom = chip_top + self.CHIP_ROW + 2, box_top - 3
+            p.setPen(QPen(highlight, 1.2))
+            p.drawLine(QPointF(x, top), QPointF(x, bottom))
+            p.drawLine(QPointF(x - self.HEAD / 2, bottom - self.HEAD),
+                       QPointF(x, bottom))
+            p.drawLine(QPointF(x + self.HEAD / 2, bottom - self.HEAD),
+                       QPointF(x, bottom))
+
+            for index, name in enumerate(boxes):
+                rect = self._box_rect(index, box_top)
+                hit = index == target
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(t["plot_bg"]))
+                p.drawRect(rect)
+                p.setPen(QPen(highlight if hit else QColor(t["border"]), 1))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
+
+                p.setFont(self.font())
+                p.setPen(highlight if hit else dim)
+                mark = "" if not hit else ("  \u2713" if harmless else "  \u2717")
+                p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), name + mark)
+
+                if hit and harmless:
+                    p.setFont(small)
+                    p.setPen(dim)
+                    p.drawText(QRectF(rect.left(), rect.bottom() + 1,
+                                      rect.width(), self.NOTE_ROW),
+                               int(Qt.AlignmentFlag.AlignCenter),
+                               self.DISTRACTOR_NOTE)
+
+            y += self._group_height() + self.GROUP_GAP
+
+        p.end()
+
+
+def closed_set_diagram_widget():
+    return ClosedSetDiagram()
+
+
 TOPICS = {
     "record": ("Recording sounds", RECORD_ROWS, None),
     "train": ("Training a model", TRAIN_ROWS, nets_diagram_widget),
     "connect": ("Connecting to Talon", CONNECT_ROWS, None),
     "sounds": ("Choosing sounds", SOUNDS_ROWS, frames_diagram_widget),
+}
+
+TRAINING_DIAGRAMS = {
+    "labels": closed_set_diagram_widget,
+    "nets": nets_diagram_widget,
 }
 
 
@@ -449,14 +614,49 @@ def topic_content(key, parent=None):
             caption.setStyleSheet(f"color: {theme.colors()['text_dim']};")
             inner.addWidget(caption)
         inner.addWidget(widget)
-    body = QLabel(rows_html(rows))
-    body.setWordWrap(True)
-    body.setTextFormat(Qt.TextFormat.RichText)
+    body = WrappedBody(rows_html(rows))
     body.setMaximumWidth(700)
     inner.addWidget(body)
     # The scroll area resizes this to its viewport, so without a trailing spring
     # any spare height is shared out between the rows instead of sitting below.
     inner.addStretch(1)
+    return content
+
+
+def training_sections(parent=None, live=None):
+    """The three training blocks in one column.
+
+    This is the Sounds treatment applied to training: the New sound dialog puts
+    the advice where the choice is made rather than behind a button, because
+    which noise you pick decides how well the model can ever do. Which sounds go
+    in a model, and how many nets, are the same kind of choice.
+
+    `live` maps a block key to a widget built by the caller, so the training page
+    can drop in a picture of the sounds actually selected where the modal shows
+    nothing. A block with no diagram and no live widget is skipped rather than
+    drawn as a title over an empty space.
+    """
+    t = theme.colors()
+    live = live or {}
+    content = QWidget(parent)
+    v = QVBoxLayout(content)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(18)
+    for title, key, caption in TRAINING_BLOCKS:
+        widget = live.get(key) or (TRAINING_DIAGRAMS[key]()
+                                   if key in TRAINING_DIAGRAMS else None)
+        if widget is None:
+            continue
+        heading = QLabel(title, content)
+        heading.setStyleSheet(
+            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
+        v.addWidget(heading)
+        v.addWidget(widget)
+        line = WrappedBody(caption, content)
+        line.setStyleSheet(f"color: {t['text_dim']};")
+        line.setMaximumWidth(700)
+        v.addWidget(line)
+    v.addStretch(1)
     return content
 
 
@@ -489,8 +689,24 @@ def show_help(parent, key):
     dlg.exec()
 
 
-def help_button(parent, key):
-    """Flat '? Help' button wired to the topic's modal."""
+def show_training_help(parent):
+    """The training page's own help: the same three sections it shows inline,
+    for reaching once a run is under way and the setup screen is gone."""
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Training a model")
+    v = QVBoxLayout(dlg)
+    v.setContentsMargins(20, 16, 20, 16)
+    v.addWidget(scrolled(training_sections()))
+    close = QPushButton("Close")
+    close.clicked.connect(dlg.accept)
+    row = QHBoxLayout()
+    row.addStretch()
+    row.addWidget(close)
+    v.addLayout(row)
+    dlg.exec()
+
+
+def _flat_help_button(parent):
     t = theme.colors()
     btn = QPushButton("?  Help", parent)
     btn.setFlat(True)
@@ -499,5 +715,18 @@ def help_button(parent, key):
         f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
         f"border: none; padding: 2px 6px; }} "
         f"QPushButton:hover {{ color: {t['text_bright']}; }}")
+    return btn
+
+
+def help_button(parent, key):
+    """Flat '? Help' button wired to the topic's modal."""
+    btn = _flat_help_button(parent)
     btn.clicked.connect(lambda: show_help(parent, key))
+    return btn
+
+
+def training_help_button(parent):
+    """Same button, opening the three training sections rather than one topic."""
+    btn = _flat_help_button(parent)
+    btn.clicked.connect(lambda: show_training_help(parent))
     return btn

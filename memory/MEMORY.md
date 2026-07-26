@@ -12,28 +12,29 @@ an individual file when its line looks relevant.
 - **A memory is a fact that is true now**, revised in place when it stops being
   true. It is never a log of what happened on a given day; git history already
   holds that, and it cannot contradict itself the way a log can.
-- **Write one only if it is not derivable** from the code, the tests, or
-  `git log`. "We fixed X in phase 7" is derivable. "The live and file detection
-  paths are deliberately different, and unifying them breaks byte-identical
-  output" is not.
+- **Write one only if a fresh agent could not work it out from the codebase.**
+  Conventions visible in the code, and anything that happened in a session, do
+  not belong here - `git log` and `sessions/` already hold those. What belongs is
+  what the code cannot say: a decision and its rejected alternative, a trap that
+  cost a debugging session, an empirical number, a "do not "fix" this".
 - **Delete or rewrite** a memory that turns out to be wrong. A wrong memory is
   worse than a missing one.
+- **Keep it short.** An entry nobody rereads is worse than no entry. If it needs
+  a paragraph of background, the background probably belongs in a session record.
 - Assistant-side: prefer writing here over user-level Claude memory, which is
-  stored per machine and does not follow this workflow. See
-  [repo-memory-not-user-memory](repo-memory-not-user-memory.md).
+  stored per machine and does not follow this workflow.
 
 ## Index
 
 ### How this project is worked on
-- [Cross-PC workflow](cross-pc-workflow.md) - several machines, all three platforms; `data/` is gitignored and per-machine, so never infer project state from a checkout
-- [Repo memory, not user memory](repo-memory-not-user-memory.md) - why durable context is committed here instead of Claude's own memory
+- [Cross-PC workflow](cross-pc-workflow.md) - several machines, all three platforms; any checkout is a partial view, so whole features cannot be exercised locally
 - [Discuss direction before implementing](discuss-direction-before-implementing.md) - design talk up front, then execute decisively without stacking questions
 - [Sessions are recorded on "wrap"](../sessions/README.md) - dated, append-only session records; the newest entry's Next steps is where work resumes
 
 ### Conventions
-- [UI copy style](ui-copy-style.md) - no em dashes anywhere, sentence case, actions name their target
-- [GUI design vocabulary](gui-design-vocabulary.md) - one primary accent action per screen, quiet secondary row, centered empty states, the data-quantity rating as shared language
-- [Training takes hours, not minutes](training-takes-hours.md) - 4-6 hrs for a real run; stopping early keeps the best model so far
+- [UI copy style](ui-copy-style.md) - no em dashes; as few words as can be glanced at; say what someone has before what they lack
+- [GUI design vocabulary](gui-design-vocabulary.md) - only the shape decisions that reading `gui/` does not already show: two-state sub-views, teaching beside the control, which knobs may hide
+- [Training takes hours](training-takes-hours.md) - 4-6 hrs for a real run; the page measures its own ETA; stopping early keeps the best model so far
 - [Qt traps paid for once](qt-traps.md) - top-level widget GC, stylesheet scoping, word-wrapped labels, pyqtgraph on the UI thread
 - [Preview playback avoids sd.play()](preview-playback-avoids-sd-play.md) - its Python callback needs the GIL and crackles while the playhead repaints; latency is compensated, never buffered away
 
