@@ -91,7 +91,11 @@ class _StepCard(QFrame):
         v.addWidget(self.action)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-    def set_state(self, done, current, status_text):
+    def set_state(self, done, current, status_text,
+                  action_text=None, action_primary=False):
+        """action_text swaps the button's job as the user progresses (step 3
+        becomes Edit patterns once connected); action_primary keeps the bright
+        styling on it even when the step is done - the ongoing main action."""
         t = theme.colors()
         self.bubble.setText("✓" if done else str(self.number))
         bubble_bg = t["accent"] if done else (t["button"] if not current else t["panel"])
@@ -114,7 +118,9 @@ class _StepCard(QFrame):
         self.status.setStyleSheet(
             f"color: {t['accent'] if done else t['text']}; border: none;")
         self.status.setText(status_text)
-        if current:
+        if action_text is not None:
+            self.action.setText(action_text)
+        if current or action_primary:
             self.action.setStyleSheet(
                 f"QPushButton {{ background-color: {t['accent']}; color: #ffffff; "
                 f"font-weight: bold; border: none; border-radius: 4px; padding: 7px 14px; }}")
@@ -188,7 +194,8 @@ class HomePage(QWidget):
         self.step_connect = _StepCard(3, "Connect to Talon", "Open Talon setup")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
-        self.step_connect.action.clicked.connect(lambda: self.navigate.emit("Talon"))
+        self._talon_connected = False
+        self.step_connect.action.clicked.connect(self._on_connect_action)
         self.step_record.help_btn.clicked.connect(lambda: self._show_help("record"))
         self.step_train.help_btn.clicked.connect(lambda: self._show_help("train"))
         self.step_connect.help_btn.clicked.connect(lambda: self._show_help("connect"))
@@ -260,18 +267,6 @@ class HomePage(QWidget):
             self._make_panel("Active model")
         self.talon_panel, self.talon_panel_title, self.talon_panel_body = \
             self._make_panel("Talon")
-        # the #1 thing people do once set up: tune what Talon listens for
-        edit_patterns_row = QHBoxLayout()
-        self.edit_patterns_btn = QPushButton("Edit patterns")
-        self.edit_patterns_btn.setFlat(True)
-        self.edit_patterns_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.edit_patterns_btn.setToolTip(
-            "Tune which sounds trigger what, thresholds and throttles")
-        self.edit_patterns_btn.clicked.connect(self._on_edit_patterns)
-        self.edit_patterns_btn.setVisible(False)
-        edit_patterns_row.addWidget(self.edit_patterns_btn)
-        edit_patterns_row.addStretch()
-        self.talon_panel.layout().addLayout(edit_patterns_row)
         status_row.addWidget(self.model_panel, 1)
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
@@ -322,11 +317,13 @@ class HomePage(QWidget):
         except library_ops.LibraryOpError:
             pass
 
-    def _on_edit_patterns(self):
+    def _on_connect_action(self):
+        """Step 3's button: setup until connected, then the main event."""
         self.navigate.emit("Talon")
-        window = self.window()
-        if hasattr(window, "_get_talon_page"):
-            window._get_talon_page().focus_patterns()
+        if self._talon_connected:
+            window = self.window()
+            if hasattr(window, "_get_talon_page"):
+                window._get_talon_page().focus_patterns()
 
     def _on_open_talon_folder(self):
         if getattr(self, "_talon_dir", None):
@@ -409,9 +406,6 @@ class HomePage(QWidget):
                       self.import_title, self.attention_title):
             label.setStyleSheet(
                 f"font-size: 14px; font-weight: bold; color: {t['text_bright']}; border: none;")
-        self.edit_patterns_btn.setStyleSheet(
-            f"QPushButton {{ color: {t['accent']}; background: transparent; "
-            f"border: none; padding: 2px 0; text-align: left; }}")
 
     def refresh_theme(self):
         self._apply_theme_styles()
@@ -466,13 +460,20 @@ class HomePage(QWidget):
             (step1_done, step2_done, step3_done)) if not done), None)
         self.step_record.set_state(step1_done, current == 0, s1)
         self.step_train.set_state(step2_done, current == 1, s2)
-        self.step_connect.set_state(step3_done, current == 2, s3)
+        # connected users get the app's real main action where step 3 was
+        self._talon_connected = step3_done
+        self.step_connect.set_state(
+            step3_done, current == 2, s3,
+            action_text="Edit patterns" if step3_done else "Open Talon setup",
+            action_primary=step3_done)
+        self.step_connect.action.setToolTip(
+            "Tune which sounds trigger what, thresholds and throttles"
+            if step3_done else "")
 
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
         self.open_talon_btn.setVisible(bool(talon.talon_home))
         self._talon_dir = talon.talon_user_dir or talon.talon_home
-        self.edit_patterns_btn.setVisible(bool(talon.pattern_path_from_talon))
         if not first_run:
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
