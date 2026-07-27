@@ -196,11 +196,6 @@ class HomePage(QWidget):
             steps_row.addWidget(card, 1)
         v.addWidget(self.steps_widget)
 
-        # expectations for new users; hides once they have 2+ sounds
-        self.prep_panel, self.prep_title, self.prep_body = \
-            self._make_panel("Before you start")
-        v.addWidget(self.prep_panel)
-
         guide_row = QHBoxLayout()
         self.guide_label = QLabel("New to this, or forgot how it works?")
         guide_row.addWidget(self.guide_label)
@@ -405,13 +400,13 @@ class HomePage(QWidget):
         self.status_title.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {t['text_bright']}; "
             f"margin-top: 8px;")
-        for panel in (self.model_panel, self.talon_panel, self.prep_panel,
+        for panel in (self.model_panel, self.talon_panel,
                       self.import_panel, self.attention_panel):
             panel.setStyleSheet(
                 f"QFrame#homePanel {{ background-color: {t['card']}; "
                 f"border: 1px solid {t['border']}; border-radius: 8px; }}")
         for label in (self.model_panel_title, self.talon_panel_title,
-                      self.prep_title, self.import_title, self.attention_title):
+                      self.import_title, self.attention_title):
             label.setStyleSheet(
                 f"font-size: 14px; font-weight: bold; color: {t['text_bright']}; border: none;")
         self.edit_patterns_btn.setStyleSheet(
@@ -473,10 +468,6 @@ class HomePage(QWidget):
         self.step_train.set_state(step2_done, current == 1, s2)
         self.step_connect.set_state(step3_done, current == 2, s3)
 
-        self.prep_panel.setVisible(not step1_done)
-        if not step1_done:
-            self.prep_body.setText(self._prep_html(t))
-
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
         self.open_talon_btn.setVisible(bool(talon.talon_home))
@@ -489,9 +480,6 @@ class HomePage(QWidget):
         from gui.services import attention
         items = attention.compute(self.app_state, talon, self._loaded_sounds.get)
         self._render_attention(items, t)
-
-    def _prep_html(self, t):
-        return help_dialog.rows_html(help_dialog.PREP_ROWS)
 
     def _show_help(self, key):
         help_dialog.show_help(self, key)

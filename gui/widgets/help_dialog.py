@@ -36,19 +36,10 @@ RECORD_ROWS = (
     ("Time", "A real commitment: 1 hr+ of recording spread over multiple "
              "days, 4 hr+ for a full model. Bursts are fine; every "
              "recording is saved as you go."),
+    ("Mic", "A quiet room, and the mic you'll actually use day to day (pick "
+            "it in Settings). Avoid dynamic mics - takes vary too much "
+            "between sessions."),
     ("Where", "Sounds tab: “+ New sound”, then “+ Add recording”."),
-)
-# Shown on Home until there are 2+ sounds. Deliberately only the three things
-# worth knowing *before* the first take - the full detail lives in the topics.
-PREP_ROWS = (
-    ("Set aside time", "Recording is a solid block of work, not five minutes - "
-                       "1 hr+ spread over sessions. Every take is saved as you "
-                       "go, so stopping is fine."),
-    ("Find a quiet room", "Use the mic you'll actually use day to day (pick it "
-                          "in Settings). Avoid dynamic mics - takes vary too "
-                          "much between sessions."),
-    ("Decide your sounds", "Pick the noises before you record. The New sound "
-                           "dialog walks through what makes a good one."),
 )
 TRAIN_ROWS = (
     ("What", "Training reads every recording of every sound and produces "
