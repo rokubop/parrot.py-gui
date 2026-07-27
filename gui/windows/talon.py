@@ -247,6 +247,13 @@ class TalonPage(QWidget):
 
     # ---- discovery ------------------------------------------------------
 
+    def focus_patterns(self):
+        """Deep link from Home's Edit patterns: land on the editor itself."""
+        self.tabs.setCurrentIndex(0)
+        scroll = self.tabs.widget(0)
+        if hasattr(scroll, "ensureWidgetVisible"):
+            scroll.ensureWidgetVisible(self.patterns_group, 0, 0)
+
     def refresh(self):
         if self.worker is not None and self.worker.isRunning():
             return

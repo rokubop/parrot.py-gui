@@ -179,9 +179,6 @@ class HomePage(QWidget):
         self.hero_sub.setWordWrap(True)
         v.addWidget(self.hero_sub)
 
-        # steps live on their own widget so the whole row can compact to a
-        # one-line strip once every step is done - a veteran's dashboard
-        # should lead with their stuff, not with onboarding
         self.steps_widget = QWidget()
         steps_row = QHBoxLayout(self.steps_widget)
         steps_row.setContentsMargins(0, 0, 0, 0)
@@ -198,11 +195,6 @@ class HomePage(QWidget):
         for card in (self.step_record, self.step_train, self.step_connect):
             steps_row.addWidget(card, 1)
         v.addWidget(self.steps_widget)
-        self.compact_steps_when_done = True
-        self.allset_label = QLabel("")
-        self.allset_label.setWordWrap(True)
-        self.allset_label.setVisible(False)
-        v.addWidget(self.allset_label)
 
         # expectations for new users; hides once they have 2+ sounds
         self.prep_panel, self.prep_title, self.prep_body = \
@@ -273,6 +265,18 @@ class HomePage(QWidget):
             self._make_panel("Active model")
         self.talon_panel, self.talon_panel_title, self.talon_panel_body = \
             self._make_panel("Talon")
+        # the #1 thing people do once set up: tune what Talon listens for
+        edit_patterns_row = QHBoxLayout()
+        self.edit_patterns_btn = QPushButton("Edit patterns")
+        self.edit_patterns_btn.setFlat(True)
+        self.edit_patterns_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.edit_patterns_btn.setToolTip(
+            "Tune which sounds trigger what, thresholds and throttles")
+        self.edit_patterns_btn.clicked.connect(self._on_edit_patterns)
+        self.edit_patterns_btn.setVisible(False)
+        edit_patterns_row.addWidget(self.edit_patterns_btn)
+        edit_patterns_row.addStretch()
+        self.talon_panel.layout().addLayout(edit_patterns_row)
         status_row.addWidget(self.model_panel, 1)
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
@@ -322,6 +326,12 @@ class HomePage(QWidget):
             library_ops.open_in_file_manager(os.path.abspath(DATA_DIR))
         except library_ops.LibraryOpError:
             pass
+
+    def _on_edit_patterns(self):
+        self.navigate.emit("Talon")
+        window = self.window()
+        if hasattr(window, "_get_talon_page"):
+            window._get_talon_page().focus_patterns()
 
     def _on_open_talon_folder(self):
         if getattr(self, "_talon_dir", None):
@@ -404,8 +414,9 @@ class HomePage(QWidget):
                       self.prep_title, self.import_title, self.attention_title):
             label.setStyleSheet(
                 f"font-size: 14px; font-weight: bold; color: {t['text_bright']}; border: none;")
-        self.allset_label.setStyleSheet(
-            f"color: {t['text_dim']}; font-size: 13px; padding: 2px 0;")
+        self.edit_patterns_btn.setStyleSheet(
+            f"QPushButton {{ color: {t['accent']}; background: transparent; "
+            f"border: none; padding: 2px 0; text-align: left; }}")
 
     def refresh_theme(self):
         self._apply_theme_styles()
@@ -466,24 +477,11 @@ class HomePage(QWidget):
         if not step1_done:
             self.prep_body.setText(self._prep_html(t))
 
-        # veteran view: steps collapse to one line of what you have
-        all_done = step1_done and step2_done and step3_done
-        compact = all_done and self.compact_steps_when_done
-        self.steps_widget.setVisible(not compact)
-        self.allset_label.setVisible(compact)
-        if compact:
-            total_min = round(sum(self.app_state.get_label_duration_ms(l)
-                                  for l in labels) / 60000)
-            count = len(talon.patterns.get("patterns", talon.patterns) or {})
-            self.allset_label.setText(
-                f"✓ Set up · {len(labels)} sounds, {total_min} min recorded · "
-                f"{len(model_names)} models · Talon running “{deployed_name}” "
-                f"with {count} patterns")
-
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
         self.open_talon_btn.setVisible(bool(talon.talon_home))
         self._talon_dir = talon.talon_user_dir or talon.talon_home
+        self.edit_patterns_btn.setVisible(bool(talon.pattern_path_from_talon))
         if not first_run:
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
