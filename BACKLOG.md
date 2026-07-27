@@ -25,13 +25,13 @@ grouped by area, not prioritised beyond the first section.
   mirrors `lib/learn_data.py`'s Audio Net branch, but no full run has completed
   through the GUI yet. Also covers model details, stale markers and ensemble
   combine against real model files.
-  - Synthetic fixtures turned out to be a poor use of time - hand-built bursts
-    kept segmenting to **zero** detections, and the cause was never pinned
-    down. (Not the strategy's minimum-length rule as first assumed:
-    `reject_cont_45ms` drops continuous blips *under 45 ms* and keeps short
-    discrete sounds, so 70 ms bursts should have passed.) Record two real
-    sounds instead. If synthetic fixtures are ever wanted for CI, the real
-    question is what the detector needs in an onset - worth answering once.
+  - The 2026-07-25 synthetic-fixture mystery is **solved** (2026-07-26):
+    auto-calibration sets no threshold until 10+ spectral-flux valleys exist,
+    so hand-built bursts segmented to zero by seed luck. See
+    `memory/detection-calibration-needs-onset-valleys.md`;
+    `gui/services/mock_states.py` now generates working synthetic profiles
+    via the manual-override path. A real training run still needs real
+    sounds or the imported setup.
 
 ## Training performance
 
@@ -81,6 +81,33 @@ the net count.
   picture, so a "quick check vs full run" choice has somewhere to live. Random
   Forest must be framed as a test and never as a model, since Talon requires
   Audio Net.
+
+## Profiles & data portability (roadmap agreed 2026-07-26)
+
+Steps 1 (data root + pointer) and the backup story are done; remaining in
+agreed order:
+
+- **One-click model swap.** Talon has one active slot; parrot keeps the
+  library. "Use with Talon" per model with the active one always visible,
+  on Models and/or Home. Reuse the `TalonPage.focus_patterns()` deep-link
+  pattern.
+- **`parrot_integration.py` snapshot-back** into `data/talon/` when the
+  Talon-side copy differs - the last leak in "your data folder contains
+  everything you've made or adjusted".
+- **Model-only import**: accept a folder of `.pkl`s (the artifact repos
+  veterans actually keep) as a profile with models and no sounds. Import
+  currently requires the `data/recordings` shape.
+- **Sound-merge import** (bring labels *into* an existing profile) needs its
+  own design pass: label collisions, dedup across machines. Deferred until a
+  real consolidation need shows up.
+- **Windows/Linux verification** of the whole profile stack: pointer, spawn
+  with `DETACHED_PROCESS`, AppData/XDG roots, scan. All logic-tested on
+  macOS only.
+- Attention thresholds (thin < 60 s, only once one sound has 90 s+) are
+  guesses; tune against real use. Export covers the active profile only -
+  an export-everything variant is easy if wanted.
+- LFS guidance for wav corpora in git stays out of the UI deliberately;
+  one line of docs somewhere when distribution lands.
 
 ## Smaller things noticed 2026-07-26
 

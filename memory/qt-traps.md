@@ -24,3 +24,6 @@ symptoms.
 - **Anything that unpickles a model (joblib/torch) stutters the UI.** Read model
   labels and accuracy in a `QThread` and cache per name, including the unreadable
   result so a broken model does not retry forever.
+- **`QStatusBar.showMessage()` hides left-side (non-permanent) widgets** for the
+  message's duration. The main window's status bar holds the device pickers on
+  the left, so nothing may call `showMessage` on it - use a label instead.

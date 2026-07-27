@@ -35,8 +35,10 @@ an individual file when its line looks relevant.
 - [UI copy style](ui-copy-style.md) - no em dashes; as few words as can be glanced at; say what someone has before what they lack
 - [GUI design vocabulary](gui-design-vocabulary.md) - only the shape decisions that reading `gui/` does not already show: two-state sub-views, teaching beside the control, which knobs may hide
 - [Training takes hours](training-takes-hours.md) - 4-6 hrs for a real run; the page measures its own ETA; stopping early keeps the best model so far
-- [Qt traps paid for once](qt-traps.md) - top-level widget GC, stylesheet scoping, word-wrapped labels, pyqtgraph on the UI thread
+- [Qt traps paid for once](qt-traps.md) - top-level widget GC, stylesheet scoping, word-wrapped labels, pyqtgraph on the UI thread, showMessage hiding the status bar's widgets
 - [Preview playback avoids sd.play()](preview-playback-avoids-sd-play.md) - its Python callback needs the GIL and crackles while the playhead repaints; latency is compensated, never buffered away
+- [Detection calibration needs onset valleys](detection-calibration-needs-onset-valleys.md) - no threshold until 10+ spectral-flux valleys, so synthetic audio can silently segment to nothing; use the manual override path
+- [App icon regeneration](app-icon-regeneration.md) - master file, macOS 824-grid tile geometry and colors, per-platform variants
 
 ### Decisions not to re-litigate
 - [Audio runs at 16 kHz](audio-rate-is-16khz.md) - the rate the whole parrot ecosystem uses; 48 kHz was tried and reverted

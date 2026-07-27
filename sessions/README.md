@@ -57,5 +57,6 @@ without re-deriving context.>
 
 ## Index
 
+- [2026-07-26 (2) - Profiles become the app's spine; logo; dashboard grows up](2026-07-26-profiles-logo-dashboard-2.md)
 - [2026-07-26 - The training page teaches, in pictures rather than paragraphs](2026-07-26-training-page-teaches.md)
 - [2026-07-25 - Models page onboarding, and replacing status.md](2026-07-25-models-onboarding.md)
