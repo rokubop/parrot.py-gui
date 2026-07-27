@@ -259,6 +259,12 @@ class ProfilesDialog(QDialog):
             self.talon_combo.activated.connect(self._on_talon_sim_changed)
             debug_form.addWidget(self.talon_combo)
             debug_form.addStretch()
+            test_btn = QPushButton("Create test profiles")
+            test_btn.setToolTip(
+                "One profile per app state: empty, 2 sounds, 10 sounds, "
+                "model without Talon, fully set up with a mock Talon")
+            test_btn.clicked.connect(self._on_create_test_profiles)
+            debug_form.addWidget(test_btn)
             layout.addWidget(debug_group)
         else:
             self.talon_combo = None
@@ -307,8 +313,13 @@ class ProfilesDialog(QDialog):
             self.talon_combo.setEnabled(not busy and is_profile)
             if is_profile:
                 sim = profiles.read_meta(name).get("talon", "real")
+                while self.talon_combo.count() > 2:
+                    self.talon_combo.removeItem(2)
                 idx = self.talon_combo.findData(sim)
-                self.talon_combo.setCurrentIndex(idx if idx >= 0 else 0)
+                if idx < 0:  # a path: the profile bundles a mock Talon home
+                    self.talon_combo.addItem("Mock Talon (bundled)", sim)
+                    idx = 2
+                self.talon_combo.setCurrentIndex(idx)
 
     # ---- operations -----------------------------------------------------
 
@@ -349,6 +360,36 @@ class ProfilesDialog(QDialog):
             src_dir = self._data_dir_of(src)
             self._run(lambda: profiles.duplicate(src_dir, name, talon),
                       "Copying...")
+
+    def _on_create_test_profiles(self):
+        from gui.services import mock_states
+        result = {}
+
+        def build():
+            result["created"], result["notes"] = \
+                mock_states.create_test_profiles()
+
+        self.status_label.setText("Building test profiles...")
+        self._worker = _OpWorker(build, self)
+        self._worker.done.connect(
+            lambda error: self._on_test_profiles_done(error, result))
+        self._update_buttons()
+        self._worker.start()
+
+    def _on_test_profiles_done(self, error, result):
+        self._worker = None
+        self.status_label.setText("")
+        if error:
+            QMessageBox.warning(self, "Test profiles failed", error)
+        else:
+            notes = result.get("notes") or []
+            created = result.get("created") or []
+            summary = (f"Created {', '.join(created)}." if created
+                       else "Nothing new to create.")
+            if notes:
+                summary += "\n\n" + "\n".join(notes)
+            QMessageBox.information(self, "Test profiles", summary)
+        self._refresh()
 
     def _on_import(self):
         dialog = ImportSetupDialog(self)

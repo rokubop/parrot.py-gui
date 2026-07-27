@@ -302,8 +302,11 @@ def spawn_into(name):
         env.pop("PARROT_TALON_HOME", None)
     else:
         env["PARROT_DATA_DIR"] = profile_data_dir(name)
-        if read_meta(name).get("talon") == "none":
-            env["PARROT_TALON_HOME"] = "none"
+        # "real" uses the machine's Talon; "none" simulates its absence; any
+        # other value is a path to a mock Talon home (test profiles bundle one)
+        sim = read_meta(name).get("talon")
+        if sim and sim != "real":
+            env["PARROT_TALON_HOME"] = sim
         else:
             env.pop("PARROT_TALON_HOME", None)
     kwargs = {}
