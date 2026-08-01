@@ -28,10 +28,10 @@ from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QLineEdit,
     QSpinBox, QCheckBox, QTreeWidget, QTreeWidgetItem, QHeaderView, QFrame,
     QMessageBox, QStackedWidget, QProgressBar, QPlainTextEdit, QScrollArea,
-    QMenu
+    QMenu, QComboBox
 )
 
-from config.config import CLASSIFIER_FOLDER
+from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
 from gui import theme
 from gui.services import balance, keep_awake, library_ops
 from gui.widgets import help_dialog
@@ -143,13 +143,17 @@ class BalanceWorker(QThread):
     """
     ready = pyqtSignal(object, object, str)   # labels, plan or None, error
 
-    def __init__(self, labels, parent=None):
+    def __init__(self, labels, silence="all", balance_sounds=True, parent=None):
         super().__init__(parent)
         self.labels = list(labels)
+        self.silence = silence
+        self.balance_sounds = balance_sounds
 
     def run(self):
         try:
-            self.ready.emit(self.labels, balance.plan_for(self.labels), "")
+            self.ready.emit(self.labels,
+                            balance.plan_for(self.labels, self.silence,
+                                             self.balance_sounds), "")
         except Exception as exc:
             # A swallowed failure here leaves the Balance column on "…" forever,
             # which reads as "still working" rather than "this is broken".
@@ -251,6 +255,7 @@ class TrainView(QWidget):
         self._first_epoch = None    # (epoch index, monotonic seconds) of the first
                                     # epoch to report back
         self._plan = None           # what the trainer would do with the ticked set
+        self._silence_item = None   # the built-in class, listed but not tickable
         self._plan_worker = None
         self._copy_worker = None
         self._best_epoch = None
@@ -586,16 +591,47 @@ class TrainView(QWidget):
         nets_group.addWidget(self.net_spin, 0, Qt.AlignmentFlag.AlignLeft)
         v.addLayout(nets_group)
 
-        # Disabled rather than silently useless where the platform can't.
-        self.awake_check = QCheckBox("Keep computer awake")
-        awake_why = keep_awake.unavailable_reason()
-        self.awake_check.setChecked(awake_why is None)
-        self.awake_check.setEnabled(awake_why is None)
-        self.awake_check.setToolTip(
-            awake_why or "Holds off sleep until the run ends. Closing a laptop "
-            "lid still stops it.")
-        v.addWidget(self.awake_check)
+        # Both default to what the CLI does, so ticking nothing changes nothing.
+        self.balance_check = QCheckBox("Balance sounds")
+        self.balance_check.setChecked(True)
+        self.balance_check.setToolTip(
+            "Repeats sounds you have little of and trims the ones you have "
+            "most of, so no sound dominates by volume alone.\nRepeating is "
+            "capped at 2x, so a very thin sound still goes in light.\nOff "
+            "means each sound goes in exactly as recorded.")
+        self.balance_check.stateChanged.connect(self._on_balance_changed)
+        balance_row = QHBoxLayout()
+        balance_row.setSpacing(6)
+        balance_row.addWidget(self.balance_check)
+        balance_row.addWidget(help_dialog.help_button(self, "balance"))
+        balance_row.addStretch()
+        v.addLayout(balance_row)
 
+        # The note under it is the point: silence has no row in the table.
+        # Three states, not a checkbox: leaving it out is a real option, and
+        # the models that predate the class are the best ones anyone has.
+        silence_row = QHBoxLayout()
+        silence_row.setSpacing(8)
+        silence_head = QLabel("Silence")
+        silence_head.setStyleSheet(
+            f"color: {t['text_dim']}; background: transparent;")
+        silence_row.addWidget(silence_head)
+        self.silence_mode = QComboBox()
+        for text, mode in (("Include all", "all"),
+                           ("Balanced", "balanced"),
+                           ("Omit", "none")):
+            self.silence_mode.addItem(text, mode)
+        self.silence_mode.setCurrentIndex(1)
+        self.silence_mode.setToolTip(
+            "Assembled from the quiet parts of your recordings; you never "
+            "record it.\nInclude all is what every model in the wild trained "
+            "with, and it is usually\nthe biggest class by far. Balance it "
+            "gives it one sound's ration.\nLeave out drops the class, which is "
+            "what parrot did before it existed.")
+        self.silence_mode.currentIndexChanged.connect(self._on_balance_changed)
+        silence_row.addWidget(self.silence_mode, 1)
+        silence_row.addWidget(help_dialog.help_button(self, "balance"))
+        v.addLayout(silence_row)
         summary_head = QLabel("Model summary")
         summary_head.setStyleSheet(
             f"color: {t['text_dim']}; background: transparent; "
@@ -612,6 +648,17 @@ class TrainView(QWidget):
         self.readiness = QLabel("")
         self.readiness.setWordWrap(True)
         v.addWidget(self.readiness)
+
+        # By the button, not the balance boxes: this is about surviving the
+        # run, not what the model is. Disabled where the platform cannot.
+        self.awake_check = QCheckBox("Keep computer awake")
+        awake_why = keep_awake.unavailable_reason()
+        self.awake_check.setChecked(awake_why is None)
+        self.awake_check.setEnabled(awake_why is None)
+        self.awake_check.setToolTip(
+            awake_why or "Holds off sleep until the run ends. Closing a laptop "
+            "lid still stops it.")
+        v.addWidget(self.awake_check)
 
         self.train_btn = QPushButton("Start training")
         self.train_btn.setObjectName("primaryAction")
@@ -925,6 +972,7 @@ class TrainView(QWidget):
         self.labels_tree.blockSignals(True)
         self.labels_tree.clear()
         self._items = {}
+        self._silence_item = None
         for label in self.app_state.get_sound_labels():
             ms = self.app_state.get_label_duration_ms(label)
             quantity, _percent, _next = get_quantity_rating(ms)
@@ -996,9 +1044,15 @@ class TrainView(QWidget):
             # A newer selection landed mid-flight; re-ask once it is back.
             self._plan_timer.start()
             return
-        self._plan_worker = BalanceWorker(selected, self)
+        self._plan_worker = BalanceWorker(
+            selected, self.silence_mode.currentData(),
+            self.balance_check.isChecked(), self)
         self._plan_worker.ready.connect(self._on_plan)
         self._plan_worker.start()
+
+    def _on_balance_changed(self):
+        # Shares are against the total, so every bar moves with this.
+        self._plan_timer.start()
 
     def _on_plan(self, labels, plan, error):
         self._plan_worker = None
@@ -1029,8 +1083,16 @@ class TrainView(QWidget):
     def _apply_plan(self, plan):
         """Write the trainer's verdict into the Balance and In-training columns."""
         rows = {r["label"]: r for r in plan["rows"]} if plan else {}
-        scale = max([max(r["size"], r["loaded"]) for r in rows.values()] or [0])
+        silence = (plan or {}).get("silence")
+        widths = [max(r["size"], r["loaded"]) for r in rows.values()]
+        # silence shares the scale rather than getting its own. Uncapped it is
+        # several times the widest sound, and squashing the rest is the point:
+        # that picture is the argument for the checkbox above.
+        if silence:
+            widths.append(silence["loaded"])
+        scale = max(widths or [0])
         target = plan["target"] if plan else 0
+        self._sync_silence_row(silence, target, scale)
         self.labels_tree.blockSignals(True)
         for label, item in self._items.items():
             row = rows.get(label)
@@ -1047,6 +1109,51 @@ class TrainView(QWidget):
             item.setToolTip(BAR_COLUMN, self._bar_tooltip(row))
         self.labels_tree.blockSignals(False)
         self.labels_tree.viewport().update()
+
+    def _sync_silence_row(self, silence, target, scale):
+        """silence, listed with the sounds but not one of them.
+
+        Not tickable and never in checked_labels(): the trainer builds it from
+        the quiet stretches inside everything else, so there is nothing to
+        include or leave out.
+        """
+        if not silence or not silence["loaded"]:
+            if self._silence_item is not None:
+                idx = self.labels_tree.indexOfTopLevelItem(self._silence_item)
+                if idx >= 0:
+                    self.labels_tree.takeTopLevelItem(idx)
+                self._silence_item = None
+            return
+
+        t = theme.colors()
+        if self._silence_item is None:
+            self._silence_item = QTreeWidgetItem([BACKGROUND_LABEL, "", "", ""])
+            self._silence_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self._silence_item.setTextAlignment(
+                2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.labels_tree.addTopLevelItem(self._silence_item)
+        item = self._silence_item
+        secs = silence["loaded"] * balance.ms_per_frame() / 1000
+        item.setText(1, "built in")
+        item.setText(2, f"~{secs / 60:.0f}m" if secs >= 90 else f"~{secs:.0f}s")
+        for col in (0, 1, 2):
+            item.setForeground(col, QColor(t["text_dim"]))
+        item.setData(BAR_COLUMN, BAR_ROLE,
+                     (silence["loaded"], silence["loaded"], target, scale, False))
+        item.setToolTip(BAR_COLUMN, self._silence_tooltip(silence))
+        item.setToolTip(0, "Built from the quiet parts of every recording, so "
+                           "it is not a sound you pick.")
+
+    @staticmethod
+    def _silence_tooltip(silence):
+        share = f"{silence['share']:.0%} of the run"
+        if silence["mode"] == "balanced":
+            return (f"Balanced to the same target as one sound.\n"
+                    f"{silence['loaded']:,} of {silence['size']:,} frames, "
+                    f"{share}.")
+        return (f"Every quiet frame goes in - {silence['loaded']:,} of them, "
+                f"{share}.\nSet Silence to “Balance it” for one sound's "
+                f"ration instead.")
 
     @staticmethod
     def _bar_tooltip(row):
@@ -1234,7 +1341,9 @@ class TrainView(QWidget):
 
         self.train_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        self.worker = TrainingWorker(name, selected, nets)
+        self.worker = TrainingWorker(name, selected, nets,
+                                     self.silence_mode.currentData(),
+                                     self.balance_check.isChecked())
         self.worker.stage_changed.connect(self._on_stage)
         self.worker.run_started.connect(self._on_run_started)
         self.worker.epoch_complete.connect(self._on_epoch)

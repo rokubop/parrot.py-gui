@@ -33,9 +33,9 @@ def ms_per_frame():
     return math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
 
-def plan_for(labels):
+def plan_for(labels, silence="all", balance_sounds=None):
     """What the trainer will do to each label, as
-    {"target": frames, "rows": [...], "counts": {...}}.
+    {"target": frames, "rows": [...], "counts": {...}, "silence": {...}}.
 
     A row is {label, strategy, size, loaded, percent, share, short}:
       strategy  one of "oversample" / "undersample" / "sample", the trainer's own
@@ -46,11 +46,14 @@ def plan_for(labels):
     Returns rows in the order given. Raises nothing: a label the trainer has no
     strategy for is skipped, which is what happens to one with no recordings.
     """
+    from config.config import BACKGROUND_LABEL
     from lib.load_data import (get_grouped_data_directories,
                                generate_data_balance_strategy_map)
+    from lib.srt import count_total_silence_frames
 
     grouped = get_grouped_data_directories(list(labels))
-    strategies = generate_data_balance_strategy_map(grouped)
+    strategies = generate_data_balance_strategy_map(grouped, silence,
+                                                    balance_sounds)
 
     rows = []
     target = 0
@@ -79,7 +82,20 @@ def plan_for(labels):
         "sample": sum(1 for r in rows if r["strategy"] == "sample"),
         "short": sum(1 for r in rows if r["short"]),
     }
-    return {"target": target, "rows": rows, "counts": counts}
+    # Never in `rows`: no recordings of its own, but usually the biggest class.
+    ms = ms_per_frame()
+    silence_size = sum(count_total_silence_frames(directory, ms)
+                       for dirs in grouped.values() for directory in dirs)
+    if silence == "none":
+        silence_loaded = 0
+    else:
+        silence_loaded = strategies.get(BACKGROUND_LABEL, {}).get(
+            "total_loaded", silence_size)
+    total = sum(r["loaded"] for r in rows) + silence_loaded
+    return {"target": target, "rows": rows, "counts": counts,
+            "silence": {"size": silence_size, "loaded": silence_loaded,
+                        "mode": silence,
+                        "share": (silence_loaded / total) if total else 0.0}}
 
 
 # The words for each strategy live in gui/widgets/balance_column.py, next to the

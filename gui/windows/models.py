@@ -14,8 +14,8 @@ live tick, newest first.
 
 Net count belongs here rather than only on the training page: every net runs on
 every frame and the scores are averaged (TinyAudioNetEnsemble.forward), so it is
-not a spent training decision but part of what the model costs to run. Hence
-"5 nets averaged" rather than a bare "5 nets", which reads as a spec.
+not a spent training decision but part of what the model costs to run. The
+averaging is said in the column tooltip and the help, not in the value.
 
 The "~2% of a CPU core per net" figure this file used to quote is not repeated
 in any user-facing string, here or in the help: nobody has measured it on a
@@ -38,6 +38,7 @@ from gui import theme
 from gui.services import library_ops
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets import help_dialog
+from gui.widgets.help_dialog import MS_PER_FRAME
 from gui.windows.train_view import primary_button_style
 from gui.workers.combine_worker import CombineWorker
 from lib.print_status import get_quantity_rating
@@ -129,11 +130,24 @@ def _combined_score(meta):
     return f"{latest['combined_accuracy'] * 100:.1f}% combined"
 
 
-def _facts_rows(meta):
+def _training_data(meta):
+    """Frames, not the Sounds tab's seconds: a frame is a sliding window, so
+    the two sit a few percent apart. Hence the ~ on the minutes."""
+    frames = next((n["label_frames"] for n in (meta.get("nets") or [])
+                   if n.get("label_frames")), None)
+    if not frames:
+        return ""
+    total = sum(frames.values())
+    return f"{total:,} frames  (~{total * MS_PER_FRAME / 60000:.0f} min)"
+
+
+def _facts_rows(meta, sound_count=None):
     """(label, value) pairs, all read out of the model itself. Anything
     measured off the recordings folder belongs in the sound notes."""
     t = theme.colors()
     rows = []
+    if sound_count:
+        rows.append(("Sounds", sound_count))
     if meta.get("trained_at"):
         when = _trained_when(meta["trained_at"], meta.get("trained_at_source"))
         # A file date is not a training date: a copied data dir restamps every
@@ -144,10 +158,10 @@ def _facts_rows(meta):
                      if meta.get("trained_at_source") == "mtime" else when))
     nets = meta["net_count"]
     if nets:
-        # Averaged, never "voting": an average is not a count, so an odd
-        # number buys nothing (TinyAudioNetEnsemble.forward).
-        rows.append(("Neural networks", "1, deciding alone" if nets == 1
-                     else f"{nets}, averaged"))
+        rows.append(("Neural networks", str(nets)))
+    trained_on = _training_data(meta)
+    if trained_on:
+        rows.append(("Trained on", trained_on))
     accuracy = [s for s in (_combined_score(meta), _net_scores(meta)) if s]
     if accuracy:
         rows.append(("Accuracy", ", ".join(accuracy)))
@@ -364,10 +378,6 @@ class ModelsPage(QWidget):
         v = QVBoxLayout(col)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(6)
-        self.sounds_heading = QLabel("")
-        self.sounds_heading.setStyleSheet(
-            f"font-weight: bold; color: {t['text_bright']};")
-        v.addWidget(self.sounds_heading)
         self.sound_tree = self._build_sound_tree()
         v.addWidget(self.sound_tree, 1)
         self.unused_label = QLabel("")
@@ -696,9 +706,8 @@ class ModelsPage(QWidget):
             meta = self.app_state.get_model_metadata(self._current)
             self._start_inspect(self._current)
         self.detail_title.setText(meta["name"])
-        html, stale, sounds, unused, heading = self._detail_html(meta)
+        html, stale, sounds, unused = self._detail_html(meta)
         self.detail_body.setText(html)
-        self.sounds_heading.setText(heading)
         self._fill_sound_tree(sounds)
         self.unused_label.setText(
             f"Recorded but not in this model: {', '.join(unused)}"
@@ -733,11 +742,11 @@ class ModelsPage(QWidget):
         # until it reaches this model, say so.
         if name not in self._loaded:
             return (f"<span style='color:{t['text_dim']};'>Reading its sounds…"
-                    f"</span>", [], [], [], "")
+                    f"</span>", [], [], [])
         labels = self._loaded[name]
         if not labels:
             return (f"<span style='color:{t['text_dim']};'>Couldn't read this "
-                    f"model's sound list.</span>", [], [], [], "")
+                    f"model's sound list.</span>", [], [], [])
 
         mtime = self._model_mtime()
         recorded = self.app_state.get_sound_labels()
@@ -763,18 +772,16 @@ class ModelsPage(QWidget):
             # recordings folder goes there; that was the old Excellent/Good.
             rows.append((label, score, worst, note, colour))
 
+        # A class, not a sound anyone made. Counting it overstates by one.
+        spoken = [l for l in labels if l != BACKGROUND_LABEL]
+        plus = f" + {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
         facts = "".join(
             f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
             f"{label}</td><td style='color:{t['text']};'>{value}</td></tr>"
-            for label, value in _facts_rows(meta))
+            for label, value in _facts_rows(meta, f"{len(spoken)}{plus}"))
 
-        # silence is a class, not a sound anyone made. Counting it overstates
-        # the model by one.
-        spoken = [l for l in labels if l != BACKGROUND_LABEL]
-        plus = f", plus {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
         html = "<table cellspacing='0' cellpadding='3'>" + facts + "</table>"
-        return (html, stale, rows, [l for l in recorded if l not in labels],
-                f"{len(spoken)} sounds{plus}")
+        return (html, stale, rows, [l for l in recorded if l not in labels])
 
     def _start_inspect(self, name):
         if self.inspect_worker is not None and self.inspect_worker.isRunning():

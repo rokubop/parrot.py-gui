@@ -175,11 +175,12 @@ def balance_legend(parent=None):
     grid = QHBoxLayout(box)
     grid.setContentsMargins(2, 6, 2, 0)
     grid.setSpacing(18)
+    # "Sampled" is left out: it means nothing was done, which the bar already
+    # shows by sitting at its own size.
     for kind, term, meaning in (
-            ("sample", "Sampled", "used as recorded"),
-            ("oversample", "Oversampled", "repeated to reach the target"),
-            ("undersample", "Undersampled", "cut back to the target"),
-            ("short", "Still short", "repeating stops at 2x")):
+            ("oversample", "Oversampled", "(repeat)"),
+            ("undersample", "Undersampled", "(trim)"),
+            ("short", "Still short", "(2x max repeat)")):
         cell = QHBoxLayout()
         cell.setSpacing(7)
         cell.addWidget(_Swatch(kind))

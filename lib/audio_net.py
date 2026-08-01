@@ -131,6 +131,11 @@ class AudioNetTrainer:
 
         input_size = 120
 
+        # Post-balance, per label. The recordings folder only knows today.
+        label_frames = {label: 0 for label in self.dataset_labels}
+        for sample in self.dataset.samples:
+            label_frames[self.dataset_labels[sample[1]]] += 1
+
         # create_empty() makes recordings/models/code only.
         os.makedirs(REPLAYS_FOLDER, exist_ok=True)
         with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:
@@ -298,6 +303,7 @@ class AudioNetTrainer:
                         # This net's own, per sound. last_row holds the means.
                         'label_accuracy': label_accuracy[j],
                         'combined_accuracy': combined_accuracy,
+                        'label_frames': label_frames,
                         'last_row': csv_row,
                         'loss': epoch_loss[j],
                         'epoch': epoch,

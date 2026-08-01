@@ -104,11 +104,14 @@ class TrainingWorker(QThread):
     best_saved = pyqtSignal()
     data_warning = pyqtSignal(str, str)         # source wav, srt to delete
 
-    def __init__(self, model_name, labels, net_count=1, parent=None):
+    def __init__(self, model_name, labels, net_count=1, silence="all",
+                 balance_sounds=True, parent=None):
         super().__init__(parent)
         self.model_name = model_name
         self.labels = labels
         self.net_count = net_count
+        self.silence = silence
+        self.balance_sounds = balance_sounds
         self._stop_requested = False
         self._seen_warnings = set()
 
@@ -192,7 +195,9 @@ class TrainingWorker(QThread):
         self.stage_changed.emit(
             f"Reading every recording of {len(self.labels)} {noun}…")
         data = load_pytorch_data(self.labels,
-                                 audio_settings['FEATURE_ENGINEERING_TYPE'])
+                                 audio_settings['FEATURE_ENGINEERING_TYPE'],
+                                 silence=self.silence,
+                                 balance_sounds=self.balance_sounds)
         self.stage_changed.emit("Indexing…")
         dataset = AudioDataset(data)
         trainer = AudioNetTrainer(dataset, self.net_count, audio_settings)

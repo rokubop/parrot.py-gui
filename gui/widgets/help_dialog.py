@@ -53,12 +53,14 @@ RECORD_ROWS = (
 # TinyAudioNetEnsemble from every BEST checkpoint, and predict_single_proba calls
 # it once per frame ). So the big picture comes first and the training cost last.
 NET_ROWS = (
-    (None, f"Each network scores one frame of audio ({MS_PER_FRAME} ms) with "
-           f"how likely it thinks each sound is. A model owns however many you "
-           f"pick here, and every one of them scores every frame."),
+    # No opening row restating the caption: the diagram renders above the rows,
+    # so it has already said what a network does.
     (None, "If you choose 3, every sound detection consults all 3 and averages "
            "their predictions. Training has to train each of the 3 on every "
            "round (epoch), which is why more of them means a longer wait."),
+    (None, "They score every frame while training, and again every day "
+           "afterwards when Talon is listening. The number you pick stays part "
+           "of the model, not just the training run."),
     (None, "More than one is worth it because each net starts from different "
            "random values, so they don't end up wrong about the same sounds. "
            "Averaging them means one net getting a sound wrong doesn't decide "
@@ -66,6 +68,29 @@ NET_ROWS = (
     (None, "<b>3 is the default.</b> Use 1 if you just want to find out whether "
            "your recordings are good enough, since it trains much faster. "
            "Changing this later means training again."),
+)
+
+BALANCE_ROWS = (
+    ("Why", "A model can guess. Give it 99 examples of one sound and 1 of "
+            "another, and always answering the first is right 99% of the time - "
+            "while the second never fires. Even amounts take that shortcut away."),
+    ("Balance sounds", "Repeats the thin ones, trims the fat ones. Repeating "
+                       "stops at 2x, so a very thin sound still goes in light. "
+                       "Off means each sound goes in exactly as recorded."),
+    ("Better fix", "Record more of the thin sound. Trimming throws away data "
+                   "you already have."),
+    ("Silence", "You never record it: the trainer collects the quiet between "
+                "your recordings. It becomes a sound the model can answer with."),
+    ("It never fires", "No pattern names silence, and Talon drops quiet frames "
+                       "on power before the model is even asked. That gate is "
+                       "what stops quiet triggering things, not this class."),
+    ("Include all", "Every quiet frame. Usually several times your largest "
+                    "sound."),
+    ("Balanced", "One sound's ration. The default."),
+    ("Omit", "No silence class. Pair it with a recorded background sound (a "
+             "fan, talking) so real noise still has somewhere harmless to land."),
+    ("Which is best", "Unmeasured. Balanced is the default because it does the "
+                      "same job for far less of the run."),
 )
 
 TRAIN_ROWS = (
@@ -103,8 +128,8 @@ TRAINING_BLOCKS = (
      "It always answers with one of the sounds it knows. Nothing is ever "
      "rejected."),
     ("How much of each", "balance",
-     "It evens them out both ways: thin sounds are repeated, fat ones are cut "
-     "back. Repeating stops at 2x, so a very thin sound stays weak."),
+     "Even amounts stop the model guessing the sound it saw most. Thin ones are "
+     "repeated, fat ones cut back, and repeating stops at 2x."),
     ("How many neural networks", "nets",
      "The model consults every net it owns and averages them. Each one is "
      "another full training run."),
@@ -313,8 +338,8 @@ class NetsDiagram(QWidget):
     # Deterministic, and picked so net 2 is confidently wrong: that is the case
     # the picture exists to explain. The averaged row is computed, never typed,
     # so the illustration cannot drift from the arithmetic it is claiming.
-    CAPTION = (f"One frame of a “pop” ({MS_PER_FRAME} ms), scored by three "
-               f"separately trained networks:")
+    CAPTION = (f"Example of 3 neural networks each scoring one frame "
+               f"({MS_PER_FRAME} ms) on what it thinks the sound is.")
 
     LABELS = ("pop", "ah", "silence")
     TRUE_INDEX = 0
@@ -327,7 +352,6 @@ class NetsDiagram(QWidget):
     TITLE_ROW = 16
     BAR_AREA = 62
     LABEL_ROW = 18
-    LEGEND_ROW = 16      # without it the three bars are unexplained shapes
     PANEL_GAP = 8
     GROUP_GAP = 44       # holds the arrow into the averaged panel
     BAR_GAP = 4
@@ -336,8 +360,7 @@ class NetsDiagram(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumWidth(88 * (len(self.VOTES) + 1))
-        self.setFixedHeight(self.TITLE_ROW + self.BAR_AREA + self.LABEL_ROW
-                            + self.LEGEND_ROW + 6)
+        self.setFixedHeight(self.TITLE_ROW + self.BAR_AREA + self.LABEL_ROW + 6)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     @classmethod
@@ -432,14 +455,6 @@ class NetsDiagram(QWidget):
                 self._draw_arrow(p, x + span, x + span + self.GROUP_GAP,
                                  self.TITLE_ROW + self.BAR_AREA / 2, dim)
             x += span + (self.GROUP_GAP if index == n - 2 else self.PANEL_GAP)
-
-        p.setFont(title_font)
-        p.setPen(dim)
-        p.drawText(QRectF(0, self.TITLE_ROW + self.BAR_AREA + self.LABEL_ROW + 2,
-                          self.width(), self.LEGEND_ROW),
-                   int(Qt.AlignmentFlag.AlignCenter),
-                   "bar heights are how sure that net is of "
-                   + ", ".join(self.LABELS))
 
         p.end()
 
@@ -567,6 +582,13 @@ def closed_set_diagram_widget():
     return ClosedSetDiagram()
 
 
+def _balance_legend_widget():
+    # Imported here rather than at module scope: this module is imported by
+    # nearly every page, and the legend only matters on one of them.
+    from gui.widgets.balance_column import balance_legend
+    return balance_legend()
+
+
 TOPICS = {
     "record": ("Recording sounds", RECORD_ROWS, None),
     "train": ("Training a model", TRAIN_ROWS, nets_diagram_widget),
@@ -577,14 +599,8 @@ TOPICS = {
     # The title expands the jargon before a sentence has to. Someone who does
     # not know the word gets it from the window title for free.
     "nets": ("Neural networks", NET_ROWS, nets_diagram_widget),
+    "balance": ("Balancing", BALANCE_ROWS, _balance_legend_widget),
 }
-
-def _balance_legend_widget():
-    # Imported here rather than at module scope: this module is imported by
-    # nearly every page, and the legend only matters on one of them.
-    from gui.widgets.balance_column import balance_legend
-    return balance_legend()
-
 
 TRAINING_DIAGRAMS = {
     "labels": closed_set_diagram_widget,
