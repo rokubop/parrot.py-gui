@@ -33,7 +33,7 @@ from PyQt6.QtWidgets import (
 
 from config.config import CLASSIFIER_FOLDER
 from gui import theme
-from gui.services import balance, library_ops
+from gui.services import balance, keep_awake, library_ops
 from gui.widgets import help_dialog
 from gui.widgets.balance_column import (BalanceBarDelegate, balance_legend,
                                         BAR_ROLE)
@@ -44,6 +44,12 @@ from lib.print_status import get_quantity_rating
 
 WARN = "#e0b020"
 BAD = "#e05a5a"
+
+STOP_HINT = "Stopping keeps the best model so far."
+# Which of these follows it depends on whether the run actually got its sleep
+# assertion, so the page never promises cover it does not have.
+AWAKE_HINT_HELD = "Sleep is held off until this ends. A closed lid still stops it."
+AWAKE_HINT_MANUAL = "Leave it running and the machine has to stay awake."
 
 # The column the balance delegate paints into.
 BAR_COLUMN = 3
@@ -255,6 +261,9 @@ class TrainView(QWidget):
         self._expected_labels = 0
         self._batch_high = 0        # highest batch number seen, so the bar has a total
         self._net_accuracy = {}
+        # Held on the GUI thread for the length of a run: the Windows assertion
+        # dies with the thread that made it, so the worker must not own this.
+        self._awake = keep_awake.KeepAwake("Training a model")
 
         self._setup_ui()
 
@@ -579,10 +588,16 @@ class TrainView(QWidget):
         nets_group.addWidget(self.net_spin, 0, Qt.AlignmentFlag.AlignLeft)
         v.addLayout(nets_group)
 
-        # The app has only ever *asked* for this. Ticked by default because a run
-        # this long dying to a sleep timer is the worst failure the app has.
+        # Ticked by default because a run this long dying to a sleep timer is
+        # the worst failure the app has. Disabled rather than silently useless
+        # where the platform gives us no way to hold sleep off.
         self.awake_check = QCheckBox("Keep computer awake")
-        self.awake_check.setChecked(True)
+        awake_why = keep_awake.unavailable_reason()
+        self.awake_check.setChecked(awake_why is None)
+        self.awake_check.setEnabled(awake_why is None)
+        self.awake_check.setToolTip(
+            awake_why or "Holds off sleep until the run ends. Closing a laptop "
+            "lid still stops it.")
         v.addWidget(self.awake_check)
 
         summary_head = QLabel("Model summary")
@@ -738,11 +753,12 @@ class TrainView(QWidget):
         stop_row.addWidget(self.stop_btn)
         stop_row.addStretch()
         controls.addLayout(stop_row)
-        hint = QLabel("Stopping keeps the best model so far. Leave it running "
-                      "and the machine has to stay awake.")
-        hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {t['text_dim']};")
-        controls.addWidget(hint)
+        # Second sentence is rewritten per run, once it is known whether sleep
+        # is actually being held off - see _on_train.
+        self.sleep_hint = QLabel(STOP_HINT + " " + AWAKE_HINT_MANUAL)
+        self.sleep_hint.setWordWrap(True)
+        self.sleep_hint.setStyleSheet(f"color: {t['text_dim']};")
+        controls.addWidget(self.sleep_hint)
         v.addWidget(self.controls_row)
 
         # Shown instead of the controls when a run ends with nothing to show for
@@ -1215,6 +1231,12 @@ class TrainView(QWidget):
         self.eta.setText("Working out how long this will take…")
         self.stack.setCurrentWidget(self.run_page)
 
+        # Asserted before the worker starts and released by both endings, so
+        # the hold can never outlive the run that asked for it.
+        held = self.awake_check.isChecked() and self._awake.start()
+        self.sleep_hint.setText(
+            f"{STOP_HINT} {AWAKE_HINT_HELD if held else AWAKE_HINT_MANUAL}")
+
         self.train_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.worker = TrainingWorker(name, selected, nets)
@@ -1364,6 +1386,9 @@ class TrainView(QWidget):
             f"finishing around {clock_time(finish)}.")
 
     def _on_finished(self):
+        # Released before the early return: a failed run reaches here too, and
+        # nothing is more certainly over than a run that has stopped.
+        self._awake.stop()
         # The worker emits training_finished *after* error_occurred, so a failed
         # run arrives here too - with no model to celebrate.
         if self._failed:
@@ -1395,6 +1420,7 @@ class TrainView(QWidget):
 
     def _on_error(self, message):
         self._failed = True
+        self._awake.stop()
         self.worker = None
         self.stop_btn.setEnabled(False)
         name = self._trained_name

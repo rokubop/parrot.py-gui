@@ -80,9 +80,9 @@ TRAIN_ROWS = (
              "every round, and every one of them is consulted on every sound "
              "the model hears afterwards. 3 is a good default; the ? beside the "
              "setting explains the rest."),
-    ("Stay awake", "The app has to stay open and the machine awake for the whole "
-                   "run. Turn sleep off before leaving it overnight; closing a "
-                   "laptop lid stops it."),
+    ("Stay awake", "The app has to stay open for the whole run. Keep computer "
+                   "awake holds sleep off while it goes, so there is nothing "
+                   "to turn off first. Closing a laptop lid still stops it."),
     ("Where", "Models tab. Retrain any time; old models are kept."),
 )
 
