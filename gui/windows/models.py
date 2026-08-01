@@ -33,7 +33,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QInputDialog, QMessageBox, QScrollArea, QFrame, QDialog
 )
 
-from config.config import CLASSIFIER_FOLDER
+from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
 from gui import theme
 from gui.services import library_ops
 from gui.widgets.confirm_dialog import confirm_destructive
@@ -87,6 +87,38 @@ def _human_size(num_bytes):
         if size < 1024 or unit == "GB":
             return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
+
+
+def _span(values, fmt):
+    """One value, or lowest to highest. Nets that landed on the same number
+    should not be made to look like a range."""
+    low, high = fmt(min(values)), fmt(max(values))
+    return low if low == high else f"{low}-{high}"
+
+
+def _net_scores(meta):
+    """The only accuracy a model carries: what each net scored on the split the
+    trainer held back, at the epoch its best weights were saved.
+
+    Reported per net and never averaged into one figure. The ensemble means
+    softmax probabilities rather than picking a winner, so its accuracy is not
+    the mean of these and cannot be worked out from them - it needs a test run.
+    Epochs are +1 because the trainer counts from zero and every screen that
+    shows one counts from one.
+    """
+    nets = meta.get("nets") or []
+    scores = [n["accuracy"] for n in nets if n.get("accuracy") is not None]
+    if not scores:
+        return ""
+    epochs = [n["epoch"] for n in nets if n.get("epoch") is not None]
+    each = " each" if len(scores) > 1 else ""
+    whose = "their own" if len(scores) > 1 else "its own"
+    line = (f"{_span(scores, lambda v: f'{v * 100:.1f}')}%{each} on {whose} "
+            f"held-back samples")
+    if epochs:
+        noun = "epochs" if len(set(epochs)) > 1 else "epoch"
+        line += f", at {noun} {_span(epochs, lambda v: str(v + 1))}"
+    return line
 
 
 class InspectWorker(QThread):
@@ -529,8 +561,10 @@ class ModelsPage(QWidget):
         bits.append("1 net deciding alone" if nets == 1
                     else f"{nets} neural networks averaged")
         bits.append(_human_size(meta["total_size_bytes"]))
-        if meta.get("best_accuracy") is not None:
-            bits.append(f"best accuracy {meta['best_accuracy']:.3f}")
+        # Accuracy is deliberately not here: a single "best accuracy" is the
+        # luckiest net's, and the ensemble averages probabilities rather than
+        # taking the best, so that number is nobody's score. _net_scores says
+        # what was actually measured, with room to qualify it.
         self.detail_stats.setText("   ·   ".join(bits))
         html, stale = self._detail_html(meta)
         self.detail_body.setText(html)
@@ -544,8 +578,13 @@ class ModelsPage(QWidget):
             self.stale_label.setText("")
 
     def _model_mtime(self):
-        pkl = os.path.join(CLASSIFIER_FOLDER, f"{self._current}.pkl")
-        return os.path.getmtime(pkl) if os.path.isfile(pkl) else 0
+        """When the model was trained, for comparing against recording dates.
+
+        The pkl's own mtime is the last resort inside _trained_at, not the
+        first: copying a data dir restamps every pkl to the time of the copy,
+        which would mark every sound in the library as newer than the model.
+        """
+        return self.app_state.get_model_trained_at(self._current) or 0
 
     def _detail_html(self, meta):
         """What this model knows, next to what's been recorded since - the two
@@ -569,6 +608,17 @@ class ModelsPage(QWidget):
         rows = []
         stale = []
         for label in labels:
+            if label == BACKGROUND_LABEL:
+                # Not a sound anyone recorded: the trainer assembles it from the
+                # quiet stretches inside every other label. Left in the list
+                # because the model really does answer with it, but it has no
+                # folder, so the recording checks below would call it missing.
+                rows.append(
+                    f"<tr><td style='color:{t['text']}; padding-right:16px;'>"
+                    f"{label}</td><td><span style='color:{t['text_dim']};'>"
+                    f"built from the quiet parts of the others</span>"
+                    f"</td></tr>")
+                continue
             newest = library_ops.newest_recording_mtime(label)
             note = ""
             if newest is None:
@@ -577,18 +627,28 @@ class ModelsPage(QWidget):
             elif newest > mtime:
                 stale.append(label)
                 note = f"<span style='color:{WARN};'>new recordings since</span>"
-            else:
-                quantity, _p, _n = get_quantity_rating(
-                    self.app_state.get_label_duration_ms(label))
-                color = theme.QUANTITY_COLORS.get(quantity, t["text_dim"])
-                note = f"<span style='color:{color};'>{quantity}</span>"
+            # Nothing else goes here. A checkpoint stores nothing per sound, so
+            # any number beside a label would be measuring today's recordings
+            # folder while appearing to rate the model. The two notes above are
+            # facts about the model against the library, which is the question
+            # this panel exists to answer.
             rows.append(
                 f"<tr><td style='color:{t['text']}; padding-right:16px;'>{label}"
                 f"</td><td>{note}</td></tr>")
 
+        # Counted without silence, which is a class the model answers with but
+        # not a sound anyone made. Claiming 21 sounds when one of them is the
+        # gaps between them overstates the model by exactly one.
+        spoken = [l for l in labels if l != BACKGROUND_LABEL]
+        plus = f", plus {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
         html = [f"<b style='color:{t['text_bright']};'>Recognizes "
-                f"{len(labels)} sounds</b>",
-                "<table cellspacing='0' cellpadding='2'>" + "".join(rows) + "</table>"]
+                f"{len(spoken)} sounds{plus}</b>"]
+        scores = _net_scores(meta)
+        if scores:
+            html.append(f"<div style='color:{t['text_dim']}; padding-top:2px;'>"
+                        f"{scores}</div>")
+        html.append(
+            "<table cellspacing='0' cellpadding='2'>" + "".join(rows) + "</table>")
 
         unused = [l for l in recorded if l not in labels]
         if unused:
