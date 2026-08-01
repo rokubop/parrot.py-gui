@@ -5,8 +5,8 @@ import math
 from PyQt6.QtCore import Qt, QRectF, QPointF
 from PyQt6.QtGui import QPainter, QColor, QPen, QPolygonF
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QWidget, QFrame, QSizePolicy
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QScrollArea, QWidget, QFrame, QSizePolicy
 )
 
 from gui import theme
@@ -41,6 +41,27 @@ RECORD_ROWS = (
             "between sessions."),
     ("Where", "Sounds tab: “+ New sound”, then “+ Add recording”."),
 )
+# Nets get their own topic because the number is not what it looks like. It sits
+# next to a spinner on a training screen, which frames it as "a setting for this
+# run", and it is really the shape of the model you end up with: every net loads
+# into Talon and runs on every frame forever ( TorchEnsembleClassifier builds a
+# TinyAudioNetEnsemble from every BEST checkpoint, and predict_single_proba calls
+# it once per frame ). So the big picture comes first and the training cost last.
+NET_ROWS = (
+    (None, "Parrot models use neural networks to figure out which sound you "
+           "meant. A model owns however many you pick here."),
+    (None, "If you choose 3, every sound detection consults all 3 and averages "
+           "their predictions. Training has to train each of the 3 on every "
+           "round (epoch), which is why more of them means a longer wait."),
+    (None, "More than one is worth it because each net starts from different "
+           "random values, so they don't end up wrong about the same sounds. "
+           "Averaging them means one net getting a sound wrong doesn't decide "
+           "the answer on its own."),
+    (None, "<b>3 is the default.</b> Use 1 if you just want to find out whether "
+           "your recordings are good enough, since it trains much faster. "
+           "Changing this later means training again."),
+)
+
 TRAIN_ROWS = (
     ("What", "Training reads every recording of every sound and produces "
              "a model file in data/models."),
@@ -55,10 +76,10 @@ TRAIN_ROWS = (
                     "curve flattens and you keep it - a usable first pass in "
                     "a fraction of the time. Let it finish when you're "
                     "chasing the last few points."),
-    ("Nets", "Each net learns the same sounds from a different random start, so "
-             "a net that mishears something gets outvoted by the others rather "
-             "than deciding alone. 3 is a good default, and each net multiplies "
-             "the training time."),
+    ("Neural networks", "How many the model owns. Each one is trained on "
+             "every round, and every one of them is consulted on every sound "
+             "the model hears afterwards. 3 is a good default; the ? beside the "
+             "setting explains the rest."),
     ("Stay awake", "The app has to stay open and the machine awake for the whole "
                    "run. Turn sleep off before leaving it overnight; closing a "
                    "laptop lid stops it."),
@@ -76,9 +97,11 @@ TRAINING_BLOCKS = (
      "It always answers with one of the sounds it knows. Nothing is ever "
      "rejected."),
     ("How much of each", "balance",
-     "Sounds far past the line lose the excess. Even them out."),
-    ("How many nets", "nets",
-     "More nets outvote a bad one. Each net costs the whole run again."),
+     "It evens them out both ways: thin sounds are repeated, fat ones are cut "
+     "back. Repeating stops at 2x, so a very thin sound stays weak."),
+    ("How many neural networks", "nets",
+     "The model consults every net it owns and averages them. Each one is "
+     "another full training run."),
 )
 CONNECT_ROWS = (
     ("What", "Talon (talonvoice.com) runs your model live and maps each "
@@ -273,13 +296,19 @@ class NetsDiagram(QWidget):
     """Why net count is worth a thought: each net is trained from its own random
     start on its own shuffle of the data, so they disagree. One net can be the
     unlucky one - and with a net count of 1, the unlucky one is the model you
-    ship. Averaging their votes lets the others outvote it."""
+    ship. Averaging the scores dilutes it.
+
+    Not a vote, and the drawing has to stay honest about that. The nets output
+    confidences and TinyAudioNetEnsemble takes their arithmetic mean, so a
+    confident net outweighs two hesitant ones and a majority can lose. Calling
+    it voting is what makes people ask whether the count should be odd."""
 
     # One frame of one sound, as scored by three independently trained nets.
     # Deterministic, and picked so net 2 is confidently wrong: that is the case
     # the picture exists to explain. The averaged row is computed, never typed,
     # so the illustration cannot drift from the arithmetic it is claiming.
-    CAPTION = "One frame of a “pop”, scored by three separately trained nets:"
+    CAPTION = ("One frame of a “pop”, scored by three separately "
+               "trained networks:")
 
     LABELS = ("pop", "ah", "silence")
     TRUE_INDEX = 0
@@ -294,8 +323,9 @@ class NetsDiagram(QWidget):
     LABEL_ROW = 18
     LEGEND_ROW = 16      # without it the three bars are unexplained shapes
     PANEL_GAP = 8
-    GROUP_GAP = 26       # wider gap sets the averaged panel apart from the nets
+    GROUP_GAP = 44       # holds the arrow into the averaged panel
     BAR_GAP = 4
+    ARROW_HEAD = 7
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -315,6 +345,23 @@ class NetsDiagram(QWidget):
         panels = [(f"Net {i + 1}", v) for i, v in enumerate(self.VOTES)]
         panels.append(("Averaged", self.averaged()))
         return panels
+
+    def _draw_arrow(self, painter, x0, x1, y, color):
+        """Into the averaged panel, so it reads as a consequence of the three to
+        its left rather than a fourth net. A wider gap alone did not say it:
+        four boxes in a row are four boxes in a row."""
+        pad = 6
+        x0, x1 = x0 + pad, x1 - pad
+        head = self.ARROW_HEAD
+        painter.setPen(QPen(color, 1.4))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(x0, y), QPointF(x1 - head + 1, y))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        painter.drawPolygon(QPolygonF([
+            QPointF(x1, y),
+            QPointF(x1 - head, y - head * 0.62),
+            QPointF(x1 - head, y + head * 0.62)]))
 
     def paintEvent(self, _event):
         t = theme.colors()
@@ -375,6 +422,9 @@ class NetsDiagram(QWidget):
                        int(Qt.AlignmentFlag.AlignCenter),
                        self.LABELS[winner] + ("" if correct else "  ✗"))
 
+            if index == n - 2:
+                self._draw_arrow(p, x + span, x + span + self.GROUP_GAP,
+                                 self.TITLE_ROW + self.BAR_AREA / 2, dim)
             x += span + (self.GROUP_GAP if index == n - 2 else self.PANEL_GAP)
 
         p.setFont(title_font)
@@ -516,11 +566,28 @@ TOPICS = {
     "train": ("Training a model", TRAIN_ROWS, nets_diagram_widget),
     "connect": ("Connecting to Talon", CONNECT_ROWS, None),
     "sounds": ("Choosing sounds", SOUNDS_ROWS, frames_diagram_widget),
+    # topic_content already puts the diagram above the rows, which is what this
+    # topic wants: the picture says "they vote" faster than the rows can.
+    # The title expands the jargon before a sentence has to. Someone who does
+    # not know the word gets it from the window title for free.
+    "nets": ("Neural networks", NET_ROWS, nets_diagram_widget),
 }
+
+def _balance_legend_widget():
+    # Imported here rather than at module scope: this module is imported by
+    # nearly every page, and the legend only matters on one of them.
+    from gui.widgets.balance_column import balance_legend
+    return balance_legend()
+
 
 TRAINING_DIAGRAMS = {
     "labels": closed_set_diagram_widget,
     "nets": nets_diagram_widget,
+    # The training page used to hand in a live chart of the ticked sounds, so
+    # this block had no diagram of its own and rendered as nothing in the modal.
+    # The chart is now a column inside the page's own table, which cannot be
+    # borrowed, so the modal gets the legend that explains the same bars.
+    "balance": _balance_legend_widget,
 }
 
 
@@ -568,7 +635,8 @@ def thin_data_warning(count, total):
 
 def rows_html(rows):
     """Label/body rows. A row whose body is None is a section header spanning
-    both columns, for grouping a run of related rows."""
+    both columns; a row whose *label* is None is a plain paragraph, also
+    spanning both, for a topic that reads better as prose than as a glossary."""
     t = theme.colors()
     dim, text = t["text_dim"], t["text"]
     out = ["<table cellspacing='0' cellpadding='2'>"]
@@ -577,6 +645,10 @@ def rows_html(rows):
             out.append(
                 f"<tr><td colspan='2' style='color:{t['text_bright']}; "
                 f"font-weight:bold; padding-top:10px;'>{label}</td></tr>")
+        elif label is None:
+            out.append(
+                f"<tr><td colspan='2' style='color:{text}; "
+                f"padding-bottom:9px;'>{body}</td></tr>")
         else:
             out.append(
                 f"<tr><td style='color:{dim}; font-weight:bold; "
@@ -605,8 +677,11 @@ def topic_content(key, parent=None):
             caption.setStyleSheet(f"color: {theme.colors()['text_dim']};")
             inner.addWidget(caption)
         inner.addWidget(widget)
+    # 700 was a comfortable measure for four short rows and a tall column for
+    # anything longer. Wider trades a little reading comfort for a topic that
+    # fits on the screen at all, which matters more for help nobody scrolls.
     body = WrappedBody(rows_html(rows))
-    body.setMaximumWidth(700)
+    body.setMaximumWidth(860)
     inner.addWidget(body)
     # The scroll area resizes this to its viewport, so without a trailing spring
     # any spare height is shared out between the rows instead of sitting below.
@@ -663,13 +738,31 @@ def scrolled(content, max_height=560):
     return scroll
 
 
+def _fit_to_screen(dlg, content_widget, width=760):
+    """Open at the size the content wants, capped by the screen.
+
+    The default was a 560 px scroll area, which put a scrollbar on topics that
+    would have fitted on any real display - and help you have to scroll is help
+    you skim. The cap is a fraction of the actual screen rather than a constant,
+    so this cannot open taller than the monitor it lands on.
+    """
+    screen = dlg.screen() or QApplication.primaryScreen()
+    available = screen.availableGeometry() if screen else None
+    max_h = int(available.height() * 0.85) if available else 720
+    max_w = int(available.width() * 0.7) if available else width
+    wanted = content_widget.sizeHint()
+    dlg.resize(min(max(width, wanted.width() + 56), max_w),
+               min(wanted.height() + 96, max_h))
+
+
 def show_help(parent, key):
     title = TOPICS[key][0]
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
     v = QVBoxLayout(dlg)
     v.setContentsMargins(20, 16, 20, 16)
-    v.addWidget(scrolled(topic_content(key)))
+    content = topic_content(key)
+    v.addWidget(scrolled(content, max_height=16777215))
 
     close = QPushButton("Close")
     close.clicked.connect(dlg.accept)
@@ -677,6 +770,7 @@ def show_help(parent, key):
     row.addStretch()
     row.addWidget(close)
     v.addLayout(row)
+    _fit_to_screen(dlg, content)
     dlg.exec()
 
 
@@ -687,7 +781,9 @@ def show_training_help(parent):
     dlg.setWindowTitle("Training a model")
     v = QVBoxLayout(dlg)
     v.setContentsMargins(20, 16, 20, 16)
-    v.addWidget(scrolled(training_sections()))
+    sections = training_sections()
+    v.addWidget(scrolled(sections, max_height=16777215))
+    _fit_to_screen(dlg, sections)
     close = QPushButton("Close")
     close.clicked.connect(dlg.accept)
     row = QHBoxLayout()
