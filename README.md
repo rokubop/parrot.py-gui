@@ -27,7 +27,7 @@ Not done yet:
 
 # Software requirements
 * Windows version 7 and up, MacOS or Linux (X11)
-* Python 3.8 (64 bit)
+* Python 3.13 (64 bit). `run.bat` and `run.sh` fetch it for you if it isn't there
 * Project IRIS ( OPTIONAL - Used for turning the eyetracker into a mouse cursor )
 
 Python packages such as
