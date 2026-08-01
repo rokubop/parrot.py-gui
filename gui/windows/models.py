@@ -97,15 +97,11 @@ def _span(values, fmt):
 
 
 def _net_scores(meta):
-    """What each net scored on the split the trainer held back, at the epoch its
-    best weights were saved.
+    """Per net, on the split the trainer held back, at its best epoch.
 
-    Reported per net and never averaged into one figure. The ensemble means
-    softmax probabilities rather than picking a winner, so its accuracy is not
-    the mean of these and cannot be worked out from them - that is what
-    _combined_score is for, on models new enough to carry it.
-    Epochs are +1 because the trainer counts from zero and every screen that
-    shows one counts from one.
+    Never averaged into one figure: the ensemble means probabilities, so its
+    accuracy is not the mean of these. That is _combined_score.
+    Epochs are +1; the trainer counts from zero, every screen from one.
     """
     nets = meta.get("nets") or []
     scores = [n["accuracy"] for n in nets if n.get("accuracy") is not None]
@@ -123,11 +119,10 @@ def _net_scores(meta):
 
 
 def _combined_score(meta):
-    """What the nets scored together, which is how they are actually used.
+    """What the nets scored together, which is how they are used.
 
-    Read from the checkpoint with the highest epoch: the figure belongs to the
-    epoch rather than the net, so every checkpoint written that epoch carries
-    the same one, and the newest is the last measurement taken.
+    Belongs to the epoch, not the net, so take the highest epoch: the last
+    measurement rather than an arbitrary one.
     """
     scored = [n for n in (meta.get("nets") or [])
               if n.get("combined_accuracy") is not None
@@ -142,9 +137,8 @@ def _combined_score(meta):
 
 
 def _facts_rows(meta):
-    """The model-level facts, as (label, value) pairs. Everything here comes
-    out of the model itself; anything measured off the recordings folder
-    belongs in the sound list's notes, not here."""
+    """(label, value) pairs, all read out of the model itself. Anything
+    measured off the recordings folder belongs in the sound notes."""
     rows = []
     if meta.get("trained_at"):
         when = _trained_when(meta["trained_at"], meta.get("trained_at_source"))
@@ -154,11 +148,8 @@ def _facts_rows(meta):
                      if meta.get("trained_at_source") == "mtime" else when))
     nets = meta["net_count"]
     if nets:
-        # "5 nets" alone reads as a spec. Every one is consulted on every sound
-        # and the scores are averaged (TinyAudioNetEnsemble.forward), so say
-        # what they do. "Voting" was the earlier wording and it misleads: an
-        # average is not a count, so a confident net beats two hesitant ones and
-        # there is no reason to prefer an odd number.
+        # Averaged, never "voting": an average is not a count, so an odd
+        # number buys nothing (TinyAudioNetEnsemble.forward).
         rows.append(("Networks", "1, deciding alone" if nets == 1
                      else f"{nets}, averaged"))
     accuracy = [line for line in (_combined_score(meta), _net_scores(meta))
@@ -170,12 +161,10 @@ def _facts_rows(meta):
 
 
 def _label_scores(meta):
-    """Per sound, what each net scored on the held-back split, as ready-to-drop
-    HTML keyed by label.
+    """Per sound, what each net scored on the held-back split, as HTML by label.
 
-    Empty for anything trained before the field existed, which is the right
-    answer: the alternative is a number measured off the recordings folder,
-    which is what used to sit in this column and read as accuracy.
+    Empty on models trained before the field existed. Blank beats a number
+    measured off the recordings folder, which is what used to sit here.
     """
     t = theme.colors()
     per_net = [n["label_accuracy"] for n in (meta.get("nets") or [])
@@ -654,10 +643,8 @@ class ModelsPage(QWidget):
         stale = []
         for label in labels:
             if label == BACKGROUND_LABEL:
-                # Not a sound anyone recorded: the trainer assembles it from the
-                # quiet stretches inside every other label. Left in the list
-                # because the model really does answer with it, but it has no
-                # folder, so the recording checks below would call it missing.
+                # Has no recordings folder, so the checks below would call it
+                # missing. The model does answer with it, so it stays listed.
                 rows.append(
                     f"<tr><td style='color:{t['text']}; padding-right:16px;'>"
                     f"{label}</td><td style='padding-right:16px;'>"
@@ -674,26 +661,20 @@ class ModelsPage(QWidget):
             elif newest > mtime:
                 stale.append(label)
                 note = f"<span style='color:{WARN};'>new recordings since</span>"
-            # The score column is the model's own measurement, and the note is
-            # about the library it was trained from. Nothing derived from
-            # today's recordings folder belongs in the score column: that was
-            # the old Excellent/Good, which read as accuracy and was not.
+            # Score column is the model's own. Nothing measured off today's
+            # recordings folder goes there; that was the old Excellent/Good.
             rows.append(
                 f"<tr><td style='color:{t['text']}; padding-right:16px;'>{label}"
                 f"</td><td style='padding-right:16px;'>"
                 f"{per_sound.get(label, '')}</td><td>{note}</td></tr>")
 
-        # Every model-level fact in one block, then the sounds. They were split
-        # across a header strip and the body, which read as two unrelated lists
-        # once the body grew facts of its own.
         facts = "".join(
             f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
             f"{label}</td><td style='color:{t['text']};'>{value}</td></tr>"
             for label, value in _facts_rows(meta))
 
-        # Counted without silence, which is a class the model answers with but
-        # not a sound anyone made. Claiming 21 sounds when one of them is the
-        # gaps between them overstates the model by exactly one.
+        # silence is a class, not a sound anyone made. Counting it overstates
+        # the model by one.
         spoken = [l for l in labels if l != BACKGROUND_LABEL]
         plus = f", plus {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
         html = ["<table cellspacing='0' cellpadding='3'>" + facts + "</table>",

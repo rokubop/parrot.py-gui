@@ -131,9 +131,7 @@ class AudioNetTrainer:
 
         input_size = 120
 
-        # Nothing else creates this: a profile is built with recordings/models/
-        # code only, so the first training run in a fresh one used to die here
-        # before its first epoch.
+        # create_empty() makes recordings/models/code only.
         os.makedirs(REPLAYS_FOLDER, exist_ok=True)
         with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:
             headers = ['epoch', 'loss', 'avg_validation_accuracy']
@@ -215,10 +213,7 @@ class AudioNetTrainer:
                 epoch_loss = []
                 accuracy = []
                 combined_correct = 0
-                # One entry per net. This used to be a single dict rebuilt on
-                # every pass, so only the last net's per-label scores survived
-                # the loop - and that one net's numbers were then written into
-                # every net's checkpoint and reported as the model's.
+                # One per net. A single dict here left only the last net's.
                 label_accuracy = []
                 for j in range(self.net_count):
                     epoch_validation_loss.append(0.0)
@@ -261,8 +256,7 @@ class AudioNetTrainer:
 
                         label_accuracy.append(accuracy_batch['percent'])
 
-                # What the run reports per sound: the mean across the nets, not
-                # whichever one happened to validate last.
+                # Reported per sound: the mean across nets, not the last one.
                 mean_label_accuracy = {}
                 for dataset_label in self.dataset_labels:
                     scores = [p[dataset_label] for p in label_accuracy]
@@ -274,10 +268,8 @@ class AudioNetTrainer:
                     accuracy.append( correct[j] / ( self.dataset_size * self.validation_split ) )
                     print('[Net: %d] Validation loss: %.4f accuracy %.3f' % (j + 1, epoch_loss[j], accuracy[j]))
 
-                # The nets as they stand this epoch, scored together the way
-                # they will be used. Not identical to the pkl being written,
-                # which combines each net's own BEST weights rather than this
-                # epoch's - they coincide only when every net peaks at once.
+                # This epoch's nets scored together. Not the pkl being written,
+                # which combines each net's BEST weights.
                 combined_accuracy = combined_correct / ( self.dataset_size * self.validation_split )
                 print('[Combined] Sum validation loss: %.4f average accuracy %.3f' % (np.sum(epoch_loss), combined_accuracy))
 
@@ -303,13 +295,8 @@ class AudioNetTrainer:
                         'input_size': self.input_size,
                         'labels': self.dataset_labels,
                         'accuracy': accuracy[j],
-                        # This net's own score per sound, which is the only
-                        # per-sound fact a model carries. last_row holds the
-                        # epoch's means instead, shared by every net saved in
-                        # that epoch.
+                        # This net's own, per sound. last_row holds the means.
                         'label_accuracy': label_accuracy[j],
-                        # Every net's checkpoint carries the same figure: it is
-                        # the epoch's, not this net's.
                         'combined_accuracy': combined_accuracy,
                         'last_row': csv_row,
                         'loss': epoch_loss[j],

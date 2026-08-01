@@ -165,11 +165,8 @@ class AppState(QObject):
                     net_info["accuracy"] = state.get("accuracy")
                     net_info["loss"] = state.get("loss")
                     net_info["epoch"] = state.get("epoch")
-                    # Per sound, this net's own. Absent from anything trained
-                    # before the field existed, so callers must cope with None.
+                    # Both None on anything trained before the fields existed.
                     net_info["label_accuracy"] = state.get("label_accuracy")
-                    # The epoch's, not this net's - the same in every checkpoint
-                    # written that epoch.
                     net_info["combined_accuracy"] = state.get("combined_accuracy")
                     if not meta["labels"] and "labels" in state:
                         meta["labels"] = list(state["labels"])

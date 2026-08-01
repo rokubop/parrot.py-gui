@@ -1,27 +1,15 @@
 """Hold off system sleep for the length of a training run.
 
-A run is 4-6 hours of unattended work, so an idle-sleep timer firing at the
-two hour mark is the worst failure the app has: the machine wakes to a dead
-worker and nothing to show for the night.
+A sleep timer firing two hours into a 4-6 hour unattended run is the worst
+failure the app has.
 
-Only *system* sleep is held. The display is left alone deliberately - the run
-needs no screen, and keeping a laptop panel lit all night to train a model is
-its own kind of rude. Nothing here defeats a lid close or an explicit Sleep
-from the menu; those stop the run on every platform, which is why the UI still
-says so.
+- Windows: ``SetThreadExecutionState``, per thread. The assertion dies with
+  the thread that made it, so start and stop both belong on the GUI thread.
+- macOS: ``caffeinate``. Linux: ``systemd-inhibit`` around ``tail --pid``.
 
-Each platform gets the mechanism it actually has:
-
-- Windows: ``SetThreadExecutionState``. Per *thread* - the assertion dies with
-  the thread that made it, so start and stop must both happen on the GUI
-  thread, never on the training worker.
-- macOS: ``caffeinate``, told to exit when our pid does.
-- Linux: ``systemd-inhibit`` around a ``tail --pid`` that ends with us.
-
-The two subprocess paths are tied to our pid so a crash cannot leave a machine
-that refuses to sleep. ``supported()`` is honest about the platforms where
-none of this is available, so a UI can disable the offer rather than make a
-promise it will not keep.
+System sleep only, never the display. Both subprocesses end with our pid, so
+a crash can't leave a machine that refuses to sleep. Nothing here beats a lid
+close, which is why the UI still says so.
 """
 import atexit
 import os
@@ -80,8 +68,7 @@ class KeepAwake:
         try:
             ok = self._assert()
         except Exception:
-            # Never worth failing a 4 hour run over: worst case the machine
-            # sleeps, which is exactly where we started.
+            # Never worth failing a run over. Worst case the machine sleeps.
             ok = False
         if ok:
             self._held = True
@@ -124,8 +111,7 @@ class KeepAwake:
             # -i idle sleep, -s system sleep on AC, -w so it dies with us.
             cmd = ["caffeinate", "-i", "-s", "-w", str(pid)]
         else:
-            # systemd-inhibit holds the lock only while its child runs, and
-            # this child ends when we do.
+            # The lock lasts only as long as the child, which ends with us.
             cmd = ["systemd-inhibit", "--what=idle:sleep",
                    "--who=parrot.py", f"--why={self.why}", "--mode=block",
                    "tail", f"--pid={pid}", "-f", os.devnull]
