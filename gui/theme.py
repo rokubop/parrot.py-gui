@@ -22,11 +22,32 @@ THEMES = {
         # glossy gradient cards/toolbar for the polished plugin-panel feel
         "card": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #363c46, stop:1 #2b303a)",
         "toolbar": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2f343d, stop:1 #262a31)",
-        "text": "#d8dde3",
-        "text_dim": "#8b939d",
+        # Three tiers of text, and every one of them is measured rather than
+        # picked by eye. The surfaces they land on are base #15181c, window
+        # #23272e, panel #2d323b and the top of the card gradient #363c46.
+        #
+        #   token       base   window  panel  card(top)
+        #   text        13.7    11.5    9.9    8.5     AAA everywhere
+        #   text_dim     7.7     6.5    5.6    4.8     AA everywhere
+        #   text_faint   5.0     4.2    3.6    3.1     AA on base only
+        #
+        # text_dim used to be #8b939d, which measured 4.14 on a panel and 3.57
+        # on a card - below AA, and cards are exactly where the app puts its
+        # secondary copy. text_faint used to be #5d646e at 2.98 on base, which
+        # is not a de-emphasis, it is unreadable.
+        "text": "#dde2e8",
+        "text_dim": "#a3abb6",
         "text_bright": "#ffffff",
+        # For a row that is present but excluded - the training checklist's
+        # unticked sounds. Only ever used on `base`, where it clears AA; it is
+        # not for panels, and it is not a fourth general-purpose grey.
+        "text_faint": "#808995",
         "accent": "#41d97f",
         "accent_text": "#0c1f14",
+        # Selected rows. Deliberately translucent rather than a flat colour, so
+        # it reads the same over the list's $base and over a gradient card, and
+        # so whatever the row itself is coloured survives underneath it.
+        "selection": "rgba(65, 217, 127, 0.22)",
         "border": "#5b6372",
         "button": "#4c5462",
         "button_hover": "#5c6577",
@@ -98,32 +119,30 @@ _STYLESHEET = Template("""
     QListWidget, QTreeWidget {
         border: 1px solid $border; border-radius: $radius;
         background-color: $base; font-size: 12px;
+        /* Kills the focus rectangle the style draws around the *current cell*.
+           It was always there; a solid selection fill was opaque enough to hide
+           it, and a tint is not - so clicking a row lit one cell a shade
+           brighter than the rest of it, which reads as "this cell is special"
+           in a table where cells are not selectable. */
+        outline: none;
     }
     QListWidget::item, QTreeWidget::item { padding: 4px 2px; }
+    /* Selection is a tint, not a fill.
+       It used to be solid $accent with $accent_text on top, which on a list of
+       checkable rows fought everything in the row: a green row under a green
+       tick box, and any colour the row used to mean something (a rating, a
+       warning) repainted to near-black. A tint keeps the row's own colours
+       readable and still reads as selected. It also removes the reason the
+       indicator had to be restyled at all - see below. */
     QListWidget::item:selected, QTreeWidget::item:selected {
-        background-color: $accent; color: $accent_text;
+        background-color: $selection; color: $text_bright;
     }
-    /* Checkable rows need explicit indicators. Left to Fusion + the palette,
-       the box fills with $base and the tick is drawn in HighlightedText, so on
-       a selected row it came out dark-on-dark: checked and unchecked looked
-       identical and clicking appeared to do nothing. */
-    QListWidget::indicator, QTreeWidget::indicator {
-        width: 13px; height: 13px;
-        border: 1px solid $border; border-radius: 3px;
-        background-color: $base;
-    }
-    QListWidget::indicator:hover, QTreeWidget::indicator:hover { border-color: $text; }
-    QListWidget::indicator:checked, QTreeWidget::indicator:checked {
-        background-color: $accent; border-color: $accent;
-    }
-    /* A selected row is already $accent, so an accent-filled box would vanish
-       into it. Invert on selection: dark fill for checked, outline for not. */
-    QListWidget::indicator:selected, QTreeWidget::indicator:selected {
-        background-color: transparent; border-color: $accent_text;
-    }
-    QListWidget::indicator:checked:selected, QTreeWidget::indicator:checked:selected {
-        background-color: $accent_text; border-color: $accent_text;
-    }
+    /* No ::indicator rules on purpose. Styling any indicator property makes Qt
+       take the stylesheet path for the whole thing, and a stylesheet indicator
+       draws no tick unless given an image - which is how this ended up a plain
+       green square with nothing in it. Fusion draws a proper checkbox with a
+       proper tick, and now that selection is a tint it stays legible on a
+       selected row, which is the only reason it was overridden. */
     QTableWidget { gridline-color: $border; border: none; font-size: 12px; background-color: $base; }
     QHeaderView::section {
         background-color: $toolbar; color: $text_dim; border: none;

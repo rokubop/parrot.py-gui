@@ -338,8 +338,13 @@ class RecordingView(QWidget):
 
     # state -> (primary text, primary color, indicator text, indicator color,
     #           live trace color)
+    #
+    # "Ready" takes None for its colour and resolves to the theme's dim text.
+    # It was a literal copy of text_dim, which then sat at the old low-contrast
+    # value after the token was fixed. The rest are literal because they are
+    # states rather than text tiers.
     _STATES = {
-        "idle":      ("● Record", "#c0463f", "● Ready",     "#8b939d", (90, 230, 150)),
+        "idle":      ("● Record", "#c0463f", "● Ready",     None,      (90, 230, 150)),
         "recording": ("❚❚ Pause", None,      "● Recording", "#e0534f", (224, 83, 79)),
         "review":    ("● Resume", "#3a8f55", "❚❚ Paused",  "#e0b020", (224, 176, 32)),
     }
@@ -347,6 +352,7 @@ class RecordingView(QWidget):
     def _set_state(self, state):
         self._state = state
         text, color, ind_text, ind_color, trace = self._STATES[state]
+        ind_color = ind_color or theme.colors()["text_dim"]
         self.record_btn.setText(text)
         self.record_btn.setStyleSheet(
             (f"QPushButton {{ background-color: {color}; color: #ffffff; "

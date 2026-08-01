@@ -26,8 +26,15 @@ from config.config import DATA_DIR
 
 CAPTURES_DIR = os.path.join(DATA_DIR, "talon", "captures")
 
+# The neutral one is the theme's own dim text, looked up rather than pinned:
+# a hardcoded grey here was the one place in the app that missed the contrast
+# fix. The three status colours stay literal because they carry meaning.
 _STATUS_COLOR = {"detected": "#41d97f", "grace_detected": "#5ab0f5",
-                 "throttled": "#d3a45c", "": "#8a8f98"}
+                 "throttled": "#d3a45c"}
+
+
+def _status_color(status):
+    return _STATUS_COLOR.get(status) or theme.colors()["text_dim"]
 
 
 def _bar(fraction, width=10):
@@ -217,8 +224,7 @@ class TalonLiveView(QWidget):
             for col, value in enumerate(cells):
                 item = QTableWidgetItem(value)
                 if col == 8 and winner is not None:
-                    item.setForeground(QColor(
-                        _STATUS_COLOR.get(winner["status"], "#8a8f98")))
+                    item.setForeground(QColor(_status_color(winner["status"])))
                 if col == 0 and frame.detected:
                     item.setForeground(QColor("#41d97f"))
                 self.table.setItem(row, col, item)
