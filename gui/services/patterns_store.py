@@ -1,6 +1,6 @@
 """Load, save, snapshot, and version Talon patterns.json files.
 
-Ground rules (see prd-talon.md):
+Ground rules:
 - Round-trip fidelity: key order and unknown keys are preserved exactly
   (plain dicts keep insertion order; we only ever touch what the user edited).
 - Nothing is overwritten without a snapshot: every save/deploy first copies

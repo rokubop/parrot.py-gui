@@ -1,4 +1,4 @@
-"""UDP listener for the Talon companion bridge (see prd-talon.md, Phase C).
+"""UDP listener for the Talon companion bridge.
 
 Binds 127.0.0.1:<port>, parses the companion's JSON datagrams, and emits
 them to the UI in ~50 ms batches (per-frame signals at Talon frame rates

@@ -1,4 +1,4 @@
-"""Talon tab - first-party Talon integration (see prd-talon.md).
+"""Talon tab - first-party Talon integration.
 
 Status (discovery, deployed-model match, health lints) + the patterns
 editor: a working copy of the deployed patterns.json is edited through the

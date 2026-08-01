@@ -139,7 +139,7 @@ class WrappedBody(QLabel):
     """Word-wrapped rich text that keeps the height its copy actually needs.
 
     A word-wrapped QLabel reports a one-line sizeHint, so a layout that is not
-    asked for heightForWidth clips it ( memory/qt-traps.md ). The remedy there is
+    asked for heightForWidth clips it. The remedy there is
     to pin the width and set the minimum height from heightForWidth, which works
     for a label whose width is fixed. This is the same fix for one whose width is
     not: re-ask at whatever width it was just given. It stays correct through a

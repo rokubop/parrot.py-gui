@@ -1,4 +1,4 @@
-"""Guided editor for a single Talon pattern (see prd-talon.md, Phase B).
+"""Guided editor for a single Talon pattern.
 
 Every field is constrained to what the integration can actually consume:
 sounds come from the deployed model's classes, threshold ops from the schema
