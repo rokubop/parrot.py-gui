@@ -3,6 +3,28 @@ This program is a prototype meant to explore ways to interact with computer syst
 
 It's name is inspired by the way parrots and parakeets communicate, using chirps, clicks and sometimes speech. 
 
+# Desktop app ( preview )
+
+A GUI for recording, training and connecting sounds, covering what `settings.py` does.
+New in this fork, still in development.
+
+![Parrot.py desktop app](docs/media/gui-sounds.png)
+
+Start it with `run.bat` on Windows, `./run.sh` on macOS and Linux.
+Both find or download Python, build a venv, install the requirements and launch.
+Nothing is installed system wide. With a venv already set up: `python -m gui`.
+
+Same `data/` folder as the CLI. `settings.py` and `play.py` are unchanged.
+
+**Already have recordings?** First launch offers "Find my setup" on the Home screen,
+or Settings > Manage profiles. It copies your folder in. The original is never written to.
+
+Not done yet:
+
+* No full training run has finished through the GUI. Use `settings.py` for real training for now
+* Run on Windows and macOS. Linux is untested
+* The Talon companion has not been run inside a live Talon
+
 # Software requirements
 * Windows version 7 and up, MacOS or Linux (X11)
 * Python 3.8 (64 bit)
