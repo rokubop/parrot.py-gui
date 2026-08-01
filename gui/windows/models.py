@@ -97,12 +97,13 @@ def _span(values, fmt):
 
 
 def _net_scores(meta):
-    """The only accuracy a model carries: what each net scored on the split the
-    trainer held back, at the epoch its best weights were saved.
+    """What each net scored on the split the trainer held back, at the epoch its
+    best weights were saved.
 
     Reported per net and never averaged into one figure. The ensemble means
     softmax probabilities rather than picking a winner, so its accuracy is not
-    the mean of these and cannot be worked out from them - it needs a test run.
+    the mean of these and cannot be worked out from them - that is what
+    _combined_score is for, on models new enough to carry it.
     Epochs are +1 because the trainer counts from zero and every screen that
     shows one counts from one.
     """
@@ -111,7 +112,7 @@ def _net_scores(meta):
     if not scores:
         return ""
     epochs = [n["epoch"] for n in nets if n.get("epoch") is not None]
-    each = " each" if len(scores) > 1 else ""
+    each = " per network," if len(scores) > 1 else ""
     whose = "their own" if len(scores) > 1 else "its own"
     line = (f"{_span(scores, lambda v: f'{v * 100:.1f}')}%{each} on {whose} "
             f"held-back samples")
@@ -119,6 +120,53 @@ def _net_scores(meta):
         noun = "epochs" if len(set(epochs)) > 1 else "epoch"
         line += f", at {noun} {_span(epochs, lambda v: str(v + 1))}"
     return line
+
+
+def _combined_score(meta):
+    """What the nets scored together, which is how they are actually used.
+
+    Read from the checkpoint with the highest epoch: the figure belongs to the
+    epoch rather than the net, so every checkpoint written that epoch carries
+    the same one, and the newest is the last measurement taken.
+    """
+    scored = [n for n in (meta.get("nets") or [])
+              if n.get("combined_accuracy") is not None
+              and n.get("epoch") is not None]
+    if not scored:
+        return ""
+    latest = max(scored, key=lambda n: n["epoch"])
+    count = len(meta.get("nets") or [])
+    who = "both together" if count == 2 else f"all {count} together"
+    return (f"{latest['combined_accuracy'] * 100:.1f}% {who}, "
+            f"at epoch {latest['epoch'] + 1}")
+
+
+def _facts_rows(meta):
+    """The model-level facts, as (label, value) pairs. Everything here comes
+    out of the model itself; anything measured off the recordings folder
+    belongs in the sound list's notes, not here."""
+    rows = []
+    if meta.get("trained_at"):
+        when = _trained_when(meta["trained_at"], meta.get("trained_at_source"))
+        # The ~ carries the doubt in the list, where there is no room to
+        # explain; here there is, so say which it is outright.
+        rows.append(("Trained", f"{when.lstrip('~')}   (file date, not a record)"
+                     if meta.get("trained_at_source") == "mtime" else when))
+    nets = meta["net_count"]
+    if nets:
+        # "5 nets" alone reads as a spec. Every one is consulted on every sound
+        # and the scores are averaged (TinyAudioNetEnsemble.forward), so say
+        # what they do. "Voting" was the earlier wording and it misleads: an
+        # average is not a count, so a confident net beats two hesitant ones and
+        # there is no reason to prefer an odd number.
+        rows.append(("Networks", "1, deciding alone" if nets == 1
+                     else f"{nets}, averaged"))
+    accuracy = [line for line in (_combined_score(meta), _net_scores(meta))
+                if line]
+    if accuracy:
+        rows.append(("Accuracy", "<br>".join(accuracy)))
+    rows.append(("Size", _human_size(meta["total_size_bytes"])))
+    return rows
 
 
 def _label_scores(meta):
@@ -329,9 +377,6 @@ class ModelsPage(QWidget):
         self.detail_title.setStyleSheet(
             f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
         v.addWidget(self.detail_title)
-        self.detail_stats = QLabel("")
-        self.detail_stats.setStyleSheet(f"color: {t['text_dim']};")
-        v.addWidget(self.detail_stats)
         self.stale_label = QLabel("")
         self.stale_label.setWordWrap(True)
         self.stale_label.setStyleSheet(f"color: {WARN}; margin-top: 2px;")
@@ -565,29 +610,6 @@ class ModelsPage(QWidget):
             meta = self.app_state.get_model_metadata(self._current)
             self._start_inspect(self._current)
         self.detail_title.setText(meta["name"])
-        nets = meta["net_count"]
-        bits = []
-        if meta.get("trained_at"):
-            when = _trained_when(meta["trained_at"],
-                                 meta.get("trained_at_source"))
-            # The ~ carries the doubt in the list, where there is no room to
-            # explain; here there is, so say which it is outright.
-            bits.append(f"file dated {when.lstrip('~')}"
-                        if meta.get("trained_at_source") == "mtime"
-                        else f"trained {when}")
-        # "5 nets" alone reads as a spec. Every one of them is consulted on every
-        # sound and the scores are averaged (TinyAudioNetEnsemble.forward), so
-        # say what they do. "Voting" was the earlier wording and it is wrong in a
-        # way that misleads: an average is not a count, so a confident net beats
-        # two hesitant ones and there is no reason to prefer an odd number.
-        bits.append("1 net deciding alone" if nets == 1
-                    else f"{nets} neural networks averaged")
-        bits.append(_human_size(meta["total_size_bytes"]))
-        # Accuracy is deliberately not here: a single "best accuracy" is the
-        # luckiest net's, and the ensemble averages probabilities rather than
-        # taking the best, so that number is nobody's score. _net_scores says
-        # what was actually measured, with room to qualify it.
-        self.detail_stats.setText("   ·   ".join(bits))
         html, stale = self._detail_html(meta)
         self.detail_body.setText(html)
         if stale:
@@ -661,19 +683,24 @@ class ModelsPage(QWidget):
                 f"</td><td style='padding-right:16px;'>"
                 f"{per_sound.get(label, '')}</td><td>{note}</td></tr>")
 
+        # Every model-level fact in one block, then the sounds. They were split
+        # across a header strip and the body, which read as two unrelated lists
+        # once the body grew facts of its own.
+        facts = "".join(
+            f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
+            f"{label}</td><td style='color:{t['text']};'>{value}</td></tr>"
+            for label, value in _facts_rows(meta))
+
         # Counted without silence, which is a class the model answers with but
         # not a sound anyone made. Claiming 21 sounds when one of them is the
         # gaps between them overstates the model by exactly one.
         spoken = [l for l in labels if l != BACKGROUND_LABEL]
         plus = f", plus {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
-        html = [f"<b style='color:{t['text_bright']};'>Recognizes "
-                f"{len(spoken)} sounds{plus}</b>"]
-        scores = _net_scores(meta)
-        if scores:
-            html.append(f"<div style='color:{t['text_dim']}; padding-top:2px;'>"
-                        f"{scores}</div>")
-        html.append(
-            "<table cellspacing='0' cellpadding='2'>" + "".join(rows) + "</table>")
+        html = ["<table cellspacing='0' cellpadding='3'>" + facts + "</table>",
+                f"<div style='padding-top:14px;'>"
+                f"<b style='color:{t['text_bright']};'>{len(spoken)} sounds"
+                f"{plus}</b></div>",
+                "<table cellspacing='0' cellpadding='2'>" + "".join(rows) + "</table>"]
 
         unused = [l for l in recorded if l not in labels]
         if unused:

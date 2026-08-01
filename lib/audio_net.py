@@ -274,7 +274,12 @@ class AudioNetTrainer:
                     accuracy.append( correct[j] / ( self.dataset_size * self.validation_split ) )
                     print('[Net: %d] Validation loss: %.4f accuracy %.3f' % (j + 1, epoch_loss[j], accuracy[j]))
 
-                print('[Combined] Sum validation loss: %.4f average accuracy %.3f' % (np.sum(epoch_loss), combined_correct / ( self.dataset_size * self.validation_split )))
+                # The nets as they stand this epoch, scored together the way
+                # they will be used. Not identical to the pkl being written,
+                # which combines each net's own BEST weights rather than this
+                # epoch's - they coincide only when every net peaks at once.
+                combined_accuracy = combined_correct / ( self.dataset_size * self.validation_split )
+                print('[Combined] Sum validation loss: %.4f average accuracy %.3f' % (np.sum(epoch_loss), combined_accuracy))
 
                 csv_row = { 'epoch': epoch, 'loss': np.sum(epoch_loss), 'avg_validation_accuracy': np.average(accuracy) }
                 for dataset_label in self.dataset_labels:
@@ -303,6 +308,9 @@ class AudioNetTrainer:
                         # epoch's means instead, shared by every net saved in
                         # that epoch.
                         'label_accuracy': label_accuracy[j],
+                        # Every net's checkpoint carries the same figure: it is
+                        # the epoch's, not this net's.
+                        'combined_accuracy': combined_accuracy,
                         'last_row': csv_row,
                         'loss': epoch_loss[j],
                         'epoch': epoch,
