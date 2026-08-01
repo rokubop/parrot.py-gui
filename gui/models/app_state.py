@@ -5,7 +5,7 @@ import json
 import filecmp
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
-from config.config import DATA_DIR, RECORDINGS_FOLDER, CLASSIFIER_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import DATA_DIR, RECORDINGS_FOLDER, CLASSIFIER_FOLDER, REPLAYS_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from lib.srt import count_total_label_ms, ms_to_srt_timestring
 from lib.stream_processing import CURRENT_VERSION
 from gui.services import library_ops
@@ -23,7 +23,14 @@ class AppState(QObject):
         super().__init__(parent)
         self._talon_result = None
         self._model_cache = {}
+        self._label_cache = {}
+        self._checkpoint_times = {}
+        self._replay_times = None
+        self._duration_cache = {}
         self.models_changed.connect(self._invalidate_model_cache)
+        # Recording, trimming and re-segmenting all change these, and all of
+        # them emit recordings_changed.
+        self.recordings_changed.connect(self._invalidate_duration_cache)
 
     def get_sound_labels(self):
         """Returns list of sound label directory names from data/recordings/."""
@@ -62,9 +69,21 @@ class AppState(QObject):
         return recordings
 
     def get_label_duration_ms(self, label):
-        """Returns total recorded ms for a label."""
+        """Total recorded ms for a label. Cached until recordings change.
+
+        This walks every .srt the label owns, which measured 3.7 ms per label -
+        cheap once, and not cheap at all given who asks: the training page reads
+        every selected label three times over on each tick of its checklist, and
+        Home, Sounds and Models all ask for the same numbers on every refresh. A
+        single checkbox click was costing thousands of these.
+        """
+        if label in self._duration_cache:
+            return self._duration_cache[label]
         ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
-        return count_total_label_ms(label, os.path.join(RECORDINGS_FOLDER, label), ms_per_frame)
+        value = count_total_label_ms(
+            label, os.path.join(RECORDINGS_FOLDER, label), ms_per_frame)
+        self._duration_cache[label] = value
+        return value
 
     def get_models(self):
         """Returns list of model files (.pkl and .pth.tar) in data/models/."""
@@ -90,7 +109,12 @@ class AppState(QObject):
         """
         cache_key = (model_name, load_weights)
         if cache_key in self._model_cache:
-            return self._model_cache[cache_key]
+            meta = self._model_cache[cache_key]
+            # Cheap, and a checkpoint read since the last call may have turned
+            # up a better answer than the one cached here.
+            meta["trained_at"], meta["trained_at_source"] = \
+                self._trained_at(model_name)
+            return meta
 
         pkl_path = os.path.join(CLASSIFIER_FOLDER, model_name + ".pkl")
         meta = {
@@ -103,10 +127,14 @@ class AppState(QObject):
             "total_size_bytes": 0,
             "pkl_exists": os.path.isfile(pkl_path),
             "weights_loaded": load_weights,
+            "trained_at": None,
+            "trained_at_source": None,
         }
 
         if meta["pkl_exists"]:
             meta["total_size_bytes"] += os.path.getsize(pkl_path)
+            meta["trained_at"], meta["trained_at_source"] = \
+                self._trained_at(model_name)
 
         # Find matching BEST weight files (fast - just file listing)
         best_files = sorted(glob.glob(pkl_path + "_*-BEST-weights.pth.tar"))
@@ -122,19 +150,12 @@ class AppState(QObject):
             if wf not in best_files:
                 meta["total_size_bytes"] += os.path.getsize(wf)
 
-        # Heavy loading: labels from joblib, accuracy from torch
+        # Heavy loading: accuracy from torch, labels from whichever is cheaper
         if load_weights:
-            # Labels from pkl
-            if meta["pkl_exists"]:
-                try:
-                    import joblib
-                    model = joblib.load(pkl_path)
-                    if hasattr(model, "classes_"):
-                        meta["labels"] = list(model.classes_)
-                except Exception:
-                    pass
-
-            # Accuracy/labels from pth.tar
+            # Accuracy/labels from pth.tar. A checkpoint is ~3.8 MB against the
+            # pkl's ~38 MB (the pkl holds every net again, in double), so read
+            # labels here and fall back to joblib only for a model that has no
+            # checkpoints - one combined from other pkls.
             for net_info in meta["nets"]:
                 try:
                     import torch
@@ -147,6 +168,18 @@ class AppState(QObject):
                 except Exception:
                     pass
 
+            if not meta["labels"] and meta["pkl_exists"]:
+                try:
+                    import joblib
+                    model = joblib.load(pkl_path)
+                    if hasattr(model, "classes_"):
+                        meta["labels"] = list(model.classes_)
+                except Exception:
+                    pass
+
+            if meta["labels"]:
+                self._label_cache[model_name] = meta["labels"]
+
             accuracies = [n["accuracy"] for n in meta["nets"] if n["accuracy"] is not None]
             if accuracies:
                 meta["best_accuracy"] = max(accuracies)
@@ -154,9 +187,115 @@ class AppState(QObject):
         self._model_cache[cache_key] = meta
         return meta
 
+    def get_model_trained_at(self, model_name):
+        """When a model was trained. See _trained_at for where it comes from."""
+        return self._trained_at(model_name)[0]
+
+    def _trained_at(self, model_name):
+        """(unix time, source) - most trustworthy source first.
+
+        1. "checkpoint" - stamped inside the weights at training time. Survives
+           being copied, restored and renamed, because it travels in the file.
+           Only models trained since that field existed have it.
+        2. "replay" - the replay CSV's filename timestamp. A real training
+           start time; survives a copy, but not a rename, because the CSV is
+           not renamed along with the model.
+        3. "mtime" - the pkl's file date. This is a guess, not a record: it is
+           the time the file was last written, which a copy or a restore resets
+           to the time of the copy. Callers must present it as uncertain.
+
+        Only 3 is available without reading a checkpoint, so the list shows it
+        first and improves it once the off-thread read lands.
+        """
+        stamped = self._checkpoint_times.get(model_name)
+        if stamped:
+            return stamped, "checkpoint"
+        from_replay = self._training_run_times().get(model_name)
+        if from_replay:
+            return from_replay, "replay"
+        pkl_path = os.path.join(CLASSIFIER_FOLDER, model_name + ".pkl")
+        if os.path.isfile(pkl_path):
+            return os.path.getmtime(pkl_path), "mtime"
+        return None, None
+
+    def model_sort_key(self, model_name):
+        """Newest first, but only as far as the date can be trusted.
+
+        A file date is precise to the microsecond and means nothing at that
+        resolution: a copied data dir stamps every pkl within the same second,
+        so sorting on it straight orders the library by whatever sequence the
+        copy happened to run in. Round those to the day and let the name decide.
+        Dates from a real training record keep their full precision.
+
+        Lives here rather than in a page because two of them list models and
+        both need the same order; the second copy of this rule had already
+        drifted into sorting by copy order.
+        """
+        when, source = self._trained_at(model_name)
+        when = when or 0
+        if source == "mtime":
+            when -= when % 86400
+        return (-when, model_name)
+
+    def get_model_facts(self, model_name):
+        """What one BEST checkpoint can tell us: its labels and when it was
+        trained. The checkpoint is ~3.8 MB against the pkl's ~38 MB, so a list
+        showing this for every model reads one small file each rather than
+        unpickling every net. Cached; [] labels means unreadable, so callers
+        don't retry forever.
+        """
+        if model_name in self._label_cache:
+            when, source = self._trained_at(model_name)
+            return {"labels": self._label_cache[model_name],
+                    "trained_at": when, "trained_at_source": source}
+
+        pkl_path = os.path.join(CLASSIFIER_FOLDER, model_name + ".pkl")
+        labels = []
+        best_files = sorted(glob.glob(pkl_path + "_*-BEST-weights.pth.tar"))
+        if best_files:
+            try:
+                import torch
+                state = torch.load(best_files[0], map_location="cpu",
+                                   weights_only=False)
+                labels = list(state.get("labels") or [])
+                # Absent from every model trained before the field existed.
+                if state.get("trained_at"):
+                    self._checkpoint_times[model_name] = state["trained_at"]
+            except Exception:
+                labels = []
+        if not labels:
+            # No checkpoints, or unreadable ones: a combined model keeps its
+            # classes only inside the pkl.
+            labels = self.get_model_metadata(model_name,
+                                             load_weights=True)["labels"]
+
+        self._label_cache[model_name] = labels
+        when, source = self._trained_at(model_name)
+        return {"labels": labels, "trained_at": when,
+                "trained_at_source": source}
+
     def get_all_model_details(self):
         """Returns list of metadata dicts for all models."""
         return [self.get_model_metadata(name) for name in self.get_model_names()]
+
+    def get_talon_model_name(self):
+        """The local model Talon is actually running, or None.
+
+        Unlike get_active_model_name this never falls back to the newest pkl -
+        a badge saying "live in Talon" has to mean it.
+        """
+        talon = self.get_talon_status()
+        if not talon.model_path_from_talon:
+            return None
+        if not os.path.isfile(talon.model_path_from_talon):
+            return None
+        for name in self.get_model_names():
+            local_pkl = os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
+            if os.path.isfile(local_pkl):
+                if compare_model_files(local_pkl,
+                                       talon.model_path_from_talon)["matches"]:
+                    return name
+        return None
 
     def get_talon_status(self) -> TalonDiscoveryResult:
         """Run talon discovery (cached). Call refresh_talon() to re-run."""
@@ -176,19 +315,14 @@ class AppState(QObject):
         2. Fallback to most recently modified .pkl
         3. None if no models
         """
-        talon = self.get_talon_status()
         model_names = self.get_model_names()
         if not model_names:
             return None
 
         # Try matching Talon's model file to a local one
-        if talon.model_path_from_talon and os.path.isfile(talon.model_path_from_talon):
-            for name in model_names:
-                local_pkl = os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
-                if os.path.isfile(local_pkl):
-                    cmp = compare_model_files(local_pkl, talon.model_path_from_talon)
-                    if cmp["matches"]:
-                        return name
+        matched = self.get_talon_model_name()
+        if matched:
+            return matched
 
         # Fallback: most recently modified pkl
         best_name = None
@@ -222,8 +356,40 @@ class AppState(QObject):
         with open(NOTES_PATH, "w", encoding="utf-8") as f:
             json.dump(notes, f, indent=2)
 
+    def _invalidate_duration_cache(self):
+        self._duration_cache.clear()
+
     def _invalidate_model_cache(self):
         self._model_cache.clear()
+        self._label_cache.clear()
+        self._checkpoint_times.clear()
+        self._replay_times = None
+
+    def _training_run_times(self):
+        """model name -> unix time of its most recent training run.
+
+        Every run writes data/replays/model_training_<name>.pkl<starttime>.csv,
+        with the timestamp in the *filename*. That is the one record of when a
+        model was trained that survives being copied to another machine or
+        restored from a backup, both of which reset the pkl's mtime.
+        """
+        if self._replay_times is not None:
+            return self._replay_times
+
+        times = {}
+        if os.path.isdir(REPLAYS_FOLDER):
+            for f in os.listdir(REPLAYS_FOLDER):
+                if not (f.startswith("model_training_") and f.endswith(".csv")):
+                    continue
+                stem = f[len("model_training_"):-len(".csv")]
+                name, sep, stamp = stem.rpartition(".pkl")
+                if not sep or not stamp.isdigit():
+                    continue
+                when = int(stamp)
+                if when > times.get(name, 0):
+                    times[name] = when
+        self._replay_times = times
+        return times
 
     def refresh(self):
         """Emit signals to refresh all views."""

@@ -272,6 +272,10 @@ class AudioNetTrainer:
                         current_filename = filename + '_' + str(j+1) + '-BEST'
                         new_best = True
 
+                    # trained_at rides inside the checkpoint because every
+                    # external record of when a model was made is losable: a
+                    # file mtime resets when the data dir is copied or restored,
+                    # and the replay CSV is not renamed along with the model.
                     torch.save({'state_dict': self.nets[j].state_dict(),
                         'input_size': self.input_size,
                         'labels': self.dataset_labels,
@@ -280,6 +284,7 @@ class AudioNetTrainer:
                         'loss': epoch_loss[j],
                         'epoch': epoch,
                         'random_seed': self.random_seeds[j],
+                        'trained_at': starttime,
                         }, os.path.join(CLASSIFIER_FOLDER, current_filename) + '-weights.pth.tar')
 
                 # Persist a new combined model with the best weights if new best weights are given
