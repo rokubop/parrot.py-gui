@@ -9,8 +9,13 @@ from PyQt6.QtWidgets import (
     QScrollArea, QWidget, QFrame, QSizePolicy
 )
 
+from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from gui import theme
 from lib.print_status import get_quantity_rating
+
+# A frame is one sliding window, not a whole sample. Same arithmetic as
+# load_data, so the help cannot quote a length the trainer does not use.
+MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
 # Detected sound per label: below the first, get_quantity_rating says "Not
 # enough" (16.5s) and training is a formality; the second is where a model
@@ -48,8 +53,9 @@ RECORD_ROWS = (
 # TinyAudioNetEnsemble from every BEST checkpoint, and predict_single_proba calls
 # it once per frame ). So the big picture comes first and the training cost last.
 NET_ROWS = (
-    (None, "Parrot models use neural networks to figure out which sound you "
-           "meant. A model owns however many you pick here."),
+    (None, f"Each network scores one frame of audio ({MS_PER_FRAME} ms) with "
+           f"how likely it thinks each sound is. A model owns however many you "
+           f"pick here, and every one of them scores every frame."),
     (None, "If you choose 3, every sound detection consults all 3 and averages "
            "their predictions. Training has to train each of the 3 on every "
            "round (epoch), which is why more of them means a longer wait."),
@@ -307,8 +313,8 @@ class NetsDiagram(QWidget):
     # Deterministic, and picked so net 2 is confidently wrong: that is the case
     # the picture exists to explain. The averaged row is computed, never typed,
     # so the illustration cannot drift from the arithmetic it is claiming.
-    CAPTION = ("One frame of a “pop”, scored by three separately "
-               "trained networks:")
+    CAPTION = (f"One frame of a “pop” ({MS_PER_FRAME} ms), scored by three "
+               f"separately trained networks:")
 
     LABELS = ("pop", "ah", "silence")
     TRUE_INDEX = 0
