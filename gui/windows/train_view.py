@@ -662,8 +662,9 @@ class TrainView(QWidget):
             f"border-top: 1px solid {t['border']}; padding-top: 14px;")
         v.addWidget(head)
         for line in (
-                "Try to have a balanced amount of time per sound. Otherwise "
-                "oversampling and undersampling are used to even them out.",
+                "Uneven amounts are evened out with oversampling and "
+                "undersampling. Repeating is capped at 2x, so a very thin "
+                "sound still goes in light.",
                 "Expect it to run for hours.",
                 f"It runs {MAX_EPOCHS} epochs, but you can stop at any time and "
                 f"keep the best model so far.",

@@ -30,7 +30,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
     QHeaderView, QListWidget, QListWidgetItem, QPushButton, QSplitter,
-    QLineEdit, QInputDialog, QMessageBox, QScrollArea, QFrame, QDialog
+    QLineEdit, QInputDialog, QMessageBox, QFrame, QDialog
 )
 
 from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
@@ -97,25 +97,21 @@ def _span(values, fmt):
 
 
 def _net_scores(meta):
-    """Per net, on the split the trainer held back, at its best epoch.
-
-    Never averaged into one figure: the ensemble means probabilities, so its
-    accuracy is not the mean of these. That is _combined_score.
-    Epochs are +1; the trainer counts from zero, every screen from one.
-    """
+    """Per net. Never averaged into one figure: the ensemble means
+    probabilities, so its accuracy is not the mean of these."""
     nets = meta.get("nets") or []
     scores = [n["accuracy"] for n in nets if n.get("accuracy") is not None]
     if not scores:
         return ""
-    epochs = [n["epoch"] for n in nets if n.get("epoch") is not None]
-    each = " per network," if len(scores) > 1 else ""
-    whose = "their own" if len(scores) > 1 else "its own"
-    line = (f"{_span(scores, lambda v: f'{v * 100:.1f}')}%{each} on {whose} "
-            f"held-back samples")
-    if epochs:
-        noun = "epochs" if len(set(epochs)) > 1 else "epoch"
-        line += f", at {noun} {_span(epochs, lambda v: str(v + 1))}"
-    return line
+    each = " per network" if len(scores) > 1 else ""
+    return f"{_span(scores, lambda v: f'{v * 100:.1f}')}%{each}"
+
+
+def _best_epochs(meta):
+    """+1 throughout: the trainer counts from zero, every screen from one."""
+    epochs = [n["epoch"] for n in (meta.get("nets") or [])
+              if n.get("epoch") is not None]
+    return _span(epochs, lambda v: str(v + 1)) if epochs else ""
 
 
 def _combined_score(meta):
@@ -130,43 +126,45 @@ def _combined_score(meta):
     if not scored:
         return ""
     latest = max(scored, key=lambda n: n["epoch"])
-    count = len(meta.get("nets") or [])
-    who = "both together" if count == 2 else f"all {count} together"
-    return (f"{latest['combined_accuracy'] * 100:.1f}% {who}, "
-            f"at epoch {latest['epoch'] + 1}")
+    return f"{latest['combined_accuracy'] * 100:.1f}% combined"
 
 
 def _facts_rows(meta):
     """(label, value) pairs, all read out of the model itself. Anything
     measured off the recordings folder belongs in the sound notes."""
+    t = theme.colors()
     rows = []
     if meta.get("trained_at"):
         when = _trained_when(meta["trained_at"], meta.get("trained_at_source"))
-        # The ~ carries the doubt in the list, where there is no room to
-        # explain; here there is, so say which it is outright.
-        rows.append(("Trained", f"{when.lstrip('~')}   (file date, not a record)"
+        # A file date is not a training date: a copied data dir restamps every
+        # pkl. Offered as the only related fact, not as the answer.
+        rows.append(("Trained",
+                     f"Not recorded   <span style='color:{t['text_dim']};'>"
+                     f"(file dated {when.lstrip('~')})</span>"
                      if meta.get("trained_at_source") == "mtime" else when))
     nets = meta["net_count"]
     if nets:
         # Averaged, never "voting": an average is not a count, so an odd
         # number buys nothing (TinyAudioNetEnsemble.forward).
-        rows.append(("Networks", "1, deciding alone" if nets == 1
+        rows.append(("Neural networks", "1, deciding alone" if nets == 1
                      else f"{nets}, averaged"))
-    accuracy = [line for line in (_combined_score(meta), _net_scores(meta))
-                if line]
+    accuracy = [s for s in (_combined_score(meta), _net_scores(meta)) if s]
     if accuracy:
-        rows.append(("Accuracy", "<br>".join(accuracy)))
+        rows.append(("Accuracy", ", ".join(accuracy)))
+    epochs = _best_epochs(meta)
+    if epochs:
+        rows.append(("Best epoch", epochs))
     rows.append(("Size", _human_size(meta["total_size_bytes"])))
     return rows
 
 
 def _label_scores(meta):
-    """Per sound, what each net scored on the held-back split, as HTML by label.
+    """Per sound, what each net scored on the held-back split: {label: (text,
+    worst)}. Sorted on the worst net, so ordering answers "weakest sound".
 
     Empty on models trained before the field existed. Blank beats a number
     measured off the recordings folder, which is what used to sit here.
     """
-    t = theme.colors()
     per_net = [n["label_accuracy"] for n in (meta.get("nets") or [])
                if n.get("label_accuracy")]
     if not per_net:
@@ -175,9 +173,21 @@ def _label_scores(meta):
     for label in per_net[0]:
         scores = [p[label] for p in per_net if label in p]
         if scores:
-            out[label] = (f"<span style='color:{t['text_dim']};'>"
-                          f"{_span(scores, lambda v: f'{v * 100:.0f}')}%</span>")
+            out[label] = (f"{_span(scores, lambda v: f'{v * 100:.0f}')}%",
+                          min(scores))
     return out
+
+
+class _SoundItem(QTreeWidgetItem):
+    """Sorts the accuracy column by number. As text, 100% sorts below 97%."""
+
+    def __lt__(self, other):
+        col = self.treeWidget().sortColumn()
+        mine = self.data(col, Qt.ItemDataRole.UserRole)
+        theirs = other.data(col, Qt.ItemDataRole.UserRole)
+        if mine is None or theirs is None:
+            return super().__lt__(other)
+        return mine < theirs
 
 
 class InspectWorker(QThread):
@@ -315,19 +325,21 @@ class ModelsPage(QWidget):
         right_layout.setSpacing(0)
         right_layout.addWidget(self._build_header())
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Sounds beside their facts, the shape the training setup page uses:
+        # the long list carries the width, a fixed card holds what it adds up to.
         body = QWidget()
         self.body_layout = QVBoxLayout(body)
         self.body_layout.setContentsMargins(20, 16, 24, 16)
         self.body_layout.setSpacing(12)
-        self.detail_body = QLabel("")
-        self.detail_body.setWordWrap(True)
-        self.detail_body.setTextFormat(Qt.TextFormat.RichText)
-        self.detail_body.setStyleSheet(f"color: {t['text']};")
-        self.detail_body.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.body_layout.addWidget(self.detail_body)
+
+        self.columns = QWidget()
+        columns = QHBoxLayout(self.columns)
+        columns.setContentsMargins(0, 0, 0, 0)
+        columns.setSpacing(22)
+        columns.addWidget(self._build_sound_column(), 1)
+        columns.addWidget(self._build_facts_column(), 0)
+        self.body_layout.addWidget(self.columns, 1)
+
         # The empty panel lives inside its own springy wrapper so it sits in the
         # middle of the card area; with it hidden the wrapper collapses and the
         # trailing stretch keeps the model details at the top.
@@ -339,14 +351,99 @@ class ModelsPage(QWidget):
         wrap.addWidget(self.empty_panel, 0, Qt.AlignmentFlag.AlignHCenter)
         wrap.addStretch()
         self.body_layout.addWidget(self.empty_wrapper, 1)
-        self.body_layout.addStretch()
-        self.scroll.setWidget(body)
-        right_layout.addWidget(self.scroll)
+        right_layout.addWidget(body)
         splitter.addWidget(right)
 
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([400, 800])
+
+    def _build_sound_column(self):
+        t = theme.colors()
+        col = QWidget()
+        v = QVBoxLayout(col)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+        self.sounds_heading = QLabel("")
+        self.sounds_heading.setStyleSheet(
+            f"font-weight: bold; color: {t['text_bright']};")
+        v.addWidget(self.sounds_heading)
+        self.sound_tree = self._build_sound_tree()
+        v.addWidget(self.sound_tree, 1)
+        self.unused_label = QLabel("")
+        self.unused_label.setWordWrap(True)
+        self.unused_label.setStyleSheet(f"color: {t['text_dim']};")
+        v.addWidget(self.unused_label)
+        return col
+
+    def _build_facts_column(self):
+        t = theme.colors()
+        col = QWidget()
+        col.setFixedWidth(310)
+        outer = QVBoxLayout(col)
+        outer.setContentsMargins(0, 0, 0, 0)
+        card = QFrame()
+        card.setObjectName("factsCard")
+        # Same trap as the training page's card: the global QWidget rule paints
+        # an opaque box behind every child unless they declare transparency.
+        card.setStyleSheet(
+            f"QFrame#factsCard {{ background-color: {t['panel']}; "
+            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
+            f"QFrame#factsCard > QLabel {{ background: transparent; "
+            f"border: none; }}")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(18, 17, 18, 18)
+        v.setSpacing(8)
+        self.detail_body = QLabel("")
+        self.detail_body.setWordWrap(True)
+        self.detail_body.setTextFormat(Qt.TextFormat.RichText)
+        self.detail_body.setStyleSheet(f"color: {t['text']};")
+        self.detail_body.setAlignment(Qt.AlignmentFlag.AlignTop)
+        v.addWidget(self.detail_body)
+        outer.addWidget(card)
+        outer.addStretch()
+        return col
+
+    def _build_sound_tree(self):
+        """The sounds a model knows. A real tree rather than rich text because
+        the accuracy column is worth sorting on."""
+        tree = QTreeWidget()
+        tree.setColumnCount(3)
+        tree.setHeaderLabels(["Sound", "Accuracy", ""])
+        tree.setRootIsDecorated(False)
+        tree.setUniformRowHeights(True)
+        tree.setAllColumnsShowFocus(True)
+        tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
+        tree.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tree.setSortingEnabled(True)
+        tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+        tree.headerItem().setToolTip(
+            1, "What each network scored on this sound, on the samples the\n"
+               "trainer held back. Blank on models trained before it was kept.")
+        header = tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        return tree
+
+    def _fill_sound_tree(self, rows):
+        t = theme.colors()
+        tree = self.sound_tree
+        # Sorting off while filling, or every insert re-sorts the tree.
+        tree.setSortingEnabled(False)
+        tree.clear()
+        for label, score, worst, note, colour in rows:
+            item = _SoundItem([label, score, note])
+            item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight
+                                  | Qt.AlignmentFlag.AlignVCenter)
+            if worst is not None:
+                item.setData(1, Qt.ItemDataRole.UserRole, worst)
+            item.setForeground(2, QColor(colour or t["text_dim"]))
+            tree.addTopLevelItem(item)
+        tree.setSortingEnabled(True)
+        tree.setVisible(bool(rows))
 
     def _build_header(self):
         """The selected model's identity, then its actions in two ranks: the two
@@ -587,7 +684,7 @@ class ModelsPage(QWidget):
             return
         self.header_frame.setVisible(True)
         self.empty_wrapper.setVisible(False)
-        self.detail_body.setVisible(True)
+        self.columns.setVisible(True)
         self.train_btn.setEnabled(True)
 
         # The accuracy only exists once the checkpoints have been read, so use
@@ -599,8 +696,14 @@ class ModelsPage(QWidget):
             meta = self.app_state.get_model_metadata(self._current)
             self._start_inspect(self._current)
         self.detail_title.setText(meta["name"])
-        html, stale = self._detail_html(meta)
+        html, stale, sounds, unused, heading = self._detail_html(meta)
         self.detail_body.setText(html)
+        self.sounds_heading.setText(heading)
+        self._fill_sound_tree(sounds)
+        self.unused_label.setText(
+            f"Recorded but not in this model: {', '.join(unused)}"
+            if unused else "")
+        self.unused_label.setVisible(bool(unused))
         if stale:
             noun = "sound has" if len(stale) == 1 else "sounds have"
             shown = ", ".join(stale[:4]) + ("…" if len(stale) > 4 else "")
@@ -622,7 +725,7 @@ class ModelsPage(QWidget):
     def _detail_html(self, meta):
         """What this model knows, next to what's been recorded since - the two
         facts that decide whether it's worth retraining. Returns (html, stale
-        labels)."""
+        labels, sound rows, unused labels)."""
         t = theme.colors()
         name = meta["name"]
         # Labels live inside the pkl/weights, so reading them is slow enough to
@@ -630,11 +733,11 @@ class ModelsPage(QWidget):
         # until it reaches this model, say so.
         if name not in self._loaded:
             return (f"<span style='color:{t['text_dim']};'>Reading its sounds…"
-                    f"</span>", [])
+                    f"</span>", [], [], [], "")
         labels = self._loaded[name]
         if not labels:
             return (f"<span style='color:{t['text_dim']};'>Couldn't read this "
-                    f"model's sound list.</span>", [])
+                    f"model's sound list.</span>", [], [], [], "")
 
         mtime = self._model_mtime()
         recorded = self.app_state.get_sound_labels()
@@ -642,31 +745,23 @@ class ModelsPage(QWidget):
         rows = []
         stale = []
         for label in labels:
+            score, worst = per_sound.get(label, ("", None))
             if label == BACKGROUND_LABEL:
                 # Has no recordings folder, so the checks below would call it
                 # missing. The model does answer with it, so it stays listed.
-                rows.append(
-                    f"<tr><td style='color:{t['text']}; padding-right:16px;'>"
-                    f"{label}</td><td style='padding-right:16px;'>"
-                    f"{per_sound.get(label, '')}</td>"
-                    f"<td><span style='color:{t['text_dim']};'>"
-                    f"built from the quiet parts of the others</span>"
-                    f"</td></tr>")
+                rows.append((label, score, worst,
+                             "built from the quiet parts of the others", None))
                 continue
             newest = library_ops.newest_recording_mtime(label)
-            note = ""
+            note, colour = "", None
             if newest is None:
-                note = (f"<span style='color:{t['text_dim']};'>"
-                        f"no recordings any more</span>")
+                note = "no recordings any more"
             elif newest > mtime:
                 stale.append(label)
-                note = f"<span style='color:{WARN};'>new recordings since</span>"
+                note, colour = "new recordings since", WARN
             # Score column is the model's own. Nothing measured off today's
             # recordings folder goes there; that was the old Excellent/Good.
-            rows.append(
-                f"<tr><td style='color:{t['text']}; padding-right:16px;'>{label}"
-                f"</td><td style='padding-right:16px;'>"
-                f"{per_sound.get(label, '')}</td><td>{note}</td></tr>")
+            rows.append((label, score, worst, note, colour))
 
         facts = "".join(
             f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
@@ -677,18 +772,9 @@ class ModelsPage(QWidget):
         # the model by one.
         spoken = [l for l in labels if l != BACKGROUND_LABEL]
         plus = f", plus {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
-        html = ["<table cellspacing='0' cellpadding='3'>" + facts + "</table>",
-                f"<div style='padding-top:14px;'>"
-                f"<b style='color:{t['text_bright']};'>{len(spoken)} sounds"
-                f"{plus}</b></div>",
-                "<table cellspacing='0' cellpadding='2'>" + "".join(rows) + "</table>"]
-
-        unused = [l for l in recorded if l not in labels]
-        if unused:
-            html.append(
-                f"<br><span style='color:{t['text_dim']};'>Recorded but not in "
-                f"this model: {', '.join(unused)}</span>")
-        return "".join(html), stale
+        html = "<table cellspacing='0' cellpadding='3'>" + facts + "</table>"
+        return (html, stale, rows, [l for l in recorded if l not in labels],
+                f"{len(spoken)} sounds{plus}")
 
     def _start_inspect(self, name):
         if self.inspect_worker is not None and self.inspect_worker.isRunning():
@@ -722,7 +808,7 @@ class ModelsPage(QWidget):
         someone who has recorded a sound to "record some sounds" reads as if
         their work went missing - name what they have, then what's missing."""
         self.header_frame.setVisible(False)
-        self.detail_body.setVisible(False)
+        self.columns.setVisible(False)
         self.stale_label.setText("")
         self.empty_wrapper.setVisible(True)
 
