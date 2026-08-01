@@ -131,6 +131,10 @@ class AudioNetTrainer:
 
         input_size = 120
 
+        # Nothing else creates this: a profile is built with recordings/models/
+        # code only, so the first training run in a fresh one used to die here
+        # before its first epoch.
+        os.makedirs(REPLAYS_FOLDER, exist_ok=True)
         with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:
             headers = ['epoch', 'loss', 'avg_validation_accuracy']
             headers.extend(self.dataset_labels)
@@ -211,6 +215,11 @@ class AudioNetTrainer:
                 epoch_loss = []
                 accuracy = []
                 combined_correct = 0
+                # One entry per net. This used to be a single dict rebuilt on
+                # every pass, so only the last net's per-label scores survived
+                # the loop - and that one net's numbers were then written into
+                # every net's checkpoint and reported as the model's.
+                label_accuracy = []
                 for j in range(self.net_count):
                     epoch_validation_loss.append(0.0)
                     correct.append(0)
@@ -250,6 +259,15 @@ class AudioNetTrainer:
                                     accuracy_batch['correct'][local_label_string] += 1
                                 accuracy_batch['percent'][local_label_string] = accuracy_batch['correct'][local_label_string] / accuracy_batch['total'][local_label_string]
 
+                        label_accuracy.append(accuracy_batch['percent'])
+
+                # What the run reports per sound: the mean across the nets, not
+                # whichever one happened to validate last.
+                mean_label_accuracy = {}
+                for dataset_label in self.dataset_labels:
+                    scores = [p[dataset_label] for p in label_accuracy]
+                    mean_label_accuracy[dataset_label] = (
+                        sum(scores) / len(scores) if scores else 0)
 
                 for j in range(self.net_count):
                     epoch_loss.append(epoch_validation_loss[j] / ( self.dataset_size * self.validation_split ) )
@@ -260,7 +278,7 @@ class AudioNetTrainer:
 
                 csv_row = { 'epoch': epoch, 'loss': np.sum(epoch_loss), 'avg_validation_accuracy': np.average(accuracy) }
                 for dataset_label in self.dataset_labels:
-                    csv_row[dataset_label] = accuracy_batch['percent'][dataset_label]
+                    csv_row[dataset_label] = mean_label_accuracy[dataset_label]
                 writer.writerow( csv_row )
                 csvfile.flush()
 
@@ -280,6 +298,11 @@ class AudioNetTrainer:
                         'input_size': self.input_size,
                         'labels': self.dataset_labels,
                         'accuracy': accuracy[j],
+                        # This net's own score per sound, which is the only
+                        # per-sound fact a model carries. last_row holds the
+                        # epoch's means instead, shared by every net saved in
+                        # that epoch.
+                        'label_accuracy': label_accuracy[j],
                         'last_row': csv_row,
                         'loss': epoch_loss[j],
                         'epoch': epoch,
@@ -296,7 +319,7 @@ class AudioNetTrainer:
 
                 # Notify progress callback if provided (GUI)
                 if progress_callback is not None:
-                    progress_callback(epoch, np.sum(epoch_loss), np.average(accuracy), accuracy_batch['percent'], new_best)
+                    progress_callback(epoch, np.sum(epoch_loss), np.average(accuracy), mean_label_accuracy, new_best)
 
                 # Check for stop via KeyPoller (CLI) or external stop_check (GUI)
                 if stop_check is not None and stop_check():

@@ -142,7 +142,8 @@ class AppState(QObject):
 
         for bf in best_files:
             meta["total_size_bytes"] += os.path.getsize(bf)
-            meta["nets"].append({"path": bf, "accuracy": None, "loss": None, "epoch": None})
+            meta["nets"].append({"path": bf, "accuracy": None, "loss": None,
+                                 "epoch": None, "label_accuracy": None})
 
         # Count non-BEST weight file sizes
         all_weight_files = glob.glob(pkl_path + "_*-weights.pth.tar")
@@ -163,6 +164,9 @@ class AppState(QObject):
                     net_info["accuracy"] = state.get("accuracy")
                     net_info["loss"] = state.get("loss")
                     net_info["epoch"] = state.get("epoch")
+                    # Per sound, this net's own. Absent from anything trained
+                    # before the field existed, so callers must cope with None.
+                    net_info["label_accuracy"] = state.get("label_accuracy")
                     if not meta["labels"] and "labels" in state:
                         meta["labels"] = list(state["labels"])
                 except Exception:

@@ -7,10 +7,11 @@ at 40% while the rest are at 97%, which is the most actionable thing on screen
 during a run that lasts hours: it says which sound to record more of, and it
 says it in the first few minutes rather than after the whole run.
 
-Note the trainer scores these on the last net's validation pass rather than on
-the ensemble (`audio_net.py`, where `accuracy_batch` falls out of the per-net
-loop), so a single sound can wobble between epochs more than the averaged
-accuracy does. The gap that matters here is between sounds, not between epochs.
+These are the mean across the nets, not the ensemble's own score: the ensemble
+averages probabilities, so its per-sound accuracy is not the mean of theirs.
+Close enough to read as "which sound is failing", which is what this is for.
+A single sound still wobbles between epochs more than the averaged accuracy
+does; the gap that matters here is between sounds, not between epochs.
 """
 from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QPainter, QColor, QFontMetrics

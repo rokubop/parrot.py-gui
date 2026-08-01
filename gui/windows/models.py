@@ -121,6 +121,28 @@ def _net_scores(meta):
     return line
 
 
+def _label_scores(meta):
+    """Per sound, what each net scored on the held-back split, as ready-to-drop
+    HTML keyed by label.
+
+    Empty for anything trained before the field existed, which is the right
+    answer: the alternative is a number measured off the recordings folder,
+    which is what used to sit in this column and read as accuracy.
+    """
+    t = theme.colors()
+    per_net = [n["label_accuracy"] for n in (meta.get("nets") or [])
+               if n.get("label_accuracy")]
+    if not per_net:
+        return {}
+    out = {}
+    for label in per_net[0]:
+        scores = [p[label] for p in per_net if label in p]
+        if scores:
+            out[label] = (f"<span style='color:{t['text_dim']};'>"
+                          f"{_span(scores, lambda v: f'{v * 100:.0f}')}%</span>")
+    return out
+
+
 class InspectWorker(QThread):
     """Load the heavy model metadata (labels/accuracy from joblib + torch) off
     the UI thread."""
@@ -605,6 +627,7 @@ class ModelsPage(QWidget):
 
         mtime = self._model_mtime()
         recorded = self.app_state.get_sound_labels()
+        per_sound = _label_scores(meta)
         rows = []
         stale = []
         for label in labels:
@@ -615,7 +638,9 @@ class ModelsPage(QWidget):
                 # folder, so the recording checks below would call it missing.
                 rows.append(
                     f"<tr><td style='color:{t['text']}; padding-right:16px;'>"
-                    f"{label}</td><td><span style='color:{t['text_dim']};'>"
+                    f"{label}</td><td style='padding-right:16px;'>"
+                    f"{per_sound.get(label, '')}</td>"
+                    f"<td><span style='color:{t['text_dim']};'>"
                     f"built from the quiet parts of the others</span>"
                     f"</td></tr>")
                 continue
@@ -627,14 +652,14 @@ class ModelsPage(QWidget):
             elif newest > mtime:
                 stale.append(label)
                 note = f"<span style='color:{WARN};'>new recordings since</span>"
-            # Nothing else goes here. A checkpoint stores nothing per sound, so
-            # any number beside a label would be measuring today's recordings
-            # folder while appearing to rate the model. The two notes above are
-            # facts about the model against the library, which is the question
-            # this panel exists to answer.
+            # The score column is the model's own measurement, and the note is
+            # about the library it was trained from. Nothing derived from
+            # today's recordings folder belongs in the score column: that was
+            # the old Excellent/Good, which read as accuracy and was not.
             rows.append(
                 f"<tr><td style='color:{t['text']}; padding-right:16px;'>{label}"
-                f"</td><td>{note}</td></tr>")
+                f"</td><td style='padding-right:16px;'>"
+                f"{per_sound.get(label, '')}</td><td>{note}</td></tr>")
 
         # Counted without silence, which is a class the model answers with but
         # not a sound anyone made. Claiming 21 sounds when one of them is the
