@@ -4,6 +4,25 @@ import time
 
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
+# Written once the app has actually come up, so the splash can tell a first
+# launch (~30 s, cold cache) from every later one (~3 s). It lives beside the
+# venv marker: per machine, and gone again after a fresh clone.
+_FIRST_RUN_MARKER = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    ".venv", ".launched_once")
+
+
+def _first_run():
+    return not os.path.exists(_FIRST_RUN_MARKER)
+
+
+def _mark_launched():
+    try:
+        if os.path.isdir(os.path.dirname(_FIRST_RUN_MARKER)):
+            open(_FIRST_RUN_MARKER, "w").close()
+    except OSError:
+        pass
+
 
 def _preload():
     """Everything slow, in the order Windows needs it.
@@ -65,8 +84,9 @@ def _load_with_splash():
         ttk.Label(frame, text="Starting Parrot.py",
                   font=("TkDefaultFont", 13, "bold")).pack(anchor="w")
         ttk.Label(frame, wraplength=380, foreground="#666666",
-                  text="Loading the audio and model libraries. The first "
-                       "launch after setup is the slow one.").pack(
+                  text="First time setup may be a little slower."
+                  if _first_run() else
+                  "Loading audio and model libraries.").pack(
                       anchor="w", pady=(4, 14))
         bar = ttk.Progressbar(frame, mode="indeterminate", length=380)
         bar.pack(fill="x")
@@ -119,6 +139,7 @@ def main():
     _load_with_splash()
     from gui.app import create_app
     app = create_app(sys.argv)
+    _mark_launched()  # only once a window has actually been built
     sys.exit(app.exec())
 
 
