@@ -7,12 +7,32 @@ from gui.windows.main_window import MainWindow
 from gui import theme
 
 # macOS docks expect the rounded-tile version (a free-form mark renders
-# oversized next to other apps); Windows and Linux use the bare head.
-_ICON_FILE = "parrot-tile.png" if sys.platform == "darwin" else "parrot.png"
+# oversized next to other apps). Windows takes the multi-size .ico so the
+# taskbar, alt-tab and title bar each pick their own resolution.
+if sys.platform == "darwin":
+    _ICON_FILE = "parrot-tile.png"
+elif sys.platform == "win32":
+    _ICON_FILE = "parrot.ico"
+else:
+    _ICON_FILE = "parrot.png"
 ICON_PATH = os.path.join(os.path.dirname(__file__), "assets", _ICON_FILE)
 
 
+def _claim_taskbar_identity():
+    """Windows groups the taskbar by AppUserModelID and we inherit
+    python.exe's until we claim our own, icon included. Must run before the
+    first window is shown."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("parrot.py")
+    except Exception:
+        pass
+
+
 def create_app(argv):
+    _claim_taskbar_identity()
     app = QApplication(argv)
     app.setApplicationName("Parrot.py")
     app.setWindowIcon(QIcon(ICON_PATH))
