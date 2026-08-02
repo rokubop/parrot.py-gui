@@ -237,6 +237,8 @@ class Bootstrapper:
         # so close both steps here rather than trusting pip to say so.
         self.step(STEP_DOWNLOAD, "done")
         self.step(STEP_INSTALL, "done")
+        if self._extras:
+            self.package("", "extras-done", "")
 
         MARKER.parent.mkdir(parents=True, exist_ok=True)
         MARKER.write_text("ok\n", encoding="utf-8")
@@ -314,15 +316,23 @@ class Bootstrapper:
         elif s.startswith("Building wheel for "):
             self._phase(f"Building {_pkg_name(s[19:])}")
         elif s.startswith("Installing collected packages"):
+            # one line naming all ~77 packages, every one of them already
+            # logged on its own line when it was collected
+            names = [n for n in s.split(":", 1)[1].split(",") if n.strip()]
             self._downloading = None
             self.step(STEP_DOWNLOAD, "done")
             self.step(STEP_INSTALL, "running")
             self._phase("Installing packages")
+            self.log(f"Installing {len(names)} packages")
+            return False
         elif s.startswith("Successfully installed "):
-            for token in s[23:].split():
+            tokens = s[23:].split()
+            for token in tokens:
                 name = _norm(token.rsplit("-", 1)[0])
                 if name in self._wanted:
                     self.package(self._wanted[name], "done", "")
+            self.log(f"Installed {len(tokens)} packages")
+            return False
         return True
 
     def _on_bytes(self, done: int, total: int) -> None:
@@ -524,15 +534,27 @@ def run_gui() -> int:
         detail = ttk.Label(pkg_frame, text="", foreground="#666666")
         detail.grid(row=index, column=2, sticky="e", padx=(12, 0))
         pkg_rows[pkg] = (glyph, name, detail)
+    extras_row = len(pkg_rows)
+    extras_glyph = ttk.Label(pkg_frame, text="", width=2,
+                             foreground=STEP_COLOR["pending"])
+    extras_glyph.grid(row=extras_row, column=0, sticky="w", pady=(6, 0))
     extras_label = ttk.Label(pkg_frame, text="", foreground="#999999")
-    extras_label.grid(row=len(pkg_rows), column=1, sticky="w", pady=(6, 0))
+    extras_label.grid(row=extras_row, column=1, sticky="w", pady=(6, 0))
     extras_detail = ttk.Label(pkg_frame, text="", foreground="#999999")
-    extras_detail.grid(row=len(pkg_rows), column=2, sticky="e",
+    extras_detail.grid(row=extras_row, column=2, sticky="e",
                        padx=(12, 0), pady=(6, 0))
 
     def set_package(pkg, state, detail):
         if state == "extras":
+            extras_glyph.configure(text=STEP_GLYPH["running"],
+                                   foreground=STEP_COLOR["running"])
             extras_label.configure(text=f"+ {detail} dependencies")
+            return
+        if state == "extras-done":
+            extras_glyph.configure(text=STEP_GLYPH["done"],
+                                   foreground=STEP_COLOR["done"])
+            extras_label.configure(foreground=STEP_COLOR["done"])
+            extras_detail.configure(text="")
             return
         if state == "extras-detail":
             extras_detail.configure(text=detail)
@@ -573,7 +595,9 @@ def run_gui() -> int:
     toggle_row.pack(fill="x")
 
     log_frame = ttk.Frame(body)
-    log = ScrolledText(log_frame, height=14, width=52, wrap="none",
+    # word, not none: ScrolledText has no horizontal bar, so a long line
+    # would simply be unreachable
+    log = ScrolledText(log_frame, height=14, width=52, wrap="word",
                        font=("TkFixedFont", 9))
     log.pack(fill="both", expand=True)
     log.configure(state="disabled")
