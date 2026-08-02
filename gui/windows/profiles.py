@@ -252,6 +252,23 @@ class ImportSetupDialog(QDialog):
             return
         setup = item.data(Qt.ItemDataRole.UserRole)
         data_dir = setup["data_dir"]
+
+        # Nothing here yet: this is their setup, not a second one alongside it.
+        if profiles.current_profile() is None and profiles.main_is_empty():
+            answer = QMessageBox.question(
+                self, "Bring it in",
+                f"Copy {setup['sounds']} sounds and {setup['models']} models "
+                "into this setup?\n\nParrot restarts afterwards.")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.status_label.setText("Copying...")
+            self._worker = _OpWorker(
+                lambda: profiles.import_into_main(data_dir), self)
+            self._worker.done.connect(self._on_main_import_done)
+            self._update_buttons()
+            self._worker.start()
+            return
+
         default = os.path.basename(setup["root"]) or "imported"
         name, ok = QInputDialog.getText(
             self, "Import as profile", "Profile name:", text=default)
@@ -265,6 +282,17 @@ class ImportSetupDialog(QDialog):
             lambda error: self._on_import_done(name, error))
         self._update_buttons()
         self._worker.start()
+
+    def _on_main_import_done(self, error):
+        self._worker = None
+        self.status_label.setText("")
+        if error:
+            QMessageBox.warning(self, "Import failed", error)
+            self._update_buttons()
+            return
+        profiles.spawn_into(None)
+        QTimer.singleShot(0, QApplication.instance().quit)
+        self.accept()
 
     def _on_import_done(self, name, error):
         self._worker = None

@@ -102,6 +102,9 @@ def _check_new_name(name):
     if name == "current":
         # would collide with the data-profiles/current pointer file
         raise ProfileError("current is reserved; pick another name")
+    if name.strip().lower() == "main":
+        # the list already has a Main, and two rows reading Main is a trap
+        raise ProfileError("Main is the setup you already have; pick another name")
     if name in list_profiles():
         raise ProfileError(f"A profile named {name} already exists")
 
@@ -128,6 +131,21 @@ def duplicate(source_data_dir, name, talon="real"):
     _copy_data_tree(source_data_dir, profile_data_dir(name))
     write_meta(name, {"talon": talon})
     freeze(name)
+
+
+def main_is_empty():
+    return stats(MAIN_DATA_DIR) == (0, 0)
+
+
+def import_into_main(source_data_dir):
+    """A fresh install has nothing to protect, so an import belongs in Main
+    rather than in a profile nobody asked for."""
+    if not os.path.isdir(source_data_dir):
+        raise ProfileError(f"Nothing to copy at {source_data_dir}")
+    os.makedirs(MAIN_DATA_DIR, exist_ok=True)
+    shutil.copytree(source_data_dir, MAIN_DATA_DIR,
+                    ignore=shutil.ignore_patterns(*_NON_DATA),
+                    dirs_exist_ok=True)
 
 
 def freeze(name):
