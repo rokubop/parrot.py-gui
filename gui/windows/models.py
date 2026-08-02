@@ -21,6 +21,9 @@ The "~2% of a CPU core per net" figure this file used to quote is not repeated
 in any user-facing string, here or in the help: nobody has measured it on a
 machine we can name. Put it back once someone has.
 
+Every action in the header is also on the list's right-click menu, which is
+where someone with a dozen models looks for them.
+
 Destructive actions (delete) go through the two-step confirm dialog.
 """
 import os
@@ -30,7 +33,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
     QHeaderView, QListWidget, QListWidgetItem, QPushButton, QSplitter,
-    QLineEdit, QInputDialog, QMessageBox, QFrame, QDialog
+    QLineEdit, QInputDialog, QMessageBox, QFrame, QDialog, QMenu
 )
 
 from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
@@ -376,6 +379,10 @@ class ModelsPage(QWidget):
         self.model_list.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.model_list.currentItemChanged.connect(self._on_select)
+        self.model_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.model_list.customContextMenuRequested.connect(
+            self._on_list_context_menu)
         left_layout.addWidget(self.model_list)
 
         # "+ New model", to the Sounds tab's "+ New sound" - the two lists are
@@ -727,6 +734,31 @@ class ModelsPage(QWidget):
         self._current = (current.data(0, Qt.ItemDataRole.UserRole)
                          if current is not None else None)
         self._refresh_details()
+
+    def _on_list_context_menu(self, pos):
+        """Same actions as the header, on the row you pointed at. Right-clicking
+        a row selects it first, so the panel behind the menu is the model the
+        menu is about - a menu acting on something else on screen is the one
+        way this can go wrong.
+
+        Test live / Test accuracy lead, as they do in the header: they are what
+        the tab is for, and the management actions below are the rarer half.
+        """
+        item = self.model_list.itemAt(pos)
+        if item is None:
+            return
+        self.model_list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("Test live", self._on_test_live)
+        menu.addAction("Test accuracy", self._on_test_accuracy)
+        menu.addSeparator()
+        menu.addAction("Rename…", self._on_rename)
+        menu.addAction("Clone…", self._on_clone)
+        menu.addAction("Combine…", self._on_combine)
+        menu.addAction("Open folder", self._on_open_folder)
+        menu.addSeparator()
+        menu.addAction("Delete model", self._on_delete)
+        menu.exec(self.model_list.viewport().mapToGlobal(pos))
 
     # ---- the Sounds and Trained columns ---------------------------------
 
