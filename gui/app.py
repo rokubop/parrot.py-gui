@@ -19,9 +19,8 @@ ICON_PATH = os.path.join(os.path.dirname(__file__), "assets", _ICON_FILE)
 
 
 def _claim_taskbar_identity():
-    """Windows groups the taskbar by AppUserModelID and we inherit
-    python.exe's until we claim our own, icon included. Must run before the
-    first window is shown."""
+    """Windows taskbar groups by AppUserModelID; without our own we get
+    python.exe's icon. Must run before the first window."""
     if sys.platform != "win32":
         return
     try:

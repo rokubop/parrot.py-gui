@@ -237,11 +237,9 @@ def resolve_setup_dir(path):
     return None
 
 
-# Only build output and OS trees. Nothing here is a guess about where a
-# person keeps their code: Documents, Downloads, Desktop and the rest are
-# all walked, which measured at 0.7 s more across a whole home folder.
-# AppData/Library are the exception, at ~96k folders of cache; the one
-# thing worth finding in there is our own data root, added as a root below.
+# Build output and OS trees only, never a guess about where code lives.
+# AppData/Library are ~96k folders of cache, so installed_data_root() is
+# added back as a root instead.
 _SCAN_SKIP = {"node_modules", "__pycache__", "venv", "site-packages",
               "AppData", "Library", "Windows", "Program Files",
               "Program Files (x86)", "ProgramData", "$Recycle.Bin",
@@ -320,10 +318,9 @@ def home_roots():
 
 
 def scan(roots, on_hit=None, should_cancel=None, on_progress=None):
-    """Search folders the user asked for, any depth. Nothing is scanned
-    unless they ask: a checkout can be anywhere and nothing on the machine
-    records where it went, so guessing folder names only finds the people
-    who happen to share our habits."""
+    """Search folders the user asked for, any depth. Never called on its
+    own: a checkout can be anywhere, so the folder to search is always
+    theirs to pick."""
     return _scan(roots, max_depth=None, on_hit=on_hit,
                  should_cancel=should_cancel, on_progress=on_progress)
 

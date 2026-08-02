@@ -75,10 +75,9 @@ class _ScanWorker(QThread):
 class ImportSetupDialog(QDialog):
     """Bring an outside Parrot.py setup in as a profile, by copy.
 
-    A checkout can be anywhere, and nothing on the machine records where it
-    went, so pointing at the folder is the main action. The quick guesses
-    below it cost milliseconds; anything wider is asked for. The source
-    folder is only ever read.
+    A checkout can be anywhere and nothing records where it went, so
+    pointing at the folder is the main action and no search runs unasked.
+    The source folder is only ever read.
     """
 
     def __init__(self, parent=None):

@@ -33,15 +33,12 @@ def _claim_taskbar_identity():
 
 
 def _load_with_splash():
-    """Cold start pages ~2 GB of torch and Qt off disk, so the first launch
-    after setup is half a minute of nothing. Show that it is working.
+    """Cold start pages ~2 GB off disk, so the first launch is half a
+    minute of nothing. tkinter because a Qt splash cannot appear until the
+    import it covers has finished.
 
-    tkinter rather than Qt: a Qt splash cannot appear until the import it
-    would be covering has already finished.
-
-    The imports stay on the main thread: doing them in a worker segfaults
-    the interpreter once Qt starts. Tk is kept alive by an import hook that
-    pumps it as each module is found instead.
+    Imports stay on the main thread: on a worker they segfault once Qt
+    starts. The import hook pumps Tk instead.
     """
     try:
         import tkinter as tk
