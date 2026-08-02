@@ -144,6 +144,9 @@ class ImportSetupDialog(QDialog):
         self.status_label.setStyleSheet(f"color: {t['text_dim']};")
         row.addWidget(self.status_label)
         self.import_btn = QPushButton("Import")
+        self.import_btn.setToolTip(
+            "Copies the sounds and models into a new profile here. "
+            "The folder you picked is not touched.")
         self.import_btn.setEnabled(False)
         self.import_btn.clicked.connect(self._on_import)
         row.addWidget(self.import_btn)
@@ -153,39 +156,32 @@ class ImportSetupDialog(QDialog):
         text = (f"{setup['label']}    "
                 f"{setup['sounds']} sounds, {setup['models']} models")
         item = QListWidgetItem(text)
-        item.setData(Qt.ItemDataRole.UserRole, setup["data_dir"])
+        item.setData(Qt.ItemDataRole.UserRole, setup)
         self.list.addItem(item)
         if select:
             self.list.setCurrentItem(item)
 
     def _known_dirs(self):
-        return {self.list.item(i).data(Qt.ItemDataRole.UserRole)
+        return {self.list.item(i).data(Qt.ItemDataRole.UserRole)["data_dir"]
                 for i in range(self.list.count())}
 
     def _on_choose(self):
-        path = QFileDialog.getExistingDirectory(self, "Your Parrot.py folder")
+        path = QFileDialog.getExistingDirectory(self, "Your parrot.py folder")
         if not path:
             return
-        data_dir = profiles.resolve_setup_dir(path)
-        if data_dir is None:
+        setup = profiles.describe_setup(path)
+        if setup is None:
             QMessageBox.warning(
                 self, "Not a Parrot.py setup",
                 "No recordings in there. Pick your parrot.py folder, the one "
                 "with a data folder inside it.")
             return
-        sounds, models = profiles.stats(data_dir)
-        home = os.path.expanduser("~")
-        data_dir = os.path.abspath(data_dir)
-        if data_dir in self._known_dirs():
-            for i in range(self.list.count()):
-                if self.list.item(i).data(Qt.ItemDataRole.UserRole) == data_dir:
-                    self.list.setCurrentRow(i)
-                    break
-            return
-        self._add_candidate({
-            "data_dir": data_dir,
-            "label": data_dir.replace(home, "~", 1),
-            "sounds": sounds, "models": models}, select=True)
+        for i in range(self.list.count()):
+            known = self.list.item(i).data(Qt.ItemDataRole.UserRole)
+            if known["data_dir"] == setup["data_dir"]:
+                self.list.setCurrentRow(i)
+                return
+        self._add_candidate(setup, select=True)
 
     # ---- searching, only where the user asked -----------------------------
 
@@ -254,9 +250,9 @@ class ImportSetupDialog(QDialog):
         item = self.list.currentItem()
         if item is None or self._worker is not None:
             return
-        data_dir = item.data(Qt.ItemDataRole.UserRole)
-        # the checkout folder usually carries the meaningful name
-        default = os.path.basename(os.path.dirname(data_dir)) or "imported"
+        setup = item.data(Qt.ItemDataRole.UserRole)
+        data_dir = setup["data_dir"]
+        default = os.path.basename(setup["root"]) or "imported"
         name, ok = QInputDialog.getText(
             self, "Import as profile", "Profile name:", text=default)
         name = name.strip() if ok and name.strip() else None

@@ -230,11 +230,33 @@ def dismiss_import_card():
 
 
 def resolve_setup_dir(path):
-    """Accepts a checkout root or a data dir; returns the data dir or None."""
+    """Accepts a parrot.py folder or a data dir; returns the data dir or None."""
     for candidate in (os.path.join(path, "data"), path):
         if os.path.isdir(os.path.join(candidate, "recordings")):
             return candidate
     return None
+
+
+def _describe(data_dir, home, require_content=True):
+    """A setup as the user thinks of it: the parrot.py folder. The data dir
+    is what gets copied, so it is carried along rather than shown."""
+    sounds, models = stats(data_dir)
+    if require_content and not (sounds or models):
+        return None
+    data_dir = os.path.abspath(data_dir)
+    root = os.path.dirname(data_dir)
+    return {"root": root,
+            "data_dir": data_dir,
+            "label": root.replace(home, "~", 1),
+            "sounds": sounds, "models": models}
+
+
+def describe_setup(path):
+    """The setup at a folder the user picked, or None if there isn't one."""
+    data_dir = resolve_setup_dir(path)
+    if data_dir is None:
+        return None
+    return _describe(data_dir, os.path.expanduser("~"), require_content=False)
 
 
 # Build output and OS trees only, never a guess about where code lives.
@@ -271,11 +293,8 @@ def _scan(roots, max_depth=None, on_hit=None, should_cancel=None,
             real = os.path.realpath(data_dir)
             if real not in seen and real not in own:
                 seen.add(real)
-                sounds, models = stats(data_dir)
-                if sounds or models:
-                    found = {"data_dir": os.path.abspath(data_dir),
-                             "label": data_dir.replace(home, "~", 1),
-                             "sounds": sounds, "models": models}
+                found = _describe(data_dir, home)
+                if found:
                     results.append(found)
                     if on_hit:
                         on_hit(found)
