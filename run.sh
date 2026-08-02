@@ -503,14 +503,11 @@ fi
 # display. Pass --console to force text mode.
 # -------------------------------------------------------
 if ! "$PYTHON_CMD" bootstrap.py --check; then
+    # No prompt: they launched the app, and setup is what launching costs the
+    # first time. The setup window lists what it is doing and has Cancel.
     echo ""
-    info "  Dependencies need to be installed from $REQUIREMENTS."
+    info "  Launching setup..."
     echo ""
-    read -rp "  Set up now? [Y/n]: " deps_choice
-    if [[ "$deps_choice" =~ ^[nN] ]]; then
-        echo "  Skipped. Run again when ready."
-        exit 1
-    fi
 
     # Linux system libraries Qt and PortAudio link against. Must happen before
     # pip runs. macOS needs none of these: the sounddevice wheel bundles

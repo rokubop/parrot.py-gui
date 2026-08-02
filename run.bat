@@ -235,14 +235,11 @@ if not errorlevel 1 (
     goto :skip_deps
 )
 
+:: No prompt: they launched the app, and setup is what launching costs the
+:: first time. The setup window lists what it is doing and has Cancel.
 echo.
-echo   Dependencies need to be installed from %REQUIREMENTS%.
+echo   Launching setup...
 echo.
-set /p "DEPS_CHOICE=  Set up now? [Y/n]: "
-if /i "!DEPS_CHOICE!"=="n" (
-    echo   Skipped. Run again when ready.
-    exit /b 1
-)
 call :check_network
 
 "%PYTHON_CMD%" bootstrap.py %*
