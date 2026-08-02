@@ -114,7 +114,8 @@ TRAIN_ROWS = (
     ("Stay awake", "The app has to stay open for the whole run. Keep computer "
                    "awake holds sleep off while it goes, so there is nothing "
                    "to turn off first. Closing a laptop lid still stops it."),
-    ("Where", "Models tab. Retrain any time; old models are kept."),
+    ("Where", "Models tab, + New model. Training again never replaces what "
+              "you have; old models are kept."),
 )
 
 # What the training page teaches, as three things you can look at rather than

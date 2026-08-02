@@ -45,11 +45,6 @@ from lib.print_status import get_quantity_rating
 WARN = "#e0b020"
 BAD = "#e05a5a"
 
-STOP_HINT = "Stopping keeps the best model so far."
-# Which one follows depends on whether the run got its sleep assertion.
-AWAKE_HINT_HELD = "Sleep is held off until this ends. A closed lid still stops it."
-AWAKE_HINT_MANUAL = "Leave it running and the machine has to stay awake."
-
 # The column the balance delegate paints into.
 BAR_COLUMN = 3
 
@@ -320,7 +315,10 @@ class TrainView(QWidget):
         self.success_frame.setVisible(False)
         self.controls_row.setVisible(True)
         self.recover_row.setVisible(False)
-        self.best_banner.setVisible(False)
+        self.best_value.setText("Nothing yet")
+        self.best_value.setStyleSheet(
+            f"font-size: 26px; font-weight: bold; color: {theme.colors()['text_dim']};")
+        self.best_detail.setText("Waiting for the first epoch")
         self.prep_box.setVisible(True)
         self.prep_read.set_idle()
         self.prep_index.set_idle()
@@ -739,30 +737,23 @@ class TrainView(QWidget):
         self.run_subtitle.setStyleSheet(f"color: {t['text_dim']};")
         v.addWidget(self.run_subtitle)
 
-        # The question actually being asked during a run of this length is "can
-        # I go to bed", so it gets its own line and the accent colour.
-        self.eta = QLabel("")
-        self.eta.setWordWrap(True)
-        self.eta.setStyleSheet(
-            f"font-size: 15px; color: {t['accent']}; margin-top: 4px;")
-        v.addWidget(self.eta)
+        # Everything that changes every epoch on the left, everything worth
+        # glancing at on the right. The same shape as the setup page - detail in
+        # the wide column, the decision in a card beside it - and it gives the
+        # churn somewhere to be demoted to. A run is hours long; what it asks
+        # for is a glance, not a reading.
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
 
-        # The one thing worth knowing at any moment of a run this long: there is
-        # already a model on disk and it is this good. It used to flash past
-        # inside the status line as "new best, saved" and be gone by the time
-        # anyone looked, which is the opposite of reassuring at 2am.
-        self.best_banner = QLabel("")
-        self.best_banner.setWordWrap(True)
-        self.best_banner.setVisible(False)
-        self.best_banner.setStyleSheet(
-            f"background-color: {t['panel']}; border: 1px solid {t['accent']}; "
-            f"border-radius: 6px; padding: 7px 11px; color: {t['text']};")
-        v.addWidget(self.best_banner)
+        left = QWidget()
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(8)
 
         self.status = QLabel("")
         self.status.setWordWrap(True)
         self.status.setStyleSheet(f"color: {t['text_dim']};")
-        v.addWidget(self.status)
+        lv.addWidget(self.status)
 
         mode_row = QHBoxLayout()
         mode_row.setContentsMargins(0, 2, 0, 0)
@@ -776,33 +767,15 @@ class TrainView(QWidget):
             "The trainer's own output, exactly as the terminal shows it")
         self.mode_btn.clicked.connect(self._toggle_mode)
         mode_row.addWidget(self.mode_btn)
-        v.addLayout(mode_row)
+        lv.addLayout(mode_row)
 
         self.view_stack = QStackedWidget()
         self.view_stack.addWidget(self._build_details_view())
         self.view_stack.addWidget(self._build_log_view())
-        v.addWidget(self.view_stack, 1)
-
-        self.controls_row = QWidget()
-        controls = QVBoxLayout(self.controls_row)
-        controls.setContentsMargins(0, 8, 0, 0)
-        controls.setSpacing(4)
-        stop_row = QHBoxLayout()
-        self.stop_btn = QPushButton("Stop and keep the best model so far")
-        self.stop_btn.setMinimumHeight(32)
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.stop_btn.setToolTip("Finish after this epoch and keep the best model so far")
-        self.stop_btn.clicked.connect(self._on_stop)
-        stop_row.addWidget(self.stop_btn)
-        stop_row.addStretch()
-        controls.addLayout(stop_row)
-        # Second sentence is rewritten per run, in _on_train.
-        self.sleep_hint = QLabel(STOP_HINT + " " + AWAKE_HINT_MANUAL)
-        self.sleep_hint.setWordWrap(True)
-        self.sleep_hint.setStyleSheet(f"color: {t['text_dim']};")
-        controls.addWidget(self.sleep_hint)
-        v.addWidget(self.controls_row)
+        lv.addWidget(self.view_stack, 1)
+        columns.addWidget(left, 1)
+        columns.addWidget(self._build_run_card(), 0)
+        v.addLayout(columns, 1)
 
         # Shown instead of the controls when a run ends with nothing to show for
         # it, so the only way back is not the browser-style Back button.
@@ -821,6 +794,63 @@ class TrainView(QWidget):
         self.success_frame.setVisible(False)
         v.addWidget(self.success_frame)
         return page
+
+    def _build_run_card(self):
+        """What the run has produced, and the button that keeps it.
+
+        The button used to sit a page away from the thing it preserves, so
+        "keep the best model so far" was a claim you had to go and check. Beside
+        the figure it is keeping, stopping stops being a decision.
+        """
+        t = theme.colors()
+        card = QFrame()
+        card.setObjectName("runCard")
+        card.setFixedWidth(250)
+        card.setStyleSheet(
+            f"QFrame#runCard {{ background-color: {t['panel']}; "
+            f"border: 1px solid {t['border']}; border-radius: 8px; }}")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(14, 12, 14, 14)
+        v.setSpacing(2)
+
+        head = QLabel("Best so far")
+        head.setStyleSheet(
+            f"color: {t['text_dim']}; font-size: 11px; font-weight: bold;")
+        v.addWidget(head)
+
+        # Nothing exists yet until an epoch lands, and saying so beats a 0%
+        # that reads as a result.
+        self.best_value = QLabel("Nothing yet")
+        self.best_value.setStyleSheet(
+            f"font-size: 26px; font-weight: bold; color: {t['text_dim']};")
+        v.addWidget(self.best_value)
+        self.best_detail = QLabel("Waiting for the first epoch")
+        self.best_detail.setWordWrap(True)
+        self.best_detail.setStyleSheet(f"color: {t['text_dim']};")
+        v.addWidget(self.best_detail)
+
+        v.addSpacing(12)
+        # The question actually being asked during a run of this length is "can
+        # I go to bed", so it keeps its own line and the accent colour.
+        self.eta = QLabel("")
+        self.eta.setWordWrap(True)
+        self.eta.setStyleSheet(f"color: {t['accent']};")
+        v.addWidget(self.eta)
+
+        v.addStretch()
+        self.controls_row = QWidget()
+        controls = QVBoxLayout(self.controls_row)
+        controls.setContentsMargins(0, 10, 0, 0)
+        self.stop_btn = QPushButton("Stop and keep it")
+        self.stop_btn.setMinimumHeight(32)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.stop_btn.setToolTip(
+            "Finish after this epoch and keep the best model so far")
+        self.stop_btn.clicked.connect(self._on_stop)
+        controls.addWidget(self.stop_btn)
+        v.addWidget(self.controls_row)
+        return card
 
     def _build_details_view(self):
         """Preparing, then curves. The two never overlap, so they share the space
@@ -1291,8 +1321,30 @@ class TrainView(QWidget):
             ("Date", _today()),
             ("Sounds", f"{len(selected)}"),
             ("Recorded", f"{minutes} minute" + ("" if minutes == 1 else "s")),
-            ("Neural networks", f"{nets}"),
         ]
+        # The same field the model card carries afterwards, under the same name,
+        # so the two can be read against each other.
+        #
+        # It can exceed "Recorded" and usually does: oversampling repeats a thin
+        # sound up to 2x, and silence arrives as a class of its own on top. On
+        # the library this was written against, 45 minutes recorded becomes ~50
+        # trained on, 12 of 20 sounds having been repeated. So this is material
+        # handed to the trainer, not distinct audio, and the two numbers are not
+        # a before and after of the same pile.
+        loaded = balance.loaded_frames(self._plan)
+        if loaded:
+            rows.append(("Trained on", balance.frames_as_minutes(loaded)))
+            self.summary.setToolTip(
+                "Trained on can be more than Recorded: sounds with less material "
+                "are repeated to even the set out, and silence is added as its "
+                "own class.")
+        # Same field, same words as the model card afterwards. Blank on a
+        # library whose takes all predate the sidecar, rather than a row saying
+        # nothing.
+        mics = library_ops.describe_mics(library_ops.mics_for_labels(selected))
+        if mics:
+            rows.append(("Microphones", mics))
+        rows.append(("Neural networks", f"{nets}"))
         self.summary.setText(
             "<table cellspacing='0' cellpadding='1'>" + "".join(
                 f"<tr><td style='color:{t['text_dim']}; padding-right:14px;'>"
@@ -1335,9 +1387,8 @@ class TrainView(QWidget):
         self.stack.setCurrentWidget(self.run_page)
 
         # Released by both endings, so it can't outlive the run.
-        held = self.awake_check.isChecked() and self._awake.start()
-        self.sleep_hint.setText(
-            f"{STOP_HINT} {AWAKE_HINT_HELD if held else AWAKE_HINT_MANUAL}")
+        if self.awake_check.isChecked():
+            self._awake.start()
 
         self.train_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -1459,14 +1510,16 @@ class TrainView(QWidget):
         next epoch, so the answer to "have I got anything yet" was only ever
         visible for a few seconds at a time.
         """
+        t = theme.colors()
         if self._best_accuracy is None:
             return
-        at = f" at epoch {self._best_epoch + 1}" if self._best_epoch is not None else ""
-        tail = ("Stopping now keeps it." if self.worker is not None
-                else "Saved.")
-        self.best_banner.setText(
-            f"<b>Best so far {self._best_accuracy:.1%}</b>{at}. {tail}")
-        self.best_banner.setVisible(True)
+        self.best_value.setText(f"{self._best_accuracy:.1%}")
+        self.best_value.setStyleSheet(
+            f"font-size: 26px; font-weight: bold; color: {t['accent']};")
+        at = (f"at epoch {self._best_epoch + 1}"
+              if self._best_epoch is not None else "")
+        tail = "Saved to disk." if self.worker is None else "Already on disk."
+        self.best_detail.setText(f"{at}. {tail}".lstrip(". "))
 
     def _update_eta(self, epoch, now):
         """Measured, not guessed: every epoch does the same work, so the time the

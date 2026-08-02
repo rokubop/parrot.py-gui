@@ -32,7 +32,7 @@ def _ago(timestamp):
     return f"{days / 365.25:.1f} years ago"
 
 
-_newest_wav_mtime = library_ops.newest_recording_mtime
+_recordings_since = library_ops.recordings_since
 
 
 class _ModelSoundsWorker(QThread):
@@ -513,13 +513,16 @@ class HomePage(QWidget):
         lines = [f"<b style='color:{t['text_bright']}; font-size:15px;'>{name}</b>",
                  f"<span style='color:{t['text_dim']};'>Trained {_ago(mtime)}</span>"]
 
-        stale = [l for l in labels
-                 if (m := _newest_wav_mtime(l)) is not None and m > mtime]
+        stale = [(l, n) for l in labels
+                 if (n := _recordings_since(l, mtime)[0])]
         if stale:
-            shown = ", ".join(stale[:4]) + ("…" if len(stale) > 4 else "")
+            takes = sum(n for _, n in stale)
+            names = [l for l, _ in stale]
+            shown = ", ".join(names[:4]) + ("…" if len(names) > 4 else "")
+            noun = "recording" if takes == 1 else "recordings"
             lines.append(
-                f"<span style='color:#e0b020;'>⚠ {len(stale)} sound(s) have new "
-                f"recordings since this model was trained: {shown}</span>")
+                f"<span style='color:{t['text_dim']};'>{takes} new {noun} "
+                f"since this model was trained: {shown}</span>")
 
         lines.append(self._model_sounds_html(name, labels, t))
         self.model_panel_body.setText("<br>".join(lines))

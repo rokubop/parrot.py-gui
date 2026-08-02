@@ -169,6 +169,14 @@ class AppState(QObject):
                     net_info["label_accuracy"] = state.get("label_accuracy")
                     net_info["combined_accuracy"] = state.get("combined_accuracy")
                     net_info["label_frames"] = state.get("label_frames")
+                    # One run made every net, so these describe the model
+                    # rather than the net. First one to carry them wins.
+                    if not meta.get("run_settings"):
+                        meta["run_settings"] = state.get("run_settings") or {}
+                    if not meta.get("audio_settings"):
+                        meta["audio_settings"] = state.get("audio_settings") or {}
+                    if not meta.get("source_mics"):
+                        meta["source_mics"] = state.get("source_mics") or {}
                     if not meta["labels"] and "labels" in state:
                         meta["labels"] = list(state["labels"])
                 except Exception:

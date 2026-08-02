@@ -17,7 +17,12 @@ page teaches them in a legend instead.
 
 Frames, not seconds, are the trainer's unit. A frame count times `ms_per_frame`
 does not equal the seconds the Sounds tab shows for the same label - sliding
-windows and trailing partials put them ~4% apart - so nothing here converts.
+windows and trailing partials put them ~4% apart - so the table never converts.
+
+`frames_as_minutes` is the one exception, and only for the summary line that
+appears both before a run and on the model afterwards: "45,000 frames" is not a
+quantity anyone can judge, and those two lines have to read identically or they
+cannot be compared. It carries a ~ for the gap above.
 Percentages are the honest bridge between the two.
 """
 import math
@@ -31,6 +36,30 @@ FULL_WEIGHT = 0.95
 
 def ms_per_frame():
     return math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
+
+
+def frames_as_minutes(frames):
+    """Frames as the minutes the two summaries quote, phrased once.
+
+    The balance table stays in frames - see the note above. These are the two
+    lines that do not: the setup screen's "Trained on" and the model card's,
+    which are the same field before and after a run and so have to agree to the
+    word. The ~ is the module's own caveat, kept on every use of it.
+
+    Not distinct audio. An oversampled label's frames are counted every time the
+    trainer will see them, so this can exceed the minutes actually recorded.
+    """
+    minutes = round(frames * ms_per_frame() / 60000)
+    return f"~{minutes} minute" + ("" if minutes == 1 else "s")
+
+
+def loaded_frames(plan):
+    """What the trainer will actually be handed, silence included. plan_for
+    computes this to work out silence's share and then keeps it to itself."""
+    if not plan:
+        return 0
+    return (sum(r["loaded"] for r in plan["rows"])
+            + (plan.get("silence") or {}).get("loaded", 0))
 
 
 def plan_for(labels, silence="all", balance_sounds=None):

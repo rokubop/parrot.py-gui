@@ -520,8 +520,15 @@ class SoundLibraryPage(QWidget):
         detected_ms = self.app_state.get_label_duration_ms(label)
         detected_s = detected_ms / 1000.0
         noun = "recording" if count == 1 else "recordings"
+        # Per take the mic is on the card below; this is the same question asked
+        # of the sound as a whole, which is the form the model inherits. Appended
+        # rather than given a line, and absent entirely on a sound whose takes
+        # all predate the sidecar.
+        mics = library_ops.describe_mics(library_ops.mics_for_labels([label]))
         self.sound_stats.setText(
-            f"{count} {noun}   ·   {recorded_s:.1f}s recorded   ·   {detected_s:.1f}s detected sound"
+            f"{count} {noun}   ·   {recorded_s:.1f}s recorded   ·   "
+            f"{detected_s:.1f}s detected sound"
+            + (f"   ·   {mics}" if mics else "")
         )
         # A brand-new sound scoring a red "Not enough" reads as a failure rather
         # than a starting point - the empty-state panel says what to do instead.

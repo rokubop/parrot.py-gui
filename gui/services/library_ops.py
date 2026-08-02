@@ -186,6 +186,62 @@ def read_mic_info(wav_path):
     return data if isinstance(data, dict) else None
 
 
+def mics_for_labels(labels):
+    """What these sounds were recorded with, as
+    {"names": [...], "indices": [...], "named": n, "takes": n}.
+
+    Names come only from sidecars, so they cover the takes made since sidecars
+    existed. Indices come from every filename but are never turned into names -
+    device indices shift when hardware changes, so a late lookup would
+    confidently name the wrong microphone. They are here to count *how many*
+    mics are involved, which the names alone cannot say when most takes predate
+    the sidecar. Callers should show names and fall back to a count.
+    """
+    names, indices, named, takes = [], [], 0, 0
+    for label in labels:
+        source = os.path.join(RECORDINGS_FOLDER, label, "source")
+        if not os.path.isdir(source):
+            continue
+        for f in sorted(os.listdir(source)):
+            if not f.endswith(".wav"):
+                continue
+            takes += 1
+            base = f[:-4]
+            if base.startswith("mici_"):
+                index = base.split("__")[0]
+                if index not in indices:
+                    indices.append(index)
+            info = read_mic_info(os.path.join(source, f)) or {}
+            name = (info.get("mic_name") or "").strip()
+            if name:
+                named += 1
+                if name not in names:
+                    names.append(name)
+    return {"names": names, "indices": indices, "named": named, "takes": takes}
+
+
+def describe_mics(summary):
+    """One line for a mic summary, or "" when there is nothing to say.
+
+    Never prints mici_<n>: an index looks like an identity and is not one. When
+    nothing is named it says how many were involved and no more, which is the
+    whole of what the filenames can honestly support.
+    """
+    if not summary:
+        return ""
+    names, count = summary.get("names") or [], len(summary.get("indices") or [])
+    if not names:
+        if count > 1:
+            return f"{count} microphones, none named"
+        return "Not recorded" if count else ""
+    shown = ", ".join(names[:2]) + ("…" if len(names) > 2 else "")
+    extra = count - len(names)
+    if extra > 0:
+        noun = "other" if extra == 1 else "others"
+        return f"{shown}  (+{extra} unnamed {noun})"
+    return shown
+
+
 def delete_recording(wav_path):
     """Delete a recording's wav and all its segment artifacts. Destructive."""
     files = recording_sibling_files(wav_path)
@@ -237,11 +293,19 @@ def move_recording(wav_path, dest_label):
     return new_wav
 
 
-def newest_recording_mtime(label):
-    """When this sound was last recorded, or None. Used to tell whether a model
-    predates the data it was trained on."""
+def recordings_since(label, when):
+    """(takes recorded after `when`, when the newest take was). A newest of None
+    means the sound has no recordings at all.
+
+    Counted rather than only compared, so a model can say how far behind it is
+    instead of only that it is behind.
+
+    Source wavs only. Re-segmenting a take rewrites segments/ and leaves its wav
+    alone, so it does not show up here even though it changes what training
+    reads - load_data pairs each wav with its highest-versioned .srt.
+    """
     source_dir = os.path.join(RECORDINGS_FOLDER, label, "source")
-    newest = None
+    newest, count = None, 0
     if os.path.isdir(source_dir):
         for f in os.listdir(source_dir):
             if f.endswith(".wav"):
@@ -251,7 +315,9 @@ def newest_recording_mtime(label):
                     continue
                 if newest is None or mtime > newest:
                     newest = mtime
-    return newest
+                if mtime > when:
+                    count += 1
+    return count, newest
 
 
 # ---- model operations -------------------------------------------------

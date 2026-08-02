@@ -28,6 +28,8 @@ import sys
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from gui.services import library_ops
+
 # "Loading in guh using undersampling: -33%" / "Loading in oo"
 RE_LOADING = re.compile(
     r"^Loading in (?P<label>.+?)"
@@ -186,7 +188,7 @@ class TrainingWorker(QThread):
         # the rest of the app, and on Windows it must load before Qt.
         from lib.audio_net import AudioNetTrainer
         from lib.audio_dataset import AudioDataset
-        from lib.load_data import load_pytorch_data
+        from lib.load_data import load_pytorch_data, resolved_balance
         from lib.combine_models import get_current_default_settings
 
         audio_settings = get_current_default_settings()
@@ -200,7 +202,10 @@ class TrainingWorker(QThread):
                                  balance_sounds=self.balance_sounds)
         self.stage_changed.emit("Indexing…")
         dataset = AudioDataset(data)
-        trainer = AudioNetTrainer(dataset, self.net_count, audio_settings)
+        trainer = AudioNetTrainer(
+            dataset, self.net_count, audio_settings,
+            run_settings=resolved_balance(self.silence, self.balance_sounds),
+            source_mics=library_ops.mics_for_labels(self.labels))
         self.run_started.emit(trainer.max_epochs)
 
         def progress_callback(epoch, loss, accuracy, per_label_accuracy, is_new_best):
