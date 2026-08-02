@@ -8,6 +8,25 @@ cursor while dragging - what you'd expect from a modern slider.
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QSlider, QStyle, QStyleOptionSlider
 
+from gui import theme
+
+
+def slider_qss():
+    """A tall groove + big round handle, so the whole bar is an easy target
+    (ClickSlider already lets you click anywhere along it to jump there).
+    Read at build time, so a caller that survives a theme switch re-applies it
+    from refresh_theme()."""
+    t = theme.colors()
+    return (
+        f"QSlider::groove:horizontal {{ height: 8px; border-radius: 4px; "
+        f"background: {t['border']}; }}"
+        f"QSlider::sub-page:horizontal {{ background: {t['accent']}; "
+        f"border-radius: 4px; }}"
+        f"QSlider::handle:horizontal {{ width: 16px; height: 16px; "
+        f"margin: -6px 0; border-radius: 8px; background: {t['text_bright']}; "
+        f"border: 2px solid {t['accent']}; }}"
+        f"QSlider::handle:horizontal:hover {{ background: {t['accent']}; }}")
+
 
 class ClickSlider(QSlider):
     def _value_at(self, pos):

@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 
 from gui import theme
 from gui.widgets.audio_preview import AudioPreviewWidget
-from gui.widgets.click_slider import ClickSlider
+from gui.widgets.click_slider import ClickSlider, slider_qss
 from gui.services import library_ops, playback
 from gui.services.undo import UndoHistory
 from gui.workers.segment_worker import (
@@ -197,7 +197,7 @@ class EditRecordingView(QWidget):
         self.slider.setMinimumWidth(220)
         self.slider.setMinimumHeight(24)
         self.slider.valueChanged.connect(self._update_slider_label)
-        self.slider.setStyleSheet(self._slider_qss())
+        self.slider.setStyleSheet(slider_qss())
         det.addWidget(self.slider, 1)
         self.slider_label = QLabel("-40 dBFS")
         self.slider_label.setMinimumWidth(80)
@@ -242,20 +242,6 @@ class EditRecordingView(QWidget):
         self.status = QLabel("")
         self.status.setStyleSheet(f"color: {theme.colors()['accent']};")
         root.addWidget(self.status)
-
-    def _slider_qss(self):
-        t = theme.colors()
-        # A tall groove + big round handle so the whole bar is an easy target
-        # (ClickSlider already lets you click anywhere along it to jump there).
-        return (
-            f"QSlider::groove:horizontal {{ height: 8px; border-radius: 4px; "
-            f"background: {t['border']}; }}"
-            f"QSlider::sub-page:horizontal {{ background: {t['accent']}; "
-            f"border-radius: 4px; }}"
-            f"QSlider::handle:horizontal {{ width: 16px; height: 16px; "
-            f"margin: -6px 0; border-radius: 8px; background: {t['text_bright']}; "
-            f"border: 2px solid {t['accent']}; }}"
-            f"QSlider::handle:horizontal:hover {{ background: {t['accent']}; }}")
 
     def _update_slider_label(self, *_):
         v = self.slider.value()

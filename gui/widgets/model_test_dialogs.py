@@ -2,7 +2,8 @@
 and a live mic test with per-sound probability bars.
 
 Both answer "is my model good?" with parrot.py's own pipeline - deliberately
-separate from the Talon tab, which shows what the deployed Talon setup does.
+separate from the Integrations tab, which shows what the deployed Talon setup
+does.
 """
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
@@ -13,9 +14,19 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import theme
+from gui.widgets.click_slider import ClickSlider, slider_qss
 from gui.workers.eval_worker import AccuracyWorker, LiveTestWorker
 
 WINNER_THRESHOLD = 0.5
+# dBFS is bounded below by the bit depth (16-bit silence is -96), so the low end
+# of the slider is "let everything through" rather than an arbitrary floor.
+QUIET_OFF = -96
+# On by default: the model answers with one of its sounds on every frame, so an
+# ungated dialog shows bars twitching at room noise the whole time it is open,
+# and the reading you want - what your sound scores - is the one moment the
+# bars are not moving anyway. Same number the Edit view's detection slider
+# starts at, so the two screens do not disagree about what counts as quiet.
+QUIET_DEFAULT = -40
 
 
 class AccuracyDialog(QDialog):
@@ -104,14 +115,44 @@ class LiveTestDialog(QDialog):
         t = theme.colors()
         self._latest = None
         self._last_winner = None
+        self._min_dbfs = QUIET_DEFAULT
+        self._quiet_shown = False
 
         layout = QVBoxLayout(self)
         self.status = QLabel("Listening… make your sounds. This is the raw "
-                             "model - no thresholds, no throttles.")
+                             "model - no probability thresholds, no throttles.")
         self.status.setWordWrap(True)
         self.status.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(self.status)
 
+        # The model always answers with one of its sounds, so a quiet room
+        # still produces a winner and the bars never settle. This gate is the
+        # dialog's own, not the model's: it decides which frames are worth
+        # reading, and never what the model is asked.
+        quiet_row = QHBoxLayout()
+        quiet_label = QLabel("Ignore quieter than:")
+        quiet_label.setStyleSheet(f"color: {t['text_dim']};")
+        quiet_row.addWidget(quiet_label)
+        self.quiet_slider = ClickSlider(Qt.Orientation.Horizontal)
+        self.quiet_slider.setRange(QUIET_OFF, 0)
+        self.quiet_slider.setValue(QUIET_DEFAULT)
+        self.quiet_slider.setMinimumWidth(180)
+        self.quiet_slider.setMinimumHeight(24)
+        self.quiet_slider.setStyleSheet(slider_qss())
+        self.quiet_slider.setToolTip(
+            "Below this level the bars sit still and nothing is logged. Drag "
+            "it up until room noise stops moving them, then make your sound. "
+            "All the way down is off.")
+        self.quiet_slider.valueChanged.connect(self._on_quiet_changed)
+        quiet_row.addWidget(self.quiet_slider, 1)
+        self.quiet_value = QLabel("off")
+        self.quiet_value.setMinimumWidth(72)
+        self.quiet_value.setStyleSheet(f"color: {t['text']};")
+        quiet_row.addWidget(self.quiet_value)
+        layout.addLayout(quiet_row)
+
+        # Live level, so the slider can be set against what the room actually
+        # measures rather than by guessing at a number.
         self.dbfs_label = QLabel("dBFS: -")
         self.dbfs_label.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(self.dbfs_label)
@@ -126,7 +167,8 @@ class LiveTestDialog(QDialog):
         layout.addWidget(scroll, 2)
         self.bars = {}
 
-        layout.addWidget(QLabel("Detections (probability ≥ 50%):"))
+        self.log_title = QLabel("")
+        layout.addWidget(self.log_title)
         self.log = QListWidget()
         layout.addWidget(self.log, 1)
 
@@ -136,6 +178,8 @@ class LiveTestDialog(QDialog):
         close.clicked.connect(self.reject)
         row.addWidget(close)
         layout.addLayout(row)
+
+        self._on_quiet_changed(QUIET_DEFAULT)
 
         self.worker = LiveTestWorker(model_path, mic_index)
         self.worker.failed.connect(
@@ -169,8 +213,27 @@ class LiveTestDialog(QDialog):
             self.bars[label] = (name, bar, value)
         self.bars_layout.addStretch()
 
+    def _on_quiet_changed(self, value):
+        self._min_dbfs = value
+        off = value <= QUIET_OFF
+        self.quiet_value.setText("off" if off else f"{value} dBFS")
+        self.log_title.setText(
+            "Detections (probability ≥ 50%):" if off
+            else f"Detections (probability ≥ 50%, above {value} dBFS):")
+        # A frame that was the last winner may now be below the line; forget it
+        # so the next loud one logs rather than being read as a repeat.
+        self._last_winner = None
+        # Redraw against the new line rather than waiting for a frame, or
+        # dropping the slider to 0 leaves the bars mid-sound.
+        self._quiet_shown = False
+
     def _on_frame(self, probabilities, dbfs):
         self._latest = (probabilities, dbfs)
+        if dbfs < self._min_dbfs:
+            # Too quiet to be one of your sounds. The model still ran on it -
+            # what is dropped is showing the answer and calling it a detection.
+            self._last_winner = None
+            return
         winner = max(probabilities, key=probabilities.get)
         if probabilities[winner] >= WINNER_THRESHOLD:
             if winner != self._last_winner:
@@ -188,6 +251,24 @@ class LiveTestDialog(QDialog):
         probabilities, dbfs = self._latest
         self._ensure_bars(sorted(probabilities.keys()))
         t = theme.colors()
+
+        # Below the line the bars are emptied once and then left alone, so the
+        # panel is still whenever nothing is being said into the mic. Holding
+        # the last values instead would read as a stuck reading, and letting
+        # them run is the twitching this gate exists to stop. The level below
+        # keeps updating - it is what you set the slider against.
+        if dbfs < self._min_dbfs:
+            if not self._quiet_shown:
+                self._quiet_shown = True
+                for name, bar, value in self.bars.values():
+                    bar.setValue(0)
+                    value.setText("-")
+                    name.setStyleSheet(f"color: {t['text_dim']};")
+            self.dbfs_label.setText(
+                f"dBFS: {dbfs:.1f}   (below {self._min_dbfs}, ignored)")
+            return
+
+        self._quiet_shown = False
         winner = max(probabilities, key=probabilities.get)
         for label, (name, bar, value) in self.bars.items():
             p = probabilities.get(label, 0.0)
