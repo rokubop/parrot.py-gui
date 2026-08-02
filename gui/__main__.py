@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 import time
@@ -113,6 +114,10 @@ def _load_with_splash():
 
 def main():
     _load_with_splash()
+    # destroy() leaves the Tcl interpreter in a cycle. Collect it here or a Qt
+    # worker collects it later and Tcl aborts: Tcl_AsyncDelete, wrong thread.
+    gc.collect()
+
     from gui.app import create_app
     app = create_app(sys.argv)
     sys.exit(app.exec())
