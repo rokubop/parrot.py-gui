@@ -55,7 +55,11 @@ class MainWindow(QMainWindow):
         self._nav_group.setExclusive(True)
 
         self.nav_actions = {}
-        for text in ("Home", "Sounds", "Models", "Talon", "Settings", "About"):
+        # "Integrations" rather than "Talon": Talon is the one that exists, but
+        # the tab is the place where this app meets another, and naming it after
+        # the only current occupant made a second one look like a redesign.
+        for text in ("Home", "Sounds", "Models", "Integrations",
+                     "Settings", "About"):
             action = QAction(text, self)
             action.setCheckable(True)
             action.triggered.connect(lambda _checked, t=text: self._show_tab(t))
@@ -195,7 +199,7 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self.library_page)
         elif name == "Models":
             self.stack.setCurrentWidget(self._get_models_page())
-        elif name == "Talon":
+        elif name == "Integrations":
             self.stack.setCurrentWidget(self._get_talon_page())
         elif name == "Settings":
             self.stack.setCurrentWidget(self._get_settings_page())

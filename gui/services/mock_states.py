@@ -2,7 +2,7 @@
 
 Sounds are synthesized noise bursts written through the app's real
 segmentation (``segment_worker.redetect`` -> ``process_wav_file``), so the
-Sounds page, duration ratings, attention checks and even training all see
+Sounds page, duration ratings and even training all see
 genuine recordings. Models cannot be synthesized - a real pair is copied
 from Main or any non-test profile when one exists; the model-bearing
 profiles are skipped (with a note) otherwise. The Talon axis rides the

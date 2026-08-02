@@ -188,9 +188,12 @@ class HomePage(QWidget):
         steps_row = QHBoxLayout(self.steps_widget)
         steps_row.setContentsMargins(0, 0, 0, 0)
         steps_row.setSpacing(12)
-        self.step_record = _StepCard(1, "Record sounds", "Open Sounds")
-        self.step_train = _StepCard(2, "Train a model", "Train a model")
-        self.step_connect = _StepCard(3, "Connect to Talon", "Open Talon setup")
+        # Title says the step, button says where it happens. The two used to
+        # say the same thing on card 2 ("Train a model" / "Train a model"),
+        # which read as if the button did the training.
+        self.step_record = _StepCard(1, "Record sounds", "Open sounds")
+        self.step_train = _StepCard(2, "Train a model", "Open models")
+        self.step_connect = _StepCard(3, "Integrations", "Open integrations")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
         self._talon_connected = False
@@ -271,20 +274,6 @@ class HomePage(QWidget):
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
 
-        # only rendered when a check fires; silence means all good
-        self.attention_panel = QFrame()
-        self.attention_panel.setObjectName("homePanel")
-        av = QVBoxLayout(self.attention_panel)
-        av.setContentsMargins(16, 12, 16, 14)
-        av.setSpacing(4)
-        self.attention_title = QLabel("Needs attention")
-        av.addWidget(self.attention_title)
-        self.attention_rows = QVBoxLayout()
-        self.attention_rows.setSpacing(2)
-        av.addLayout(self.attention_rows)
-        self.attention_panel.setVisible(False)
-        v.addWidget(self.attention_panel)
-
         # Non-zero factor: leftover height belongs at the bottom of the page,
         # not distributed into the step cards (which would stretch them tall
         # and strand their buttons far below the status line).
@@ -318,8 +307,9 @@ class HomePage(QWidget):
             pass
 
     def _on_connect_action(self):
-        """Step 3's button: setup until connected, then the main event."""
-        self.navigate.emit("Talon")
+        """Step 3's button. Connected, it lands on the patterns editor, which
+        is what there is to do once Talon is running your model."""
+        self.navigate.emit("Integrations")
         if self._talon_connected:
             window = self.window()
             if hasattr(window, "_get_talon_page"):
@@ -331,31 +321,6 @@ class HomePage(QWidget):
                 library_ops.open_in_file_manager(self._talon_dir)
             except library_ops.LibraryOpError:
                 pass
-
-    def _render_attention(self, items, t):
-        while self.attention_rows.count():
-            taken = self.attention_rows.takeAt(0)
-            if taken.widget() is not None:
-                taken.widget().deleteLater()
-        for item in items:
-            row = QWidget()
-            h = QHBoxLayout(row)
-            h.setContentsMargins(0, 0, 0, 0)
-            text = QLabel(item["text"])
-            text.setWordWrap(True)
-            text.setStyleSheet(f"color: {t['text']}; border: none;")
-            h.addWidget(text, 1)
-            btn = QPushButton(item["action"])
-            btn.setFlat(True)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            btn.setStyleSheet(
-                f"QPushButton {{ color: {t['accent']}; background: transparent; "
-                f"border: none; padding: 2px 4px; }}")
-            btn.clicked.connect(
-                lambda _checked, tab=item["tab"]: self.navigate.emit(tab))
-            h.addWidget(btn)
-            self.attention_rows.addWidget(row)
-        self.attention_panel.setVisible(bool(items))
 
     def _on_dismiss_import(self):
         from gui.services import profiles as profiles_service
@@ -397,13 +362,12 @@ class HomePage(QWidget):
         self.status_title.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {t['text_bright']}; "
             f"margin-top: 8px;")
-        for panel in (self.model_panel, self.talon_panel,
-                      self.import_panel, self.attention_panel):
+        for panel in (self.model_panel, self.talon_panel, self.import_panel):
             panel.setStyleSheet(
                 f"QFrame#homePanel {{ background-color: {t['card']}; "
                 f"border: 1px solid {t['border']}; border-radius: 8px; }}")
         for label in (self.model_panel_title, self.talon_panel_title,
-                      self.import_title, self.attention_title):
+                      self.import_title):
             label.setStyleSheet(
                 f"font-size: 14px; font-weight: bold; color: {t['text_bright']}; border: none;")
 
@@ -447,8 +411,11 @@ class HomePage(QWidget):
         step3_done = deployed_name is not None
         if step3_done:
             count = len(talon.patterns.get("patterns", talon.patterns) or {})
-            s3 = (f"{count} patterns using “{deployed_name}”." if count
-                  else f"Talon is running “{deployed_name}”.")
+            # Leads with who it is connected to, because the card is no longer
+            # called Talon and this line is now the only place saying so.
+            s3 = (f"Connected to Talon · {count} patterns using "
+                  f"“{deployed_name}”." if count
+                  else f"Connected to Talon · running “{deployed_name}”.")
         elif talon.talon_found:
             s3 = "Talon found, but no deployed model matches a local one."
         elif talon.talon_home:
@@ -460,15 +427,14 @@ class HomePage(QWidget):
             (step1_done, step2_done, step3_done)) if not done), None)
         self.step_record.set_state(step1_done, current == 0, s1)
         self.step_train.set_state(step2_done, current == 1, s2)
-        # connected users get the app's real main action where step 3 was
+        # One destination either way; connected, it keeps the bright styling,
+        # because editing patterns is the app's ongoing main action.
         self._talon_connected = step3_done
         self.step_connect.set_state(
-            step3_done, current == 2, s3,
-            action_text="Edit patterns" if step3_done else "Open Talon setup",
-            action_primary=step3_done)
+            step3_done, current == 2, s3, action_primary=step3_done)
         self.step_connect.action.setToolTip(
             "Tune which sounds trigger what, thresholds and throttles"
-            if step3_done else "")
+            if step3_done else "Find Talon and set up the parrot integration")
 
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
@@ -477,10 +443,6 @@ class HomePage(QWidget):
         if not first_run:
             self._refresh_model_panel(labels, deployed_name, latest_name, latest_mtime, t)
             self._refresh_talon_panel(talon, deployed_name, t)
-
-        from gui.services import attention
-        items = attention.compute(self.app_state, talon, self._loaded_sounds.get)
-        self._render_attention(items, t)
 
     def _show_help(self, key):
         help_dialog.show_help(self, key)
@@ -572,8 +534,8 @@ class HomePage(QWidget):
                          f"found")
         elif talon.talon_home:
             lines.append(f"<span style='color:{warn};'>○ No parrot integration "
-                         f"yet</span> <span style='color:{dim};'>- the Talon tab can "
-                         f"bootstrap one.</span>")
+                         f"yet</span> <span style='color:{dim};'>- the "
+                         f"Integrations tab can bootstrap one.</span>")
         if talon.pattern_path_from_talon:
             count = len(talon.patterns.get("patterns", talon.patterns) or {})
             lines.append(f"<span style='color:{ok};'>✓</span> patterns.json "

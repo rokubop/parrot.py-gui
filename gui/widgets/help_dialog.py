@@ -1,5 +1,5 @@
 """Single source of truth for workflow help. Shown as a modal from the home
-step cards and from the Sounds / Models / Talon page headers."""
+step cards and from the Sounds / Models / Integrations page headers."""
 import math
 
 from PyQt6.QtCore import Qt, QRectF, QPointF
@@ -140,10 +140,10 @@ CONNECT_ROWS = (
     ("What", "Talon (talonvoice.com) runs your model live and maps each "
              "sound to an action."),
     ("Patterns", "Each trigger, and the sound that fires it, lives in "
-                 "patterns.json. Edit and deploy from the Talon tab."),
-    ("Setup", "The Talon tab finds your Talon install and can bootstrap "
-              "the parrot integration from nothing."),
-    ("Where", "Talon tab."),
+                 "patterns.json. Edit and deploy from the Integrations tab."),
+    ("Setup", "The Integrations tab finds your Talon install and can "
+              "bootstrap the parrot integration from nothing."),
+    ("Where", "Integrations tab."),
 )
 
 SOUNDS_ROWS = (

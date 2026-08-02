@@ -187,7 +187,7 @@ class AboutPage(QWidget):
         <p style='margin-left:12px;'><b>detect_after</b> - the rules must hold
         this many seconds before the first fire (turns a pop-like trigger into
         a hold-to-activate).</p>
-        <p style='color:{dim};'>The Talon tab edits all of this with
+        <p style='color:{dim};'>The Integrations tab edits all of this with
         validation, keeps snapshots of every deploy, and its Live/Captures
         views show the real power and probability values your sounds produce -
         the numbers thresholds should be judged against. Note that

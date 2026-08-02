@@ -1,6 +1,6 @@
 """Parrot.py GUI bridge — companion module for Talon.
 
-Installed into the Talon user directory by the Parrot.py GUI (Talon tab →
+Installed into the Talon user directory by the Parrot.py GUI (Integrations tab →
 Install companion). It observes parrot detection frames and publishes them as
 UDP JSON datagrams to the GUI on localhost. It is a pure observer:
 

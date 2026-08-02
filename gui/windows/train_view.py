@@ -1651,7 +1651,8 @@ class TrainView(QWidget):
         self.success_title.setText(f"“{name}” is trained")
         self.success_body.setText(
             f"Saved to {CLASSIFIER_FOLDER}.{acc} Test it to see whether it really tells "
-            f"your sounds apart, then map the sounds to actions in the Talon tab.")
+            f"your sounds apart, then map the sounds to actions in the "
+            f"Integrations tab.")
         self.success_frame.setVisible(True)
         self.controls_row.setVisible(False)
 

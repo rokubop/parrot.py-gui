@@ -1,4 +1,8 @@
-"""Talon tab - first-party Talon integration.
+"""Integrations tab - first-party Talon integration.
+
+Talon is the only integration there is, so the page is the Talon page with a
+name that leaves room for a second one; nothing here is generalised ahead of a
+real second case.
 
 Status (discovery, deployed-model match, health lints) + the patterns
 editor: a working copy of the deployed patterns.json is edited through the
@@ -130,6 +134,11 @@ class TalonPage(QWidget):
         title.setStyleSheet(
             f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
         head.addWidget(title)
+        # The tab is Integrations; the page says which one this is. Stated as a
+        # fact rather than a promise - nothing is planned behind "for now".
+        subtitle = QLabel("the supported integration")
+        subtitle.setStyleSheet(f"color: {t['text_dim']};")
+        head.addWidget(subtitle, alignment=Qt.AlignmentFlag.AlignBottom)
         head.addWidget(help_dialog.help_button(self, "connect"))
         head.addStretch()
         self.refresh_btn = QPushButton("Refresh")

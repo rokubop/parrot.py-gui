@@ -1,7 +1,7 @@
 """Install/inspect the Talon-side companion (talon_companion/parrot_gui_bridge.py).
 
 The companion is copied into ``<talon_user>/parrot_gui_bridge/`` where Talon
-auto-loads it. Installing is an explicit user action from the Talon tab -
+auto-loads it. Installing is an explicit user action from the Integrations tab -
 never automatic, since dropping a .py into the user dir takes effect live.
 """
 import os
