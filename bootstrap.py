@@ -35,11 +35,29 @@ VENV_DIR = ROOT / ".venv"
 MARKER = VENV_DIR / ".deps_installed"
 
 WINDOW_TITLE = "Parrot.py Setup"
+ICON_DIR = ROOT / "gui" / "assets"
 
 # The venv is built from whichever interpreter is running this file, so running
 # it with the wrong one silently produces a venv for that version. Keep in sync
 # with PYTHON_VERSION in run.sh / run.bat.
 REQUIRED_PYTHON = (3, 13)
+
+# Setup as a checklist: the GUI draws a row per step, the console prints each
+# one as it lands. Both faces are driven by the same Bootstrapper callback.
+STEP_PYTHON = "python"
+STEP_VENV = "venv"
+STEP_DOWNLOAD = "download"
+STEP_INSTALL = "install"
+
+
+def step_labels() -> list[tuple[str, str]]:
+    running = ".".join(map(str, sys.version_info[:2]))
+    return [
+        (STEP_PYTHON, f"Python {running}"),
+        (STEP_VENV, "Virtual environment"),
+        (STEP_DOWNLOAD, "Download packages"),
+        (STEP_INSTALL, "Install packages"),
+    ]
 
 
 # ----------------------------------------------------------------------------
@@ -82,19 +100,32 @@ class Bootstrapper:
     """Creates the venv and installs requirements, reporting progress.
 
     `emit` receives raw log lines. `phase` receives short human-readable
-    status. `should_cancel` is polled between subprocess lines.
+    status. `step` receives (key, "running" | "done") for the checklist.
+    `should_cancel` is polled between subprocess lines.
     """
 
-    def __init__(self, emit, phase, should_cancel=None):
+    def __init__(self, emit, phase, should_cancel=None, step=None):
         self._emit = emit
         self._phase = phase
         self._should_cancel = should_cancel or (lambda: False)
+        self._step_report = step or (lambda key, state: None)
+        self._step_states: dict[str, str] = {}
 
     def log(self, line: str) -> None:
         self._emit(line.rstrip("\n"))
 
+    def step(self, key: str, state: str) -> None:
+        """Idempotent: pip's output and our own bookkeeping both close steps."""
+        if self._step_states.get(key) == state:
+            return
+        self._step_states[key] = state
+        self._step_report(key, state)
+
     def run(self) -> None:
         """Raises Cancelled, or RuntimeError with a human-readable message."""
+        # run.sh / run.bat and main() both settle this before we get here
+        self.step(STEP_PYTHON, "done")
+
         if not requirements_file().is_file():
             raise RuntimeError(f"Missing {requirements_file().name}")
 
@@ -102,15 +133,19 @@ class Bootstrapper:
             self._create_venv()
         else:
             self.log(f"Virtual environment already present at {VENV_DIR.name}")
+            self.step(STEP_VENV, "done")
 
         if not deps_current():
             self._install_deps()
         else:
             self.log("Dependencies already up to date")
+            self.step(STEP_DOWNLOAD, "done")
+            self.step(STEP_INSTALL, "done")
 
         self._phase("Ready")
 
     def _create_venv(self) -> None:
+        self.step(STEP_VENV, "running")
         self._phase("Creating virtual environment")
         self.log(f"Creating virtual environment in {VENV_DIR}")
         # Marker is stale the moment the venv is rebuilt
@@ -120,9 +155,11 @@ class Bootstrapper:
                      "Could not create the virtual environment")
         if not venv_exists():
             raise RuntimeError(f"venv created but {venv_python()} is missing")
+        self.step(STEP_VENV, "done")
 
     def _install_deps(self) -> None:
         req = requirements_file()
+        self.step(STEP_DOWNLOAD, "running")
         self._phase("Installing dependencies")
         self.log(f"Installing from {req.name} (this can take several minutes)")
 
@@ -135,6 +172,11 @@ class Bootstrapper:
             "-r", str(req),
         ]
         self._stream(cmd, "Dependency installation failed", pip_phases=True)
+
+        # A fully cached run never prints "Installing collected packages",
+        # so close both steps here rather than trusting pip to say so.
+        self.step(STEP_DOWNLOAD, "done")
+        self.step(STEP_INSTALL, "done")
 
         MARKER.parent.mkdir(parents=True, exist_ok=True)
         MARKER.write_text("ok\n", encoding="utf-8")
@@ -186,6 +228,8 @@ class Bootstrapper:
         elif s.startswith("Building wheel for "):
             self._phase(f"Building {_pkg_name(s[19:])}")
         elif s.startswith("Installing collected packages"):
+            self.step(STEP_DOWNLOAD, "done")
+            self.step(STEP_INSTALL, "running")
             self._phase("Installing packages")
 
 
@@ -213,6 +257,9 @@ def _artifact(text: str) -> str:
 # Console face
 # ----------------------------------------------------------------------------
 def run_console(verbose: bool = True) -> int:
+    labels = dict(step_labels())
+    running_step: dict[str, str | None] = {"key": None}
+
     def emit(line: str) -> None:
         if verbose and line:
             print(f"  {line}", flush=True)
@@ -220,12 +267,26 @@ def run_console(verbose: bool = True) -> int:
     def phase(text: str) -> None:
         print(f"\n  == {text} ==", flush=True)
 
+    def step(key: str, state: str) -> None:
+        if state == "running":
+            running_step["key"] = key
+            return
+        running_step["key"] = None
+        mark = "x" if state == "done" else "!"
+        print(f"  [{mark}] {labels.get(key, key)}", flush=True)
+
+    def fail_running() -> None:
+        if running_step["key"]:
+            step(running_step["key"], "failed")
+
     try:
-        Bootstrapper(emit, phase).run()
+        Bootstrapper(emit, phase, step=step).run()
     except Cancelled:
+        fail_running()
         print("\n  Cancelled.", flush=True)
         return 2
     except RuntimeError as exc:
+        fail_running()
         print(f"\n  {exc}", flush=True)
         return 1
     return 0
@@ -234,6 +295,29 @@ def run_console(verbose: bool = True) -> int:
 # ----------------------------------------------------------------------------
 # GUI face
 # ----------------------------------------------------------------------------
+STEP_GLYPH = {"pending": "·", "running": "▸",
+              "done": "✓", "failed": "✗"}
+STEP_COLOR = {"pending": "#999999", "running": "",
+              "done": "#2e7d32", "failed": "#c62828"}
+
+
+def _ellipsis(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def _set_window_icon(root, tk) -> None:
+    """Without this the setup window wears Tk's default feather."""
+    try:
+        if os.name == "nt":
+            root.iconbitmap(str(ICON_DIR / "parrot.ico"))
+        else:
+            # PhotoImage must outlive this call or Tk drops the icon
+            root._parrot_icon = tk.PhotoImage(file=str(ICON_DIR / "parrot.png"))
+            root.iconphoto(True, root._parrot_icon)
+    except Exception:
+        pass
+
+
 def gui_available() -> bool:
     """Can we realistically open a window right now?"""
     if os.name == "posix" and sys.platform != "darwin":
@@ -251,13 +335,14 @@ def run_gui() -> int:
     from tkinter import ttk
     from tkinter.scrolledtext import ScrolledText
 
-    messages: "queue.Queue[tuple[str, str]]" = queue.Queue()
+    messages: "queue.Queue[tuple[str, object]]" = queue.Queue()
     cancel_flag = threading.Event()
     result: dict[str, object] = {}
 
     root = tk.Tk()
     root.title(WINDOW_TITLE)
-    root.minsize(620, 200)
+    root.minsize(620, 260)
+    _set_window_icon(root, tk)
 
     outer = ttk.Frame(root, padding=16)
     outer.pack(fill="both", expand=True)
@@ -275,8 +360,42 @@ def run_gui() -> int:
     )
     subtitle.pack(anchor="w", pady=(2, 12))
 
-    phase_var = tk.StringVar(value="Starting")
-    ttk.Label(outer, textvariable=phase_var).pack(anchor="w")
+    steps_frame = ttk.Frame(outer)
+    steps_frame.pack(fill="x")
+    steps_frame.columnconfigure(2, weight=1)
+    step_rows = {}
+    for index, (key, label) in enumerate(step_labels()):
+        glyph = ttk.Label(steps_frame, text=STEP_GLYPH["pending"], width=2,
+                          foreground=STEP_COLOR["pending"])
+        glyph.grid(row=index, column=0, sticky="w")
+        name = ttk.Label(steps_frame, text=label,
+                         foreground=STEP_COLOR["pending"])
+        name.grid(row=index, column=1, sticky="w")
+        detail = ttk.Label(steps_frame, text="", foreground="#666666")
+        detail.grid(row=index, column=2, sticky="w", padx=(12, 0))
+        step_rows[key] = (glyph, name, detail)
+
+    running_step: dict[str, object] = {"key": None}
+
+    def set_step(key: str, state: str) -> None:
+        glyph, name, detail = step_rows[key]
+        glyph.configure(text=STEP_GLYPH[state], foreground=STEP_COLOR[state])
+        name.configure(foreground=STEP_COLOR[state])
+        if state == "running":
+            running_step["key"] = key
+            return
+        if running_step["key"] == key:
+            running_step["key"] = None
+        if state == "done":
+            detail.configure(text="")
+
+    def set_detail(text: str) -> None:
+        key = running_step["key"]
+        if key:
+            step_rows[key][2].configure(text=_ellipsis(text, 46))
+
+    phase_var = tk.StringVar(value="")
+    ttk.Label(outer, textvariable=phase_var).pack(anchor="w", pady=(10, 0))
 
     bar = ttk.Progressbar(outer, mode="indeterminate", length=580)
     bar.pack(fill="x", pady=(6, 10))
@@ -297,11 +416,11 @@ def run_gui() -> int:
         if details_shown.get():
             log_frame.pack(fill="both", expand=True, pady=(8, 0))
             toggle.configure(text="Hide details")
-            root.minsize(620, 460)
+            root.minsize(620, 520)
         else:
             log_frame.pack_forget()
             toggle.configure(text="Show details")
-            root.minsize(620, 200)
+            root.minsize(620, 260)
 
     def on_toggle() -> None:
         details_shown.set(not details_shown.get())
@@ -339,8 +458,11 @@ def run_gui() -> int:
         def phase(text: str) -> None:
             messages.put(("phase", text))
 
+        def step(key: str, state: str) -> None:
+            messages.put(("step", (key, state)))
+
         try:
-            Bootstrapper(emit, phase, cancel_flag.is_set).run()
+            Bootstrapper(emit, phase, cancel_flag.is_set, step=step).run()
             messages.put(("done", ""))
         except Cancelled:
             messages.put(("cancelled", ""))
@@ -353,6 +475,8 @@ def run_gui() -> int:
         result["code"] = code
         bar.stop()
         bar.configure(mode="determinate", value=0 if failed else 100)
+        if failed and running_step["key"]:
+            set_step(running_step["key"], "failed")
         phase_var.set(phase_text)
         cancel_btn.pack_forget()
         close_btn.pack(side="right")
@@ -371,7 +495,9 @@ def run_gui() -> int:
                 if kind == "log":
                     append(payload)
                 elif kind == "phase":
-                    phase_var.set(payload)
+                    set_detail(payload)
+                elif kind == "step":
+                    set_step(*payload)
                 elif kind == "done":
                     finish(0, "Ready", failed=False)
                     return
