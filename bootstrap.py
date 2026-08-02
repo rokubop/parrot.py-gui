@@ -25,10 +25,15 @@ from __future__ import annotations
 import argparse
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
+
+_PROGRESS_RE = re.compile(r"^Progress (\d+) of (\d+)$")
+_ARTIFACT_RE = re.compile(r"^(Downloading|Using cached) (\S+)(?: \(([^)]+)\))?")
 
 ROOT = Path(__file__).resolve().parent
 VENV_DIR = ROOT / ".venv"
@@ -68,6 +73,39 @@ def requirements_file() -> Path:
     return ROOT / name
 
 
+def _norm(name: str) -> str:
+    return name.strip().lower().replace("_", "-")
+
+
+def requirements_packages() -> list[str]:
+    """The names as written in the requirements file, in order."""
+    names = []
+    try:
+        text = requirements_file().read_text(encoding="utf-8")
+    except OSError:
+        return names
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        for sep in ("<", ">", "=", "!", "~", "[", ";", " "):
+            line = line.split(sep, 1)[0]
+        if line:
+            names.append(line)
+    return names
+
+
+def _package_of(artifact: str) -> str:
+    """'scikit_learn-1.5.0-cp313-win_amd64.whl' -> 'scikit-learn'"""
+    stem = artifact.rsplit("/", 1)[-1]
+    return _norm(stem.split("-", 1)[0])
+
+
+def _mb(size: float) -> str:
+    return f"{size / 1_048_576:.0f} MB" if size >= 1_048_576 else \
+           f"{size / 1024:.0f} kB"
+
+
 def venv_python() -> Path:
     if os.name == "nt":
         return VENV_DIR / "Scripts" / "python.exe"
@@ -104,12 +142,18 @@ class Bootstrapper:
     `should_cancel` is polled between subprocess lines.
     """
 
-    def __init__(self, emit, phase, should_cancel=None, step=None):
+    def __init__(self, emit, phase, should_cancel=None, step=None, package=None):
         self._emit = emit
         self._phase = phase
         self._should_cancel = should_cancel or (lambda: False)
         self._step_report = step or (lambda key, state: None)
         self._step_states: dict[str, str] = {}
+        self._package_report = package or (lambda name, state, detail: None)
+        self._package_states: dict[str, tuple] = {}
+        self._wanted = {_norm(n): n for n in requirements_packages()}
+        self._downloading: str | None = None
+        self._extras: set[str] = set()
+        self._rate_mark = (0.0, 0)
 
     def log(self, line: str) -> None:
         self._emit(line.rstrip("\n"))
@@ -120,6 +164,21 @@ class Bootstrapper:
             return
         self._step_states[key] = state
         self._step_report(key, state)
+
+    def package(self, name: str, state: str, detail: str = "") -> None:
+        known = self._package_states.get(name)
+        if known == (state, detail):
+            return
+        if known and known[0] == state and not detail:
+            return  # a size already shown beats "Successfully installed"
+        self._package_states[name] = (state, detail)
+        self._package_report(name, state, detail)
+
+    def _extra(self, normalized: str) -> None:
+        """A transitive dependency: counted, not listed."""
+        if normalized not in self._extras:
+            self._extras.add(normalized)
+            self.package("", "extras", str(len(self._extras)))
 
     def run(self) -> None:
         """Raises Cancelled, or RuntimeError with a human-readable message."""
@@ -167,7 +226,8 @@ class Bootstrapper:
             str(venv_python()), "-m", "pip", "install",
             # PyQt6 from source needs qmake; insist on a wheel
             "--only-binary=PyQt6",
-            "--progress-bar", "off",   # we surface progress ourselves
+            # raw is byte counts on their own lines, so no \r parsing
+            "--progress-bar", "raw",
             "--disable-pip-version-check",
             "-r", str(req),
         ]
@@ -200,9 +260,8 @@ class Bootstrapper:
         assert proc.stdout is not None
         try:
             for line in proc.stdout:
-                self.log(line)
-                if pip_phases:
-                    self._maybe_update_phase(line)
+                if not pip_phases or self._read_pip_line(line):
+                    self.log(line)
                 if self._should_cancel():
                     proc.terminate()
                     raise Cancelled()
@@ -213,24 +272,85 @@ class Bootstrapper:
         if code != 0:
             raise RuntimeError(f"{failure_msg} (exit code {code})")
 
-    def _maybe_update_phase(self, line: str) -> None:
-        """Turn pip's chatter into something worth showing a human.
+    def _read_pip_line(self, line: str) -> bool:
+        """Drive the phase and package displays. False means do not log it.
 
         pip's lines carry the whole requirements path — "Collecting requests
         (from -r /Users/.../requirements-posix.txt (line 1))" — so they can't
         be shown raw.
         """
         s = line.strip()
+
+        match = _PROGRESS_RE.match(s)
+        if match:
+            self._on_bytes(int(match.group(1)), int(match.group(2)))
+            return False
+
+        match = _ARTIFACT_RE.match(s)
+        if match:
+            cached = match.group(1) == "Using cached"
+            artifact, size = match.group(2), match.group(3)
+            if artifact.endswith(".metadata"):
+                return True  # the index lookup, not the package
+            name = _package_of(artifact)
+            if name in self._wanted:
+                self._downloading = None if cached else (self._wanted[name], False)
+                self.package(self._wanted[name],
+                             "done" if cached else "running", size or "")
+            else:
+                self._downloading = None if cached else (name, True)
+                self._extra(name)
+                if not cached and size:
+                    self.package("", "extras-detail", f"{name}  {size}")
+            verb = "Reusing" if cached else "Downloading"
+            self._phase(f"{verb} {_artifact(artifact + (f' ({size})' if size else ''))}")
+            return True
+
         if s.startswith("Collecting "):
+            name = _norm(_pkg_name(s[11:]))
+            if name not in self._wanted:
+                self._extra(name)
             self._phase(f"Resolving {_pkg_name(s[11:])}")
-        elif s.startswith("Downloading "):
-            self._phase(f"Downloading {_artifact(s[12:])}")
         elif s.startswith("Building wheel for "):
             self._phase(f"Building {_pkg_name(s[19:])}")
         elif s.startswith("Installing collected packages"):
+            self._downloading = None
             self.step(STEP_DOWNLOAD, "done")
             self.step(STEP_INSTALL, "running")
             self._phase("Installing packages")
+        elif s.startswith("Successfully installed "):
+            for token in s[23:].split():
+                name = _norm(token.rsplit("-", 1)[0])
+                if name in self._wanted:
+                    self.package(self._wanted[name], "done", "")
+        return True
+
+    def _on_bytes(self, done: int, total: int) -> None:
+        if not self._downloading or not total:
+            return
+        name, is_extra = self._downloading
+        now = time.monotonic()
+        mark_time, mark_bytes = self._rate_mark
+        if not mark_time or now - mark_time > 2:
+            self._rate_mark = (now, done)
+        rate = ""
+        if mark_time and now > mark_time:
+            speed = (done - mark_bytes) / (now - mark_time)
+            if speed > 0:
+                rate = f"   {speed / 1_048_576:.1f} MB/s"
+        if done >= total:
+            if is_extra:
+                self.package("", "extras-detail", "")
+            else:
+                self.package(name, "done", _mb(total))
+            self._downloading = None
+            self._rate_mark = (0.0, 0)
+            return
+        progress = f"{_mb(done)} / {_mb(total)}{rate}"
+        if is_extra:
+            self.package("", "extras-detail", f"{name}  {progress}")
+        else:
+            self.package(name, "running", progress)
 
 
 def _pkg_name(text: str) -> str:
@@ -275,12 +395,16 @@ def run_console(verbose: bool = True) -> int:
         mark = "x" if state == "done" else "!"
         print(f"  [{mark}] {labels.get(key, key)}", flush=True)
 
+    def package(name: str, state: str, detail: str) -> None:
+        if state == "done" and name:
+            print(f"      {name} {detail}".rstrip(), flush=True)
+
     def fail_running() -> None:
         if running_step["key"]:
             step(running_step["key"], "failed")
 
     try:
-        Bootstrapper(emit, phase, step=step).run()
+        Bootstrapper(emit, phase, step=step, package=package).run()
     except Cancelled:
         fail_running()
         print("\n  Cancelled.", flush=True)
@@ -365,18 +489,18 @@ def run_gui() -> int:
                         font=("TkDefaultFont", 14, "bold"))
     heading.pack(anchor="w")
 
-    subtitle = ttk.Label(
-        outer,
-        text="First run only. This downloads and installs the Python packages "
-             "the app needs.",
-        wraplength=580,
-        foreground="#666666",
-    )
-    subtitle.pack(anchor="w", pady=(2, 12))
+    heading.pack_configure(pady=(0, 14))
 
-    steps_frame = ttk.Frame(outer)
-    steps_frame.pack(fill="x")
-    steps_frame.columnconfigure(2, weight=1)
+    body = ttk.Frame(outer)
+    body.pack(fill="both", expand=True)
+    body.columnconfigure(1, weight=1)
+    body.rowconfigure(0, weight=1)
+
+    left = ttk.Frame(body)
+    left.grid(row=0, column=0, sticky="nw")
+
+    steps_frame = ttk.Frame(left)
+    steps_frame.pack(anchor="w")
     step_rows = {}
     for index, (key, label) in enumerate(step_labels()):
         glyph = ttk.Label(steps_frame, text=STEP_GLYPH["pending"], width=2,
@@ -385,28 +509,55 @@ def run_gui() -> int:
         name = ttk.Label(steps_frame, text=label,
                          foreground=STEP_COLOR["pending"])
         name.grid(row=index, column=1, sticky="w")
-        detail = ttk.Label(steps_frame, text="", foreground="#666666")
-        detail.grid(row=index, column=2, sticky="w", padx=(12, 0))
-        step_rows[key] = (glyph, name, detail)
+        step_rows[key] = (glyph, name, None)
+
+    pkg_frame = ttk.Frame(left)
+    pkg_frame.pack(anchor="w", fill="x", pady=(14, 0))
+    pkg_frame.columnconfigure(2, weight=1)
+    pkg_rows = {}
+    for index, pkg in enumerate(requirements_packages()):
+        glyph = ttk.Label(pkg_frame, text=STEP_GLYPH["pending"], width=2,
+                          foreground=STEP_COLOR["pending"])
+        glyph.grid(row=index, column=0, sticky="w")
+        name = ttk.Label(pkg_frame, text=pkg, foreground=STEP_COLOR["pending"])
+        name.grid(row=index, column=1, sticky="w")
+        detail = ttk.Label(pkg_frame, text="", foreground="#666666")
+        detail.grid(row=index, column=2, sticky="e", padx=(12, 0))
+        pkg_rows[pkg] = (glyph, name, detail)
+    extras_label = ttk.Label(pkg_frame, text="", foreground="#999999")
+    extras_label.grid(row=len(pkg_rows), column=1, sticky="w", pady=(6, 0))
+    extras_detail = ttk.Label(pkg_frame, text="", foreground="#999999")
+    extras_detail.grid(row=len(pkg_rows), column=2, sticky="e",
+                       padx=(12, 0), pady=(6, 0))
+
+    def set_package(pkg, state, detail):
+        if state == "extras":
+            extras_label.configure(text=f"+ {detail} dependencies")
+            return
+        if state == "extras-detail":
+            extras_detail.configure(text=detail)
+            return
+        row = pkg_rows.get(pkg)
+        if row is None:
+            return
+        glyph, name, detail_label = row
+        glyph.configure(text=STEP_GLYPH[state], foreground=STEP_COLOR[state])
+        name.configure(foreground=STEP_COLOR[state])
+        detail_label.configure(text=detail)
 
     running_step: dict[str, object] = {"key": None}
 
     def set_step(key: str, state: str) -> None:
-        glyph, name, detail = step_rows[key]
+        glyph, name, _ = step_rows[key]
         glyph.configure(text=STEP_GLYPH[state], foreground=STEP_COLOR[state])
         name.configure(foreground=STEP_COLOR[state])
         if state == "running":
             running_step["key"] = key
-            return
-        if running_step["key"] == key:
+        elif running_step["key"] == key:
             running_step["key"] = None
-        if state == "done":
-            detail.configure(text="")
 
     def set_detail(text: str) -> None:
-        key = running_step["key"]
-        if key:
-            step_rows[key][2].configure(text=_ellipsis(text, 46))
+        phase_var.set(_ellipsis(text, 70))
 
     phase_var = tk.StringVar(value="")
     ttk.Label(outer, textvariable=phase_var).pack(anchor="w", pady=(10, 0))
@@ -421,20 +572,21 @@ def run_gui() -> int:
     toggle_row = ttk.Frame(outer)
     toggle_row.pack(fill="x")
 
-    log_frame = ttk.Frame(outer)
-    log = ScrolledText(log_frame, height=14, wrap="none", font=("TkFixedFont", 10))
+    log_frame = ttk.Frame(body)
+    log = ScrolledText(log_frame, height=14, width=52, wrap="none",
+                       font=("TkFixedFont", 9))
     log.pack(fill="both", expand=True)
     log.configure(state="disabled")
 
     def sync_details() -> None:
         if details_shown.get():
-            log_frame.pack(fill="both", expand=True, pady=(8, 0))
+            log_frame.grid(row=0, column=1, sticky="nsew", padx=(28, 0))
             toggle.configure(text="Hide details")
-            root.minsize(620, 520)
+            root.minsize(1000, 560)
         else:
-            log_frame.pack_forget()
+            log_frame.grid_remove()
             toggle.configure(text="Show details")
-            root.minsize(620, 260)
+            root.minsize(520, 560)
 
     def on_toggle() -> None:
         details_shown.set(not details_shown.get())
@@ -475,8 +627,12 @@ def run_gui() -> int:
         def step(key: str, state: str) -> None:
             messages.put(("step", (key, state)))
 
+        def package(name: str, state: str, detail: str) -> None:
+            messages.put(("package", (name, state, detail)))
+
         try:
-            Bootstrapper(emit, phase, cancel_flag.is_set, step=step).run()
+            Bootstrapper(emit, phase, cancel_flag.is_set, step=step,
+                         package=package).run()
             messages.put(("done", ""))
         except Cancelled:
             messages.put(("cancelled", ""))
@@ -512,6 +668,8 @@ def run_gui() -> int:
                     set_detail(payload)
                 elif kind == "step":
                     set_step(*payload)
+                elif kind == "package":
+                    set_package(*payload)
                 elif kind == "done":
                     finish(0, "Ready", failed=False)
                     return
