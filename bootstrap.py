@@ -112,6 +112,17 @@ def venv_python() -> Path:
     return VENV_DIR / "bin" / "python"
 
 
+def site_packages() -> Path | None:
+    """pip writes a .dist-info here as each package finishes installing,
+    which is the only per-package signal the install phase gives off."""
+    candidates = [VENV_DIR / "Lib" / "site-packages"]
+    candidates += sorted(VENV_DIR.glob("lib/python*/site-packages"))
+    for path in candidates:
+        if path.is_dir():
+            return path
+    return None
+
+
 def venv_exists() -> bool:
     return venv_python().is_file()
 
@@ -167,10 +178,10 @@ class Bootstrapper:
 
     def package(self, name: str, state: str, detail: str = "") -> None:
         known = self._package_states.get(name)
+        if name and not detail and known:
+            detail = known[1]  # keep the size once it is known
         if known == (state, detail):
             return
-        if known and known[0] == state and not detail:
-            return  # a size already shown beats "Successfully installed"
         self._package_states[name] = (state, detail)
         self._package_report(name, state, detail)
 
@@ -179,6 +190,34 @@ class Bootstrapper:
         if normalized not in self._extras:
             self._extras.add(normalized)
             self.package("", "extras", str(len(self._extras)))
+
+    def _watch_installs(self, stop: threading.Event) -> None:
+        """Tick packages off as pip lands them.
+
+        pip says nothing between "Installing collected packages" and
+        "Successfully installed", minutes of silence on 1.4 GB.
+        """
+        packages = site_packages()
+        if packages is None:
+            return
+        seen: set[str] = set()
+        installed_extras = 0
+        while not stop.wait(0.5):
+            try:
+                entries = [e.name for e in os.scandir(packages)]
+            except OSError:
+                return
+            for entry in entries:
+                if not entry.endswith(".dist-info") or entry in seen:
+                    continue
+                seen.add(entry)
+                name = _norm(entry[:-len(".dist-info")].rsplit("-", 1)[0])
+                if name in self._wanted:
+                    self.package(self._wanted[name], "done", "")
+                elif name in self._extras:
+                    installed_extras += 1
+                    self.package("", "extras-detail",
+                                 f"{installed_extras} of {len(self._extras)} installed")
 
     def run(self) -> None:
         """Raises Cancelled, or RuntimeError with a human-readable message."""
@@ -231,7 +270,15 @@ class Bootstrapper:
             "--disable-pip-version-check",
             "-r", str(req),
         ]
-        self._stream(cmd, "Dependency installation failed", pip_phases=True)
+        stop_watching = threading.Event()
+        watcher = threading.Thread(target=self._watch_installs,
+                                   args=(stop_watching,), daemon=True)
+        watcher.start()
+        try:
+            self._stream(cmd, "Dependency installation failed", pip_phases=True)
+        finally:
+            stop_watching.set()
+            watcher.join(timeout=2)
 
         # A fully cached run never prints "Installing collected packages",
         # so close both steps here rather than trusting pip to say so.
@@ -296,9 +343,11 @@ class Bootstrapper:
                 return True  # the index lookup, not the package
             name = _package_of(artifact)
             if name in self._wanted:
+                # running, not done: it is downloaded, not installed yet. The
+                # watcher ticks it when pip actually lands it.
                 self._downloading = None if cached else (self._wanted[name], False)
-                self.package(self._wanted[name],
-                             "done" if cached else "running", size or "")
+                self.package(self._wanted[name], "running",
+                             size or ("cached" if cached else ""))
             else:
                 self._downloading = None if cached else (name, True)
                 self._extra(name)
@@ -352,7 +401,7 @@ class Bootstrapper:
             if is_extra:
                 self.package("", "extras-detail", "")
             else:
-                self.package(name, "done", _mb(total))
+                self.package(name, "running", _mb(total))
             self._downloading = None
             self._rate_mark = (0.0, 0)
             return
