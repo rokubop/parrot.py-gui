@@ -180,8 +180,7 @@ class HomePage(QWidget):
         # Descriptive rather than a pitch: noise -> action is the whole idea,
         # and the three cards below already spell out the pipeline.
         self.hero_sub = QLabel(
-            "Turn noises you make - a click, a pop, a hiss - into instant "
-            "actions on your computer.")
+            "Turn noises into instant actions on your computer.")
         self.hero_sub.setWordWrap(True)
         v.addWidget(self.hero_sub)
 
@@ -223,9 +222,10 @@ class HomePage(QWidget):
         self.import_panel, self.import_title, self.import_body = self._make_panel(
             "Already used Parrot.py before?")
         self.import_body.setText(
-            "Bring the sounds and models of an existing install in as a "
-            "profile. The original folder is not changed.")
+            "Copy sounds and models of an existing install in as a profile. "
+            "Original folder is not changed.")
         import_row = QHBoxLayout()
+        import_row.setContentsMargins(0, 10, 0, 0)
         find_setup_btn = QPushButton("Import my setup...")
         find_setup_btn.clicked.connect(self._on_find_setup)
         import_row.addWidget(find_setup_btn)

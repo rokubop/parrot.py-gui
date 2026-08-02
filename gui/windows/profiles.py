@@ -94,19 +94,18 @@ class ImportSetupDialog(QDialog):
         layout.setSpacing(12)
 
         note = QLabel(
-            "Copies the sounds and models of another Parrot.py in as a "
-            "profile. Your existing folder is only read, never changed.")
+            "Copy sounds and models of an existing install in as a profile. "
+            "Original folder is not changed.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(note)
 
-        choose_btn = QPushButton("Choose your Parrot.py folder...")
+        choose_btn = QPushButton("Choose your parrot.py folder...")
         choose_btn.setDefault(True)
         choose_btn.clicked.connect(self._on_choose)
         layout.addWidget(choose_btn)
 
-        hint = QLabel("The folder holding data/recordings, or the data "
-                      "folder itself.")
+        hint = QLabel("The parrot.py folder itself, wherever you keep it.")
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(hint)
@@ -171,8 +170,8 @@ class ImportSetupDialog(QDialog):
         if data_dir is None:
             QMessageBox.warning(
                 self, "Not a Parrot.py setup",
-                "No recordings there. Pick the folder that holds "
-                "data/recordings, or the data folder itself.")
+                "No recordings in there. Pick your parrot.py folder, the one "
+                "with a data folder inside it.")
             return
         sounds, models = profiles.stats(data_dir)
         home = os.path.expanduser("~")
