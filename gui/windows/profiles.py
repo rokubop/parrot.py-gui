@@ -36,41 +36,104 @@ class _OpWorker(QThread):
             self.done.emit(str(exc))
 
 
+def _ellipsis_left(text, limit):
+    """Keep the tail of a path; the deep end is the informative end."""
+    return text if len(text) <= limit else "..." + text[-(limit - 3):]
+
+
 class _ScanWorker(QThread):
-    found = pyqtSignal(list)
+    """Walks folders the user asked for. Streams hits so the list fills as
+    it goes, and stops the moment the dialog asks it to."""
+    hit = pyqtSignal(dict)
+    looking_at = pyqtSignal(str)
+    done_scanning = pyqtSignal(bool)  # True if it ran to the end
+
+    def __init__(self, roots, parent=None):
+        super().__init__(parent)
+        self._roots = roots
+        self._stop = False
+        self._seen = 0
+
+    def stop(self):
+        self._stop = True
 
     def run(self):
+        def on_progress(directory):
+            self._seen += 1
+            if self._seen % 300 == 0:  # a whole drive is ~100k folders
+                self.looking_at.emit(directory)
+
         try:
-            self.found.emit(profiles.find_existing_setups())
+            profiles.scan(self._roots, on_hit=self.hit.emit,
+                          should_cancel=lambda: self._stop,
+                          on_progress=on_progress)
         except Exception:
-            self.found.emit([])
+            pass
+        self.done_scanning.emit(not self._stop)
 
 
 class ImportSetupDialog(QDialog):
     """Bring an outside Parrot.py setup in as a profile, by copy.
 
-    Scans common folders for the data/recordings shape on open; a folder
-    picker covers everything the scan misses. The source is never modified.
+    A checkout can be anywhere, and nothing on the machine records where it
+    went, so pointing at the folder is the main action. The quick guesses
+    below it cost milliseconds; anything wider is asked for. The source
+    folder is only ever read.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Bring in an existing setup")
-        self.resize(640, 380)
+        self.resize(660, 470)
         self._worker = None
+        self._folder_scan = None
         self.imported = None  # profile name on success
 
         t = theme.colors()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(14)
+        layout.setSpacing(12)
 
         note = QLabel(
-            "Copies the sounds and models of another Parrot.py into a "
-            "profile here. The original folder is not changed.")
+            "Copies the sounds and models of another Parrot.py in as a "
+            "profile. Your existing folder is only read, never changed.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(note)
+
+        choose_btn = QPushButton("Choose your Parrot.py folder...")
+        choose_btn.setDefault(True)
+        choose_btn.clicked.connect(self._on_choose)
+        layout.addWidget(choose_btn)
+
+        hint = QLabel("The folder holding data/recordings, or the data "
+                      "folder itself.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {t['text_dim']};")
+        layout.addWidget(hint)
+
+        self.found_label = QLabel("Not sure where it is? Search for it:")
+        self.found_label.setStyleSheet(f"color: {t['text_dim']};")
+        layout.addWidget(self.found_label, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        scan_row = QHBoxLayout()
+        self.home_btn = QPushButton("Search my home folder")
+        self.home_btn.setToolTip(os.path.expanduser("~"))
+        self.home_btn.clicked.connect(self._on_scan_home)
+        scan_row.addWidget(self.home_btn)
+        self.scan_btn = QPushButton("Search another folder...")
+        self.scan_btn.setToolTip(
+            "Any folder or drive. Nothing is searched until you pick one.")
+        self.scan_btn.clicked.connect(self._on_scan_folder)
+        scan_row.addWidget(self.scan_btn)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.clicked.connect(self._on_stop_scan)
+        self.stop_btn.setVisible(False)
+        scan_row.addWidget(self.stop_btn)
+        self.scan_status = QLabel("")
+        self.scan_status.setStyleSheet(f"color: {t['text_dim']};")
+        scan_row.addWidget(self.scan_status, stretch=1)
+        layout.addLayout(scan_row)
 
         self.list = QListWidget()
         self.list.currentItemChanged.connect(lambda *_: self._update_buttons())
@@ -78,12 +141,8 @@ class ImportSetupDialog(QDialog):
         layout.addWidget(self.list, stretch=1)
 
         row = QHBoxLayout()
-        choose_btn = QPushButton("Choose folder...")
-        choose_btn.setToolTip("Pick a Parrot.py folder the scan didn't find")
-        choose_btn.clicked.connect(self._on_choose)
-        row.addWidget(choose_btn)
         row.addStretch()
-        self.status_label = QLabel("Scanning the usual folders...")
+        self.status_label = QLabel("")
         self.status_label.setStyleSheet(f"color: {t['text_dim']};")
         row.addWidget(self.status_label)
         self.import_btn = QPushButton("Import")
@@ -91,10 +150,6 @@ class ImportSetupDialog(QDialog):
         self.import_btn.clicked.connect(self._on_import)
         row.addWidget(self.import_btn)
         layout.addLayout(row)
-
-        self._scanner = _ScanWorker(self)
-        self._scanner.found.connect(self._on_scan_done)
-        self._scanner.start()
 
     def _add_candidate(self, setup, select=False):
         text = (f"{setup['label']}    "
@@ -105,19 +160,12 @@ class ImportSetupDialog(QDialog):
         if select:
             self.list.setCurrentItem(item)
 
-    def _on_scan_done(self, setups):
-        existing = {self.list.item(i).data(Qt.ItemDataRole.UserRole)
-                    for i in range(self.list.count())}
-        for setup in setups:
-            if setup["data_dir"] not in existing:
-                self._add_candidate(setup)
-        self.status_label.setText(
-            "" if self.list.count() else
-            "Nothing found. Choose the folder yourself.")
-        self._update_buttons()
+    def _known_dirs(self):
+        return {self.list.item(i).data(Qt.ItemDataRole.UserRole)
+                for i in range(self.list.count())}
 
     def _on_choose(self):
-        path = QFileDialog.getExistingDirectory(self, "Parrot.py folder")
+        path = QFileDialog.getExistingDirectory(self, "Your Parrot.py folder")
         if not path:
             return
         data_dir = profiles.resolve_setup_dir(path)
@@ -129,10 +177,76 @@ class ImportSetupDialog(QDialog):
             return
         sounds, models = profiles.stats(data_dir)
         home = os.path.expanduser("~")
+        data_dir = os.path.abspath(data_dir)
+        if data_dir in self._known_dirs():
+            for i in range(self.list.count()):
+                if self.list.item(i).data(Qt.ItemDataRole.UserRole) == data_dir:
+                    self.list.setCurrentRow(i)
+                    break
+            return
         self._add_candidate({
-            "data_dir": os.path.abspath(data_dir),
+            "data_dir": data_dir,
             "label": data_dir.replace(home, "~", 1),
             "sounds": sounds, "models": models}, select=True)
+
+    # ---- searching, only where the user asked -----------------------------
+
+    def _on_scan_home(self):
+        self._start_scan(profiles.home_roots(), "your home folder")
+
+    def _on_scan_folder(self):
+        root = QFileDialog.getExistingDirectory(
+            self, "Folder or drive to search")
+        if root:
+            self._start_scan([root], root)
+
+    def _start_scan(self, roots, label):
+        self.found_label.setText(f"Searching {label}. This can take a while.")
+        self._folder_scan = _ScanWorker(roots, self)
+        self._folder_scan.hit.connect(self._on_folder_hit)
+        self._folder_scan.looking_at.connect(
+            lambda d: self.scan_status.setText(_ellipsis_left(d, 52)))
+        self._folder_scan.done_scanning.connect(
+            lambda finished: self._on_folder_scan_done(label, finished))
+        self.home_btn.setVisible(False)
+        self.scan_btn.setVisible(False)
+        self.stop_btn.setVisible(True)
+        self._folder_scan.start()
+
+    def _on_folder_hit(self, setup):
+        if setup["data_dir"] not in self._known_dirs():
+            self._add_candidate(setup, select=self.list.count() == 0)
+
+    def _on_stop_scan(self):
+        if self._folder_scan is not None:
+            self._folder_scan.stop()
+        self.stop_btn.setEnabled(False)
+
+    def _on_folder_scan_done(self, label, finished):
+        self._folder_scan = None
+        self.home_btn.setVisible(True)
+        self.scan_btn.setVisible(True)
+        self.stop_btn.setVisible(False)
+        self.stop_btn.setEnabled(True)
+        self.scan_status.setText("")
+        count = self.list.count()
+        if count:
+            self.found_label.setText(
+                f"{count} setup{'s' if count != 1 else ''} found. Pick one:")
+        elif finished:
+            self.found_label.setText(
+                f"No Parrot.py setup in {label}. Choose the folder above.")
+        else:
+            self.found_label.setText("Search stopped.")
+        self._update_buttons()
+
+    def done(self, code):
+        # the thread must not outlive the dialog it reports into
+        if self._folder_scan is not None:
+            self._folder_scan.stop()
+            self._folder_scan.wait(3000)
+            self._folder_scan = None
+        super().done(code)
 
     def _update_buttons(self):
         self.import_btn.setEnabled(

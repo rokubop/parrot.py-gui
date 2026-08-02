@@ -226,7 +226,7 @@ class HomePage(QWidget):
             "Bring the sounds and models of an existing install in as a "
             "profile. The original folder is not changed.")
         import_row = QHBoxLayout()
-        find_setup_btn = QPushButton("Find my setup")
+        find_setup_btn = QPushButton("Import my setup...")
         find_setup_btn.clicked.connect(self._on_find_setup)
         import_row.addWidget(find_setup_btn)
         dismiss_btn = QPushButton("No thanks")

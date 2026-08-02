@@ -237,22 +237,37 @@ def resolve_setup_dir(path):
     return None
 
 
-_SCAN_SKIP = {"node_modules", "__pycache__", "Library", "Applications",
-              "Movies", "Music", "Pictures", "AppData"}
+# Only build output and OS trees. Nothing here is a guess about where a
+# person keeps their code: Documents, Downloads, Desktop and the rest are
+# all walked, which measured at 0.7 s more across a whole home folder.
+# AppData/Library are the exception, at ~96k folders of cache; the one
+# thing worth finding in there is our own data root, added as a root below.
+_SCAN_SKIP = {"node_modules", "__pycache__", "venv", "site-packages",
+              "AppData", "Library", "Windows", "Program Files",
+              "Program Files (x86)", "ProgramData", "$Recycle.Bin",
+              "System Volume Information"}
 
 
-def find_existing_setups():
-    """Parrot data trees in the usual places: shallow scan of the home dir
-    and common code folders, looking for the <dir>/data/recordings shape.
-    Returns [{data_dir, label, sounds, models}], fullest setups first."""
+def _scan(roots, max_depth=None, on_hit=None, should_cancel=None,
+          on_progress=None):
+    """Walk roots for the <dir>/data/recordings shape.
+
+    Returns [{data_dir, label, sounds, models}], fullest first. Empty
+    checkouts and our own data are left out. Reports each setup to on_hit as
+    it lands so a slow scan can fill a list as it goes.
+    """
     home = os.path.expanduser("~")
-    roots = [home] + [os.path.join(home, d) for d in
-                      ("dev", "code", "projects", "src", "repos", "git",
-                       "Documents", "Desktop", "Downloads")]
     own = {os.path.realpath(DATA_DIR), os.path.realpath(PROFILES_DIR)}
     results, seen = [], set()
+    stack = [(os.path.abspath(r), 0) for r in roots if os.path.isdir(r)]
 
-    def visit(directory, depth):
+    while stack:
+        if should_cancel and should_cancel():
+            break
+        directory, depth = stack.pop()
+        if on_progress:
+            on_progress(directory)
+
         data_dir = os.path.join(directory, "data")
         if os.path.isdir(os.path.join(data_dir, "recordings")):
             real = os.path.realpath(data_dir)
@@ -260,32 +275,57 @@ def find_existing_setups():
                 seen.add(real)
                 sounds, models = stats(data_dir)
                 if sounds or models:
-                    label = data_dir.replace(home, "~", 1)
-                    results.append({"data_dir": os.path.abspath(data_dir),
-                                    "label": label,
-                                    "sounds": sounds, "models": models})
-            return  # a checkout; no nested checkouts expected
-        if depth == 0:
-            return
-        try:
-            entries = os.scandir(directory)
-        except OSError:
-            return
-        with entries:
-            for entry in entries:
-                if (entry.name.startswith(".") or entry.name in _SCAN_SKIP):
-                    continue
-                try:
-                    if entry.is_dir(follow_symlinks=False):
-                        visit(entry.path, depth - 1)
-                except OSError:
-                    continue
+                    found = {"data_dir": os.path.abspath(data_dir),
+                             "label": data_dir.replace(home, "~", 1),
+                             "sounds": sounds, "models": models}
+                    results.append(found)
+                    if on_hit:
+                        on_hit(found)
+            continue  # a checkout; no nested checkouts expected
 
-    for root in roots:
-        if os.path.isdir(root):
-            visit(root, 2)
+        if max_depth is not None and depth >= max_depth:
+            continue
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if entry.name.startswith(".") or entry.name in _SCAN_SKIP:
+                        continue
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append((entry.path, depth + 1))
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+
     results.sort(key=lambda r: r["sounds"] + r["models"], reverse=True)
     return results
+
+
+def installed_data_root():
+    """Where an installed build keeps its data. Ours, so not a guess about
+    the user - and it lives inside AppData/Library, which the scan prunes."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    elif sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    else:
+        base = (os.environ.get("XDG_DATA_HOME")
+                or os.path.expanduser("~/.local/share"))
+    return os.path.join(base, "parrot.py")
+
+
+def home_roots():
+    return [os.path.expanduser("~"), installed_data_root()]
+
+
+def scan(roots, on_hit=None, should_cancel=None, on_progress=None):
+    """Search folders the user asked for, any depth. Nothing is scanned
+    unless they ask: a checkout can be anywhere and nothing on the machine
+    records where it went, so guessing folder names only finds the people
+    who happen to share our habits."""
+    return _scan(roots, max_depth=None, on_hit=on_hit,
+                 should_cancel=should_cancel, on_progress=on_progress)
 
 
 def spawn_into(name):
