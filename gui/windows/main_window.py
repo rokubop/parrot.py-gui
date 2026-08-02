@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel, QWidget,
-    QSizePolicy, QVBoxLayout, QToolButton, QMenu, QApplication
+    QSizePolicy, QVBoxLayout, QToolButton, QMenu, QApplication, QPushButton,
+    QMessageBox
 )
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt, QTimer
@@ -98,6 +99,19 @@ class MainWindow(QMainWindow):
         from gui.widgets.device_bar import DeviceBar
         self.device_bar = DeviceBar()
         self.status_bar.addWidget(self.device_bar)
+        # A run survives leaving the training page, so something has to say so.
+        # Without it a 4-6 hour job is invisible the moment you switch tabs, and
+        # the only way back is + New model, which looks like starting over.
+        self.training_chip = QPushButton("")
+        self.training_chip.setFlat(True)
+        self.training_chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.training_chip.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.training_chip.setStyleSheet(
+            f"QPushButton {{ color: {theme.colors()['accent']}; border: none; "
+            f"padding: 0 8px; text-align: left; }}")
+        self.training_chip.clicked.connect(self._open_train)
+        self.training_chip.setVisible(False)
+        self.status_bar.addPermanentWidget(self.training_chip)
         self.keys_label = QLabel("")
         self.keys_label.setStyleSheet(f"color: {theme.colors()['text_dim']}; padding-right: 8px;")
         self.status_bar.addPermanentWidget(self.keys_label)
@@ -164,6 +178,7 @@ class MainWindow(QMainWindow):
             self.train_view = TrainView(self.app_state, self)
             self.train_view.done.connect(self._return_to_models)
             self.train_view.navigate.connect(self._go_to_tab)
+            self.train_view.run_state.connect(self._on_training_state)
             self.stack.addWidget(self.train_view)
         return self.train_view
 
@@ -206,6 +221,15 @@ class MainWindow(QMainWindow):
         view = self._get_train_view()
         view.start()
         self.stack.setCurrentWidget(view)
+
+    def _on_training_state(self, text):
+        """Live run, or "" for none. Click returns to it.
+
+        Worded rather than badged: a glyph here would be the only one in the
+        status bar, and which glyphs actually resolve depends on the machine.
+        """
+        self.training_chip.setText(f"Training {text}" if text else "")
+        self.training_chip.setVisible(bool(text))
 
     def _return_to_models(self, model_name):
         page = self._get_models_page()
@@ -253,8 +277,31 @@ class MainWindow(QMainWindow):
         menu.addAction("Manage profiles...", self.open_profiles_dialog)
 
     def _switch_profile(self, name):
+        # Switching relaunches the app, which ends a run silently.
+        if not self._confirm_over_training("Switch profile?", "Switch"):
+            return
         profiles.spawn_into(name)
         QTimer.singleShot(0, QApplication.instance().quit)
+
+    def _confirm_over_training(self, title, verb):
+        """True if there is no live run, or the user accepts losing it."""
+        if not self.training_chip.isVisible():
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(f"{self.training_chip.text()} is still running.\n"
+                    f"It will be lost.")
+        go = box.addButton(verb, QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Stay", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(box.buttons()[-1])
+        box.exec()
+        return box.clickedButton() is go
+
+    def closeEvent(self, event):
+        if self._confirm_over_training("Quit?", "Quit"):
+            event.accept()
+        else:
+            event.ignore()
 
     def open_profiles_dialog(self):
         from gui.windows.profiles import ProfilesDialog

@@ -237,6 +237,7 @@ def clock_time(when, now=None):
 class TrainView(QWidget):
     done = pyqtSignal(str)       # left the view; arg = model to select ("" = none)
     navigate = pyqtSignal(str)   # jump to a tab (Sounds, when there's nothing to train on)
+    run_state = pyqtSignal(str)  # a live run to advertise, or "" for none
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -245,6 +246,7 @@ class TrainView(QWidget):
         self._best_accuracy = None
         self._stopped = False
         self._failed = False
+        self._cancelled = False
         self._trained_name = None
         self._max_epochs = None
         self._first_epoch = None    # (epoch index, monotonic seconds) of the first
@@ -297,6 +299,7 @@ class TrainView(QWidget):
         self._best_epoch = None
         self._stopped = False
         self._failed = False
+        self._cancelled = False
         self._trained_name = None
         self._max_epochs = None
         self._first_epoch = None
@@ -313,12 +316,17 @@ class TrainView(QWidget):
         self.per_label_box.setVisible(False)
         self.waiting_box.setVisible(True)
         self.success_frame.setVisible(False)
+        # Cancel first; _on_run_started swaps in Finish once there is a model.
         self.controls_row.setVisible(True)
+        self.cancel_btn.setVisible(True)
+        self.cancel_btn.setEnabled(True)
+        self.stop_btn.setVisible(False)
         self.recover_row.setVisible(False)
         self.best_value.setText("Nothing yet")
         self.best_value.setStyleSheet(
             f"font-size: 26px; font-weight: bold; color: {theme.colors()['text_dim']};")
         self.best_detail.setText("Waiting for the first epoch")
+        self.epoch_label.setText("Preparing")
         self.prep_box.setVisible(True)
         self.prep_read.set_idle()
         self.prep_index.set_idle()
@@ -806,9 +814,14 @@ class TrainView(QWidget):
         card = QFrame()
         card.setObjectName("runCard")
         card.setFixedWidth(250)
+        # The global QWidget rule paints an opaque $window box behind every
+        # child, so children declare themselves transparent or each gets its own
+        # dark rectangle inside the card. Same fix as actionCard above.
         card.setStyleSheet(
             f"QFrame#runCard {{ background-color: {t['panel']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }}")
+            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
+            f"QFrame#runCard > QLabel, QFrame#runCard > QWidget {{ "
+            f"background: transparent; border: none; }}")
         v = QVBoxLayout(card)
         v.setContentsMargins(14, 12, 14, 14)
         v.setSpacing(2)
@@ -829,7 +842,16 @@ class TrainView(QWidget):
         self.best_detail.setStyleSheet(f"color: {t['text_dim']};")
         v.addWidget(self.best_detail)
 
-        v.addSpacing(12)
+        v.addSpacing(14)
+        progress_head = QLabel("Progress")
+        progress_head.setStyleSheet(
+            f"color: {t['text_dim']}; font-size: 11px; font-weight: bold;")
+        v.addWidget(progress_head)
+        # How far through, against a total that is otherwise only stated once in
+        # the status line and scrolls away.
+        self.epoch_label = QLabel("Preparing")
+        self.epoch_label.setStyleSheet(f"color: {t['text']};")
+        v.addWidget(self.epoch_label)
         # The question actually being asked during a run of this length is "can
         # I go to bed", so it keeps its own line and the accent colour.
         self.eta = QLabel("")
@@ -838,16 +860,25 @@ class TrainView(QWidget):
         v.addWidget(self.eta)
 
         v.addStretch()
+        # Two buttons, one slot: before the trainer exists there is nothing to
+        # keep, so the honest action is Cancel. Swapped in _on_run_started.
         self.controls_row = QWidget()
         controls = QVBoxLayout(self.controls_row)
         controls.setContentsMargins(0, 10, 0, 0)
-        self.stop_btn = QPushButton("Stop and keep it")
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setMinimumHeight(32)
+        self.cancel_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cancel_btn.setToolTip(
+            "Stop before training starts. Nothing is saved.")
+        self.cancel_btn.clicked.connect(self._on_stop)
+        controls.addWidget(self.cancel_btn)
+        self.stop_btn = QPushButton("Finish training")
         self.stop_btn.setMinimumHeight(32)
-        self.stop_btn.setEnabled(False)
         self.stop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.stop_btn.setToolTip(
-            "Finish after this epoch and keep the best model so far")
+            "End after this epoch and keep the best model so far")
         self.stop_btn.clicked.connect(self._on_stop)
+        self.stop_btn.setVisible(False)
         controls.addWidget(self.stop_btn)
         v.addWidget(self.controls_row)
         return card
@@ -1391,11 +1422,11 @@ class TrainView(QWidget):
             self._awake.start()
 
         self.train_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
         self.worker = TrainingWorker(name, selected, nets,
                                      self.silence_mode.currentData(),
                                      self.balance_check.isChecked())
         self.worker.stage_changed.connect(self._on_stage)
+        self.worker.cancelled.connect(self._on_cancelled)
         self.worker.run_started.connect(self._on_run_started)
         self.worker.epoch_complete.connect(self._on_epoch)
         self.worker.training_finished.connect(self._on_finished)
@@ -1463,8 +1494,16 @@ class TrainView(QWidget):
     def _on_stop(self):
         if self.worker:
             self._stopped = True
-            self._set_status("Stopping after this epoch…")
+            running = self.stop_btn.isVisible()
+            self._set_status("Stopping after this epoch…" if running
+                             else "Cancelling…")
+            self.cancel_btn.setEnabled(False)
+            self.stop_btn.setEnabled(False)
             self.worker.request_stop()
+
+    def _on_cancelled(self):
+        """Stopped before the trainer existed, so there is nothing to keep."""
+        self._cancelled = True
 
     def _set_status(self, text, color=None):
         self.status.setText(text)
@@ -1477,6 +1516,12 @@ class TrainView(QWidget):
     def _on_run_started(self, max_epochs):
         self._max_epochs = max_epochs
         self._set_status(f"Training, up to {max_epochs} epochs.")
+        # There is a model to keep from here on, so Cancel gives way to Finish.
+        self.epoch_label.setText(f"Epoch 1 of {max_epochs}")
+        self.cancel_btn.setVisible(False)
+        self.stop_btn.setVisible(True)
+        self.stop_btn.setEnabled(True)
+        self.controls_row.setVisible(True)
 
     def _on_epoch(self, epoch, loss, accuracy, per_label, is_best):
         now = time.monotonic()
@@ -1495,6 +1540,10 @@ class TrainView(QWidget):
             # Preparing is over for good once an epoch has landed.
             self.prep_box.setVisible(False)
 
+        if self._max_epochs:
+            self.epoch_label.setText(f"Epoch {epoch + 1} of {self._max_epochs}")
+            self.run_state.emit(
+                f"{self._trained_name}  epoch {epoch + 1} of {self._max_epochs}")
         total = f" of {self._max_epochs}" if self._max_epochs else ""
         best = "   ·   new best, saved" if is_best else ""
         self._set_status(
@@ -1545,6 +1594,7 @@ class TrainView(QWidget):
     def _on_finished(self):
         # Above the early return: a failed run reaches here too.
         self._awake.stop()
+        self.run_state.emit("")
         # The worker emits training_finished *after* error_occurred, so a failed
         # run arrives here too - with no model to celebrate.
         if self._failed:
@@ -1559,6 +1609,8 @@ class TrainView(QWidget):
         if self._stopped and not library_ops.model_exists(name):
             self.eta.setText("")
             self._set_status(
+                "Cancelled before training started. Nothing was saved."
+                if self._cancelled else
                 "Stopped before the first epoch finished, so there was no model "
                 "to save yet.")
             self._trained_name = None
@@ -1631,14 +1683,28 @@ class TrainView(QWidget):
     # ---- leaving ---------------------------------------------------------
 
     def _on_back(self):
+        """start() keeps a run alive across leaving, so leaving need not end it.
+        The old Yes/No hid that. Three real outcomes, each named by what it does.
+        """
         if self.worker is not None:
-            answer = QMessageBox.question(
-                self, "Stop training?",
-                "Training is still running. Leave and stop it?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+            box = QMessageBox(self)
+            box.setWindowTitle("Training is still running")
+            box.setText("Leave this screen?")
+            # Each button says what happens, so nothing above them has to.
+            # "Stay" rather than "Cancel": Cancel is already the button that
+            # abandons a run during preparation, on this screen.
+            keep = box.addButton("Leave and continue training in the background",
+                                 QMessageBox.ButtonRole.AcceptRole)
+            finish = box.addButton("Leave and finish training",
+                                   QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton("Stay", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(keep)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is None or clicked not in (keep, finish):
                 return
-            self._on_stop()
+            if clicked is finish:
+                self._on_stop()
         self.done.emit(self._trained_name or "")
 
     def refresh_theme(self):

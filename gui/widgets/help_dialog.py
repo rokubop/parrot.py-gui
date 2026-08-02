@@ -60,14 +60,15 @@ NET_ROWS = (
            "round (epoch), which is why more of them means a longer wait."),
     (None, "They score every frame while training, and again every day "
            "afterwards when Talon is listening. The number you pick stays part "
-           "of the model, not just the training run."),
+           "of the model, not just the training run, so changing it means "
+           "training again."),
     (None, "More than one is worth it because each net starts from different "
            "random values, so they don't end up wrong about the same sounds. "
            "Averaging them means one net getting a sound wrong doesn't decide "
            "the answer on its own."),
-    (None, "<b>3 is the default.</b> Use 1 if you just want to find out whether "
-           "your recordings are good enough, since it trains much faster. "
-           "Changing this later means training again."),
+    (None, "<b>2 to 5 is the useful range</b>, 3 by default. Use 1 to find out "
+           "quickly whether your recordings are good enough: it trains fastest, "
+           "though one net has nothing to average with."),
 )
 
 BALANCE_ROWS = (

@@ -142,18 +142,10 @@ def _combined_score(meta):
 
 
 def _training_data(meta):
-    """Roughly how much audio the run actually trained on.
+    """Roughly how much audio the run trained on, from label_frames.
 
-    Held as frames underneath - label_frames out of the checkpoint - but frames
-    are the net's unit, not anyone's: "is 45,000 a lot?" has no answer, where
-    minutes reads as thin or plenty on sight. So the count converts and does not
-    show. The ~ stays because a frame is a sliding window with 50% overlap, and
-    the conversion lands a few percent off the durations the Sounds tab totals.
-
-    Deliberately not the setup screen's "Recorded", which is the wav durations
-    on disk before anything is done to them. This is post-balancing: sounds
-    truncated to the cap, thin ones repeated, silence given its ration. The gap
-    between the two is the answer to "how much did balancing leave behind".
+    Post-balancing, so not the setup screen's "Recorded": repeated frames count
+    every time the trainer sees them, and this can exceed what is on disk.
     """
     frames = next((n["label_frames"] for n in (meta.get("nets") or [])
                    if n.get("label_frames")), None)
@@ -166,17 +158,9 @@ def _facts_sections(meta, sound_count=None):
     """[(heading, [(label, value)])], all read out of the model itself. Anything
     measured off the recordings folder belongs in the sound notes.
 
-    Three questions, deliberately not interleaved: what this model is, how it
-    came to be, and what the networks inside it did. The first is what you act
-    on - which file to point Talon at, what it can hear, how good it is. The
-    second is evidence for whether it is worth training again, and most of it is
-    missing on anything trained before the fields existed. The third is the
-    diagnostic layer, and giving it a heading is what lets its rows drop the
-    "per network" they used to have to carry: the heading says it once.
-
-    Headings stay parallel ("Model info" / "Training info") rather than one
-    label and one sentence: they are read as a set, and a mismatched one reads
-    as an accident.
+    Three questions kept apart: what the model is, what it was trained on, what
+    the networks did. The third has a heading so its rows can drop "per network".
+    Sections come up short on old models rather than showing blanks.
     """
     t = theme.colors()
     # Talon is pointed at a path, so the pkl is the answer to "which file is
@@ -196,22 +180,25 @@ def _facts_sections(meta, sound_count=None):
     headline = combined or _net_scores(meta)
     if headline:
         now.append(("Accuracy", headline))
-    now.append(("Size", _human_size(meta["total_size_bytes"])))
-
-    how = []
     if meta.get("trained_at"):
         when = _trained_when(meta["trained_at"], meta.get("trained_at_source"))
         # A file date is not a training date: a copied data dir restamps every
         # pkl. "Unknown" is the answer to the question; the date follows as the
         # only related fact, keeping the ~ that _trained_when already puts on an
         # approximation rather than restating it in words.
-        how.append(("Trained",
+        now.append(("Trained",
                     f"Unknown   <span style='color:{t['text_dim']};'>"
                     f"({when})</span>"
                     if meta.get("trained_at_source") == "mtime" else when))
-    trained_on = _training_data(meta)
-    if trained_on:
-        how.append(("Trained on", trained_on))
+    now.append(("Size", _human_size(meta["total_size_bytes"])))
+
+    how = []
+    # "Trained on 11 minutes" sat under "Trained: yesterday" and read as the run
+    # having taken 11 minutes, which for a 4-6 hour job is badly wrong. "Audio"
+    # cannot be read as a duration of anything but audio.
+    audio = _training_data(meta)
+    if audio:
+        how.append(("Audio", audio))
     # Only on models that recorded it. Talon runs whatever mic is live, so this
     # is the first question when a model works on one setup and not another.
     mics = library_ops.describe_mics(meta.get("source_mics"))
@@ -242,7 +229,11 @@ def _facts_sections(meta, sound_count=None):
     # is what makes the section pay for itself: it replaces a row instead of
     # only adding one.
     heading = f"Neural networks ({nets})" if nets else "Neural networks"
-    return [("Model info", now), ("Training info", how), (heading, each)]
+    # "Training data", not "Recordings": the audio figure is post-balancing, so
+    # it is not what sits on disk and can exceed it where thin sounds were
+    # repeated. Balance and Silence ride here because they are what made it
+    # differ, so the setting explaining the number is next to the number.
+    return [("Model info", now), ("Training data", how), (heading, each)]
 
 
 def _label_scores(meta):

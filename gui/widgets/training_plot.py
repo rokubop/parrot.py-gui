@@ -7,16 +7,9 @@ from gui import theme
 class TrainingPlotWidget(QWidget):
     """Loss and accuracy against epoch, on an axis each.
 
-    They used to share one, under a left axis labelled "Value" - which is the
-    tell, since they have no common unit. Loss is a sum across nets of a mean
-    per sample, so it starts near ln(number of sounds) per net and runs to ~9
-    with three nets, ~15 with five. Accuracy is a fraction of 1. On one axis the
-    accuracy curve is pinned into the bottom tenth of the plot as a flat line,
-    which is the half anyone actually wants to read.
-
-    Accuracy keeps a fixed 0-100 range rather than autoscaling: the question is
-    "is this any good", which needs the whole scale to be visible, not a curve
-    stretched to fill whatever four points it has so far.
+    Loss is summed across nets, so it runs 0 to ~9 with three. Accuracy is a
+    fraction of 1. Sharing one axis flattened accuracy into the bottom tenth.
+    Accuracy stays fixed at 0-100: "is this any good" needs the whole scale.
     """
 
     def __init__(self, parent=None):
@@ -34,6 +27,11 @@ class TrainingPlotWidget(QWidget):
         plot.showAxis('right')
         plot.setLabel('right', 'Accuracy %')
         plot.showGrid(x=True, y=True, alpha=0.3)
+        # First pan or zoom turns auto-range off for good, and later epochs then
+        # draw off-screen with no reset control on the page.
+        plot.setMouseEnabled(x=False, y=False)
+        plot.setMenuEnabled(False)
+        plot.hideButtons()
         layout.addWidget(self.plot_widget)
 
         # Accuracy rides in its own ViewBox so it can have its own Y range. It

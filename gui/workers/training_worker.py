@@ -85,6 +85,12 @@ class _LineTee:
         return False
 
 
+class _Cancelled(Exception):
+    """Raised from the stdout hook to abandon the load, which has no stop check
+    of its own. Nothing is written to disk before training, so unwinding is safe.
+    """
+
+
 class TrainingWorker(QThread):
     epoch_complete = pyqtSignal(int, float, float, dict, bool)  # epoch, loss, accuracy, per_label_dict, is_best
     training_finished = pyqtSignal()
@@ -105,6 +111,9 @@ class TrainingWorker(QThread):
     net_validated = pyqtSignal(int, float)      # net number (1-based), accuracy
     best_saved = pyqtSignal()
     data_warning = pyqtSignal(str, str)         # source wav, srt to delete
+    # Stopped before any model existed, so there is nothing to keep and nothing
+    # went wrong. Distinct from error_occurred, which means a failure.
+    cancelled = pyqtSignal()
 
     def __init__(self, model_name, labels, net_count=1, silence="all",
                  balance_sounds=True, parent=None):
@@ -115,6 +124,7 @@ class TrainingWorker(QThread):
         self.silence = silence
         self.balance_sounds = balance_sounds
         self._stop_requested = False
+        self._training = False
         self._seen_warnings = set()
 
     def run(self):
@@ -122,6 +132,8 @@ class TrainingWorker(QThread):
         sys.stdout = _LineTee(original, self._on_line)
         try:
             self._train()
+        except _Cancelled:
+            self.cancelled.emit()
         except Exception as e:
             self.error_occurred.emit(str(e))
         finally:
@@ -133,6 +145,9 @@ class TrainingWorker(QThread):
 
     def _on_line(self, line):
         self.log_line.emit(line)
+        # Only before the trainer exists; after that stop_check ends it cleanly.
+        if self._stop_requested and not self._training:
+            raise _Cancelled()
 
         match = RE_BATCH.match(line)
         if match:
@@ -200,12 +215,17 @@ class TrainingWorker(QThread):
                                  audio_settings['FEATURE_ENGINEERING_TYPE'],
                                  silence=self.silence,
                                  balance_sounds=self.balance_sounds)
+        if self._stop_requested:
+            raise _Cancelled()
         self.stage_changed.emit("Indexing…")
         dataset = AudioDataset(data)
         trainer = AudioNetTrainer(
             dataset, self.net_count, audio_settings,
             run_settings=resolved_balance(self.silence, self.balance_sounds),
             source_mics=library_ops.mics_for_labels(self.labels))
+        if self._stop_requested:
+            raise _Cancelled()
+        self._training = True
         self.run_started.emit(trainer.max_epochs)
 
         def progress_callback(epoch, loss, accuracy, per_label_accuracy, is_new_best):
