@@ -305,6 +305,18 @@ def _ellipsis(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit - 3] + "..."
 
 
+def _claim_taskbar_identity() -> None:
+    """Windows groups the taskbar by AppUserModelID. Without our own, setup
+    shows up as python.exe. Same id as the app so they group together."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("parrot.py")
+    except Exception:
+        pass
+
+
 def _set_window_icon(root, tk) -> None:
     """Without this the setup window wears Tk's default feather."""
     try:
@@ -338,6 +350,8 @@ def run_gui() -> int:
     messages: "queue.Queue[tuple[str, object]]" = queue.Queue()
     cancel_flag = threading.Event()
     result: dict[str, object] = {}
+
+    _claim_taskbar_identity()
 
     root = tk.Tk()
     root.title(WINDOW_TITLE)
