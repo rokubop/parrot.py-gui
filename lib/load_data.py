@@ -24,6 +24,17 @@ def get_grouped_data_directories( labels ):
         grouped_data_directories[ category_name ].append( data_directory )
     return grouped_data_directories
 
+def resolved_balance(silence="all", balance_sounds=None):
+    """The values load_pytorch_data will actually apply, given the same
+    arguments. Exists so a caller can record what a run was told to do without
+    restating the None-means-config rule and drifting from it.
+    """
+    return {"silence": silence,
+            "balance_sounds": (AUTOMATIC_DATASET_BALANCING
+                               if balance_sounds is None
+                               else bool(balance_sounds))}
+
+
 def generate_data_balance_strategy_map(grouped_data_directories, silence="all",
                                        balance_sounds=None):
     """balance_sounds: oversample thin labels (2x cap), undersample fat ones.

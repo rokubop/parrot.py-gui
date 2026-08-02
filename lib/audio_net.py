@@ -76,7 +76,8 @@ class AudioNetTrainer:
     dataset = False
     input_size = 120
 
-    def __init__(self, dataset, net_count = 1, audio_settings = None):
+    def __init__(self, dataset, net_count = 1, audio_settings = None,
+                 run_settings = None, source_mics = None):
         # These six used to be class attributes that __init__ only ever appended
         # to, so every trainer in a process shared one list. The CLI never
         # noticed - one process trains one model and exits. The GUI does: a
@@ -98,6 +99,16 @@ class AudioNetTrainer:
         self.dataset = dataset
         self.dataset_size = len(dataset)
         self.audio_settings = audio_settings
+        # The choices made on the way in, which shape the data before the
+        # trainer ever sees it: they are consumed by load_pytorch_data and would
+        # otherwise leave no trace in the model at all. Empty for a run that did
+        # not say, which is every model trained before this existed.
+        self.run_settings = run_settings or {}
+        # Which microphones the recordings behind this run came from. Scanned by
+        # the caller, because reading it lives with the recordings library and
+        # lib/ does not import gui/. Empty when nobody said, which is every model
+        # trained before this and every CLI run.
+        self.source_mics = source_mics or {}
         self.dataset_size = len(dataset)
         
         split = int(np.floor(self.validation_split * self.dataset_size))
@@ -309,6 +320,12 @@ class AudioNetTrainer:
                         'epoch': epoch,
                         'random_seed': self.random_seeds[j],
                         'trained_at': starttime,
+                        # Every option the training screen offers, so a model
+                        # can say how it was made rather than be guessed at
+                        # from the shape of label_frames.
+                        'run_settings': self.run_settings,
+                        'audio_settings': self.audio_settings,
+                        'source_mics': self.source_mics,
                         }, os.path.join(CLASSIFIER_FOLDER, current_filename) + '-weights.pth.tar')
 
                 # Persist a new combined model with the best weights if new best weights are given
