@@ -61,6 +61,30 @@ def create_patterns_file(path, patterns=None):
     return path
 
 
+def deploy_model(model_source, model_dest, integration_path=None):
+    """Swap the model Talon runs, in place.
+
+    One file: the pkl carries its own nets, which is why install_integration
+    copies it alone. Staged then moved, because Talon may read the path at any
+    moment and a half-copied pkl loads wrong instead of failing. Touching the
+    integration makes Talon reload it - the model is only read at import.
+    """
+    if not os.path.isfile(model_source):
+        raise OSError(f"Model file not found: {model_source}")
+    if not model_dest:
+        raise OSError("No deployed model path to replace")
+    os.makedirs(os.path.dirname(model_dest), exist_ok=True)
+    staging = model_dest + ".incoming"
+    shutil.copy2(model_source, staging)
+    os.replace(staging, model_dest)
+    if integration_path and os.path.isfile(integration_path):
+        try:
+            os.utime(integration_path, None)
+        except OSError:
+            pass       # the swap already happened; a restart picks it up
+    return model_dest
+
+
 def install_integration(talon_user_dir, model_source, subfolder=DEFAULT_SUBFOLDER,
                         patterns=None):
     """Create <talon_user>/<subfolder>/ with parrot_integration.py (template,

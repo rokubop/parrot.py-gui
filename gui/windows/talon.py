@@ -16,19 +16,24 @@ import json
 import os
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QGroupBox,
     QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QComboBox, QMessageBox, QInputDialog, QDialog,
-    QPlainTextEdit, QListWidget, QListWidgetItem, QTabWidget
+    QPlainTextEdit, QListWidget, QListWidgetItem, QStackedWidget, QMenu,
+    QToolButton
 )
 
 from gui import theme
 from gui.services import (talon_discovery, patterns_schema, patterns_store,
-                          talon_companion, talon_setup, library_ops)
+                          talon_companion, talon_setup, library_ops,
+                          pattern_colors, integration_sim)
 from gui.widgets.pattern_edit_dialog import PatternEditDialog
+from gui.widgets.bridge_dialog import BridgeDialog
+from gui.widgets.setup_panel import SetupPanel
 from gui.widgets import help_dialog
-from gui.windows.talon_live import TalonLiveView
+from gui.windows.talon_test import TalonTestView
 from gui.windows.talon_captures import TalonCapturesView
 from config.config import CLASSIFIER_FOLDER
 
@@ -66,10 +71,27 @@ class DiscoveryWorker(QThread):
         self.loaded.emit(bundle)
 
 
-def _fmt_threshold(rules):
+def _fmt_threshold(rules, was=None):
+    """The rules, and where the draft moved one, `>probability 0.93 → 0.94`.
+
+    Per rule rather than per pattern: printing the whole old threshold beside
+    the whole new one makes the reader diff two identical-looking strings to
+    find the digit that changed.
+    """
     if not isinstance(rules, dict):
         return ""
-    return "   ".join(f"{op} {value}" for op, value in rules.items())
+    was = was if isinstance(was, dict) else {}
+    parts = []
+    for op, value in rules.items():
+        before = was.get(op)
+        if before is not None and before != value:
+            parts.append(f"{op} {before} → {value}")
+        else:
+            parts.append(f"{op} {value}")
+    for op, value in was.items():
+        if op not in rules:
+            parts.append(f"{op} {value} → off")
+    return "   ".join(parts)
 
 
 class TalonPage(QWidget):
@@ -80,6 +102,9 @@ class TalonPage(QWidget):
         self._bundle = None
         self._deployed = {}     # what's on disk at the Talon path right now
         self.working = {}       # the copy being edited
+        self._patterns_missing = False
+        self._raw_bundle = None
+        self._sim = {"bundle": "off", "bridge": "off"}
         self._setup_ui()
         self.refresh()
 
@@ -95,142 +120,218 @@ class TalonPage(QWidget):
     # ---- ui -------------------------------------------------------------
 
     def _setup_ui(self):
-        t = theme.colors()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self.tabs = QTabWidget()
-        outer.addWidget(self.tabs)
+        # Three whole screens rather than tabs: testing wants the window, and
+        # the A/B workbench is where a draft goes to be tried, not a place you
+        # browse to.
+        self.stack = QStackedWidget()
+        outer.addWidget(self.stack)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.tabs.addTab(scroll, "Setup && Patterns")
+        self.stack.addWidget(scroll)
 
-        self.live_view = TalonLiveView()
-        live_wrap = QWidget()
-        live_layout = QVBoxLayout(live_wrap)
-        live_layout.setContentsMargins(16, 8, 16, 8)
-        live_layout.addWidget(self.live_view)
-        self.tabs.addTab(live_wrap, "Live")
+        self.test_view = TalonTestView()
+        self.test_view.done.connect(self._show_main)
+        self.stack.addWidget(self.test_view)
 
         self.captures_view = TalonCapturesView(
             get_deployed=lambda: self._deployed,
             get_working=lambda: self.working)
         captures_wrap = QWidget()
         captures_layout = QVBoxLayout(captures_wrap)
-        captures_layout.setContentsMargins(16, 8, 16, 8)
-        captures_layout.addWidget(self.captures_view)
-        self.tabs.addTab(captures_wrap, "Captures")
-        self.tabs.currentChanged.connect(self._on_tab_changed)
+        captures_layout.setContentsMargins(16, 10, 16, 10)
+        back_row = QHBoxLayout()
+        captures_back = QPushButton("‹  Back")
+        captures_back.setFlat(True)
+        captures_back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        captures_back.clicked.connect(self._show_main)
+        back_row.addWidget(captures_back)
+        back_row.addWidget(QLabel("Try a draft against a recorded session"), 1)
+        captures_layout.addLayout(back_row)
+        captures_layout.addWidget(self.captures_view, 1)
+        self.stack.addWidget(captures_wrap)
 
         body = QWidget()
         layout = QVBoxLayout(body)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(16)
+        layout.setContentsMargins(28, 22, 28, 24)
+        layout.setSpacing(14)
         scroll.setWidget(body)
 
-        head = QHBoxLayout()
-        title = QLabel("Talon")
-        title.setStyleSheet(
-            f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
-        head.addWidget(title)
-        # The tab is Integrations; the page says which one this is. Stated as a
-        # fact rather than a promise - nothing is planned behind "for now".
-        subtitle = QLabel("the supported integration")
-        subtitle.setStyleSheet(f"color: {t['text_dim']};")
-        head.addWidget(subtitle, alignment=Qt.AlignmentFlag.AlignBottom)
-        head.addWidget(help_dialog.help_button(self, "connect"))
-        head.addStretch()
-        self.refresh_btn = QPushButton("Refresh")
-        self.refresh_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.refresh_btn.clicked.connect(self.refresh)
-        head.addWidget(self.refresh_btn)
-        layout.addLayout(head)
+        layout.addWidget(self._build_connection_card())
+        layout.addWidget(self._build_details())
+        layout.addWidget(self._build_draft_banner())
+        layout.addWidget(self._build_patterns_section(), 1)
+        self._build_hidden_controls()
 
-        # ---- status group
-        self.status_group = QGroupBox("Status")
-        status_layout = QVBoxLayout(self.status_group)
+    # ---- main page pieces ------------------------------------------------
+
+    def _build_connection_card(self):
+        t = theme.colors()
+        card = QFrame()
+        card.setObjectName("connCard")
+        card.setStyleSheet(
+            f"QFrame#connCard {{ background-color: {t['card']}; "
+            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
+            f"QFrame#connCard QLabel {{ background: transparent; border: none; }}")
+        row = QHBoxLayout(card)
+        row.setContentsMargins(18, 14, 18, 14)
+        row.setSpacing(16)
+
+        who = QVBoxLayout()
+        who.setSpacing(2)
+        self.conn_name = QLabel("Talon")
+        self.conn_name.setStyleSheet(
+            f"font-size: 17px; font-weight: bold; color: {t['text_bright']};")
+        who.addWidget(self.conn_name)
+        self.conn_facts = QLabel("…")
+        self.conn_facts.setWordWrap(True)
+        self.conn_facts.setTextFormat(Qt.TextFormat.RichText)
+        who.addWidget(self.conn_facts)
+        row.addLayout(who, 1)
+
+        # Loud on purpose: a simulated state that looks real is worse than no
+        # simulation. Only ever visible with PARROT_DEBUG=1.
+        self.sim_chip = QLabel("")
+        self.sim_chip.setStyleSheet(
+            "color: #23272e; background-color: #d3a45c; border-radius: 11px; "
+            "padding: 3px 12px; font-weight: bold;")
+        self.sim_chip.setVisible(False)
+        row.addWidget(self.sim_chip)
+
+        self.change_model_btn = QPushButton("Change model…")
+        self.change_model_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.change_model_btn.setToolTip(
+            "Put a different trained model in the Talon folder")
+        self.change_model_btn.clicked.connect(self._on_change_model)
+        row.addWidget(self.change_model_btn)
+
+        self.test_btn = QPushButton("Test integration")
+        self.test_btn.setObjectName("primaryAction")
+        self.test_btn.setMinimumHeight(32)
+        self.test_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        from gui.windows.train_view import primary_button_style
+        self.test_btn.setStyleSheet(primary_button_style())
+        self.test_btn.setToolTip(
+            "Watch what Talon actually hears, sound by sound")
+        self.test_btn.clicked.connect(self._show_test)
+        row.addWidget(self.test_btn)
+        row.addWidget(help_dialog.help_button(self, "connect"))
+
+        self.more_btn = QToolButton()
+        self.more_btn.setText("⋯")
+        self.more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.more_btn.setToolTip("Files, variants, snapshots, the bridge")
+        self.more_btn.setStyleSheet(
+            f"QToolButton {{ color: {t['text_dim']}; border: none; "
+            f"padding: 6px 10px; font-size: 15px; }} "
+            f"QToolButton::menu-indicator {{ image: none; }} "
+            f"QToolButton:hover {{ color: {t['text_bright']}; }}")
+        self._more_menu = QMenu(self)
+        self._more_menu.aboutToShow.connect(self._build_more_menu)
+        self.more_btn.setMenu(self._more_menu)
+        row.addWidget(self.more_btn)
+        return card
+
+    def _build_details(self):
+        """The paths. Off by default: they answer a question nobody asks twice,
+        and they were the first thing this page used to say."""
+        t = theme.colors()
+        self.details_group = QGroupBox("Files")
+        self.details_group.setVisible(False)
+        details_layout = QVBoxLayout(self.details_group)
         self.status_rows = {}
         for key, label in (
                 ("talon", "Talon"),
                 ("integration", "Integration"),
                 ("patterns", "patterns.json"),
                 ("model", "Deployed model"),
-                ("companion", "Companion"),
-                ("health", "Health")):
-            row = QHBoxLayout()
+                ("companion", "Bridge")):
+            line = QHBoxLayout()
             name = QLabel(f"{label}:")
-            name.setFixedWidth(130)
+            name.setFixedWidth(120)
             name.setStyleSheet(f"color: {t['text_dim']};")
             value = QLabel("…")
             value.setWordWrap(True)
             value.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse)
-            row.addWidget(name, alignment=Qt.AlignmentFlag.AlignTop)
-            row.addWidget(value, 1)
+            line.addWidget(name, alignment=Qt.AlignmentFlag.AlignTop)
+            line.addWidget(value, 1)
             self.status_rows[key] = value
-            status_layout.addLayout(row)
+            details_layout.addLayout(line)
+        return self.details_group
 
-        btn_row = QHBoxLayout()
-        self.open_folder_btn = QPushButton("Open Talon folder")
-        self.open_folder_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.open_folder_btn.clicked.connect(self._open_talon_folder)
-        self.open_folder_btn.setEnabled(False)
-        btn_row.addWidget(self.open_folder_btn)
-        self.companion_btn = QPushButton("Install companion")
-        self.companion_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.companion_btn.setToolTip(
-            "Copies parrot_gui_bridge.py into your Talon user directory so "
-            "the Live tab can show real Talon detection frames")
-        self.companion_btn.clicked.connect(self._on_install_companion)
-        self.companion_btn.setEnabled(False)
-        btn_row.addWidget(self.companion_btn)
-        self.setup_btn = QPushButton("Set up parrot integration…")
-        self.setup_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setup_btn.setToolTip(
-            "Creates <talon user>/parrot/ with parrot_integration.py, one of "
-            "your trained models, and a starter patterns.json")
-        self.setup_btn.clicked.connect(self._on_setup_integration)
-        self.setup_btn.setVisible(False)
-        btn_row.addWidget(self.setup_btn)
-        self.create_patterns_btn = QPushButton("Create patterns.json")
-        self.create_patterns_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.create_patterns_btn.clicked.connect(self._on_create_patterns)
-        self.create_patterns_btn.setVisible(False)
-        btn_row.addWidget(self.create_patterns_btn)
-        btn_row.addStretch()
-        status_layout.addLayout(btn_row)
-        layout.addWidget(self.status_group)
+    def _build_draft_banner(self):
+        """Edits have always gone to a working copy; the only sign used to be
+        a group-box title. Talon is still running the deployed set, and the two
+        ways out of that are the two buttons here."""
+        t = theme.colors()
+        banner = QFrame()
+        banner.setObjectName("draftBanner")
+        banner.setStyleSheet(
+            f"QFrame#draftBanner {{ background-color: rgba(90, 175, 245, 0.10); "
+            f"border: 1px solid rgba(90, 175, 245, 0.45); border-radius: 6px; }} "
+            f"QFrame#draftBanner QLabel {{ background: transparent; "
+            f"border: none; color: {t['text']}; }}")
+        row = QHBoxLayout(banner)
+        row.setContentsMargins(14, 9, 14, 9)
+        row.setSpacing(8)
+        self.draft_label = QLabel("")
+        self.draft_label.setWordWrap(True)
+        row.addWidget(self.draft_label, 1)
+        self.discard_btn = QPushButton("Discard")
+        self.discard_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.discard_btn.clicked.connect(self._on_discard_draft)
+        row.addWidget(self.discard_btn)
+        self.try_btn = QPushButton("Try it on a recording")
+        self.try_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.try_btn.setToolTip(
+            "Replay a recorded session through this draft and the deployed set, "
+            "frame for frame - no deploy needed to find out")
+        self.try_btn.clicked.connect(self._show_captures)
+        row.addWidget(self.try_btn)
+        self.deploy_btn = QPushButton("Deploy to Talon")
+        self.deploy_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.deploy_btn.clicked.connect(self._on_deploy)
+        row.addWidget(self.deploy_btn)
+        self.draft_banner = banner
+        banner.setVisible(False)
+        return banner
 
-        # ---- patterns group
-        self.patterns_group = QGroupBox("Patterns")
-        pat_layout = QVBoxLayout(self.patterns_group)
+    def _build_patterns_section(self):
+        t = theme.colors()
+        wrap = QWidget()
+        v = QVBoxLayout(wrap)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
 
-        tools = QHBoxLayout()
-        self.variant_combo = QComboBox()
-        self.variant_combo.setMinimumWidth(160)
-        self.variant_combo.setToolTip(
-            "Named variants are stored in data/talon/variants - load one to "
-            "edit it, then Deploy to make it live")
-        tools.addWidget(self.variant_combo)
-        self.load_variant_btn = self._tool_btn(tools, "Load", self._on_load_variant)
-        tools.addSpacing(16)
-        self.new_btn = self._tool_btn(tools, "New…", self._on_new)
-        self.edit_btn = self._tool_btn(tools, "Edit…", self._on_edit)
-        self.dup_btn = self._tool_btn(tools, "Duplicate", self._on_duplicate)
-        self.del_btn = self._tool_btn(tools, "Delete", self._on_delete)
-        self.raw_btn = self._tool_btn(tools, "Raw JSON…", self._on_raw_json)
-        tools.addStretch()
-        self.save_variant_btn = self._tool_btn(
-            tools, "Save as variant…", self._on_save_variant)
-        self.snapshots_btn = self._tool_btn(tools, "Snapshots…", self._on_snapshots)
-        self.deploy_btn = self._tool_btn(tools, "Deploy to Talon", self._on_deploy)
-        pat_layout.addLayout(tools)
+        head = QHBoxLayout()
+        self.patterns_title = QLabel("Patterns")
+        self.patterns_title.setStyleSheet(
+            f"font-size: 14px; font-weight: bold; color: {t['text_bright']};")
+        head.addWidget(self.patterns_title)
+        self.health_label = QLabel("")
+        self.health_label.setTextFormat(Qt.TextFormat.RichText)
+        head.addWidget(self.health_label)
+        head.addStretch()
+        self.hint_label = QLabel("double-click to edit · right-click for more")
+        self.hint_label.setStyleSheet(f"color: {t['text_dim']};")
+        head.addWidget(self.hint_label)
+        self.new_btn = QPushButton("+ New pattern")
+        self.new_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.new_btn.clicked.connect(self._on_new)
+        head.addWidget(self.new_btn)
+        v.addLayout(head)
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Pattern", "Sounds", "Threshold", "Grace", "Throttles",
-             "Detect after", "Issues"])
+            ["Pattern", "Listens for", "Fires when", "Grace", "Throttles",
+             "Issues"])
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_table_menu)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(
@@ -241,39 +342,83 @@ class TalonPage(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.setMinimumHeight(320)
+        self.table.setMinimumHeight(300)
         self.table.doubleClicked.connect(lambda _ix: self._on_edit())
-        pat_layout.addWidget(self.table)
+        v.addWidget(self.table, 1)
 
         self.lint_label = QLabel("")
         self.lint_label.setWordWrap(True)
         self.lint_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         self.lint_label.setStyleSheet(f"color: {t['text_dim']}; font-size: 12px;")
-        pat_layout.addWidget(self.lint_label)
-        layout.addWidget(self.patterns_group)
-        layout.addStretch()
+        v.addWidget(self.lint_label)
+
+        # Until the integration exists, this page IS the setup: checklist down
+        # the side, the next thing to do in the middle. The patterns table is
+        # not a lesser version of that, so it hides entirely.
+        self.setup_panel = SetupPanel()
+        self.setup_panel.action_clicked.connect(self._on_setup_action)
+        self.setup_panel.setVisible(False)
+        v.addWidget(self.setup_panel)
+        return wrap
+
+    def _build_hidden_controls(self):
+        """Controls the ⋯ menu drives. They are widgets rather than plain
+        methods because the variant picker has state (which variant), and
+        because every one of them used to be a button on the page - keeping
+        them as widgets kept the diff to where they are shown, not what they
+        do."""
+        self.variant_combo = QComboBox(self)
+        self.variant_combo.setVisible(False)
 
     # ---- discovery ------------------------------------------------------
 
     def focus_patterns(self):
-        """Deep link from Home's Edit patterns: land on the editor itself."""
-        self.tabs.setCurrentIndex(0)
-        scroll = self.tabs.widget(0)
-        if hasattr(scroll, "ensureWidgetVisible"):
-            scroll.ensureWidgetVisible(self.patterns_group, 0, 0)
+        """Deep link from Home's step 3: land on the page, not in a sub-view."""
+        self._show_main()
+
+    # ---- which screen ----------------------------------------------------
+
+    def _show_main(self):
+        self.test_view.stop()
+        self.stack.setCurrentIndex(0)
+
+    def _show_test(self):
+        # The bridge is asked for here, not on the test screen: landing on a
+        # screen that cannot do its job is not where to answer a yes/no.
+        if not self._ensure_bridge():
+            return
+        self.test_view.set_patterns(self._deployed)
+        self.test_view.set_model(self._deployed_model_name())
+        self.test_view.refresh_state()
+        self.stack.setCurrentIndex(1)
+        # Only while the page is on screen; showEvent picks it up otherwise.
+        if self.isVisible():
+            self.test_view.start()
+
+    def _show_captures(self):
+        self.test_view.stop()
+        self.captures_view.refresh_sessions()
+        self.stack.setCurrentIndex(2)
+
+    def _deployed_model_name(self):
+        return (self._bundle or {}).get("local_match") or ""
 
     def refresh(self):
         if self.worker is not None and self.worker.isRunning():
             return
-        self.refresh_btn.setEnabled(False)
-        self.status_rows["talon"].setText("Searching…")
+        self.conn_facts.setText("Looking for Talon…")
         self.worker = DiscoveryWorker()
         self.worker.loaded.connect(self._on_loaded)
         self.worker.start()
 
     def _on_loaded(self, bundle):
-        self.refresh_btn.setEnabled(True)
+        self._raw_bundle = bundle
+        self._apply_bundle()
+
+    def _apply_bundle(self):
+        bundle = integration_sim.apply_to_bundle(self._raw_bundle,
+                                                 self._sim["bundle"])
         self._bundle = bundle
         t = theme.colors()
         result = bundle.get("result")
@@ -281,7 +426,7 @@ class TalonPage(QWidget):
 
         ok, bad = t["accent"], "#e06c75"
         if error or result is None:
-            self.status_rows["talon"].setText(
+            self.conn_facts.setText(
                 f"<span style='color:{bad};'>Discovery failed: {error}</span>")
             return
         if result.talon_found:
@@ -308,29 +453,68 @@ class TalonPage(QWidget):
                               f"{len(sounds)} sounds: {', '.join(sounds)}</span>")
         self.status_rows["model"].setText(model_txt)
 
-        self.open_folder_btn.setEnabled(bool(result.pattern_path_from_talon))
         self._refresh_companion_row()
 
-        # Bootstrap buttons for whatever is missing
         user_dir = result.talon_user_dir
-        self.setup_btn.setVisible(bool(user_dir) and not result.integration_path)
-        patterns_missing = (result.integration_path
-                            and result.intended_pattern_path
-                            and not os.path.isfile(result.intended_pattern_path))
-        self.create_patterns_btn.setVisible(bool(patterns_missing))
+        self._patterns_missing = bool(
+            result.integration_path and result.intended_pattern_path
+            and not os.path.isfile(result.intended_pattern_path))
         if not result.integration_path and user_dir:
             self.status_rows["integration"].setText(
-                f"<span style='color:{bad};'>Not found</span> - use "
-                "'Set up parrot integration' to create one")
-        elif patterns_missing:
+                f"<span style='color:{bad};'>Not found</span>")
+        elif self._patterns_missing:
             self.status_rows["patterns"].setText(
                 f"<span style='color:{bad};'>Missing</span> - the integration "
                 f"expects {result.intended_pattern_path}")
         self._deployed = _copy(result.patterns or {})
         self.working = _copy(result.patterns or {})
-        self.live_view.set_patterns(self._deployed)
+        self.test_view.set_patterns(self._deployed)
+        self.test_view.set_model(self._deployed_model_name())
         self._refresh_variants()
+        self._refresh_connection()
         self._refresh_from_working()
+
+    def _refresh_connection(self):
+        """The one line that used to be five paths and a green tail."""
+        t = theme.colors()
+        result = (self._bundle or {}).get("result")
+        warn, bad = "#d3a45c", "#e06c75"
+        if result is None:
+            return
+        if not result.talon_found:
+            self.conn_facts.setText(
+                f"<span style='color:{warn};'>not found on this machine</span> "
+                f"<span style='color:{t['text_dim']};'>- recording and training "
+                f"work without it</span>")
+            return
+        match = (self._bundle or {}).get("local_match")
+        sounds = (self._bundle or {}).get("model_sounds") or []
+        bits = []
+        if not result.integration_path:
+            bits.append(f"<span style='color:{warn};'>installed, no parrot "
+                        f"integration yet</span>")
+        elif match:
+            bits.append(f"running <b style='color:{t['text']};'>{match}</b>")
+            if sounds:
+                bits.append(f"{len(sounds)} sounds")
+        elif result.model_path_from_talon:
+            bits.append(f"<span style='color:{warn};'>running a model that is "
+                        f"not in your library</span>")
+        else:
+            bits.append("no model deployed")
+        if result.integration_path:
+            count = len(self.working)
+            bits.append(f"{count} pattern{'' if count == 1 else 's'}")
+            # Not only inside the test screen: finding out after clicking.
+            info = self._companion_status()
+            if info is not None and not info["installed"]:
+                bits.append(f"<span style='color:{warn};'>test bridge not "
+                            f"installed</span>")
+        self.conn_facts.setText(
+            f"<span style='color:{t['text_dim']};'>"
+            + " · ".join(bits) + "</span>")
+        self.change_model_btn.setEnabled(bool(result.model_path_from_talon))
+        self.test_btn.setEnabled(bool(result.integration_path))
 
     # ---- companion / live tab ---------------------------------------------
 
@@ -338,52 +522,78 @@ class TalonPage(QWidget):
         result = self._bundle.get("result") if self._bundle else None
         return result.talon_user_dir if result else None
 
+    def _companion_status(self):
+        user_dir = self._talon_user_dir()
+        real = talon_companion.status(user_dir) if user_dir else None
+        return integration_sim.apply_to_bridge(real, self._sim["bridge"])
+
+    def _parts(self):
+        """What this integration is made of, and which pieces exist. Four
+        files, one of which is optional - the old page listed their paths and
+        never said which were missing."""
+        result = (self._bundle or {}).get("result")
+        if result is None:
+            return []
+        info = self._companion_status()
+        return [
+            ("parrot_integration.py", bool(result.integration_path)),
+            ("model", bool(result.model_path_from_talon)),
+            ("patterns.json", bool(result.pattern_path_from_talon)),
+            ("test bridge", bool(info and info["installed"])),
+        ]
+
     def _refresh_companion_row(self):
         t = theme.colors()
-        user_dir = self._talon_user_dir()
-        if not user_dir:
+        info = self._companion_status()
+        if info is None:
             self.status_rows["companion"].setText("-")
-            self.companion_btn.setEnabled(False)
             return
-        info = talon_companion.status(user_dir)
-        self.companion_btn.setEnabled(True)
         if not info["installed"]:
             self.status_rows["companion"].setText(
-                "Not installed - needed for the Live tab")
-            self.companion_btn.setText("Install companion")
+                "Not installed - Test integration needs it")
         elif info["outdated"]:
             self.status_rows["companion"].setText(
                 f"<span style='color:#d3a45c;'>v{info['installed_version']} installed, "
                 f"v{info['available_version']} available</span> - {info['path']}")
-            self.companion_btn.setText("Update companion")
         else:
             self.status_rows["companion"].setText(
                 f"<span style='color:{t['accent']};'>Installed</span> "
                 f"(v{info['installed_version']}) - {info['path']}")
-            self.companion_btn.setText("Reinstall companion")
+
+    def _ensure_bridge(self):
+        """True when testing can go ahead: the bridge is current, or the user
+        just said yes to writing it."""
+        info = self._companion_status()
+        if info is None or (info["installed"] and not info["outdated"]):
+            return True
+        user_dir = self._talon_user_dir()
+        if not user_dir or self._simulating():
+            return False
+        dialog = BridgeDialog(
+            self, info["path"], legacy=talon_companion.legacy_path(user_dir),
+            outdated=info["outdated"],
+            versions=(info["installed_version"], info["available_version"]))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        try:
+            talon_companion.install(
+                user_dir,
+                remove_legacy=bool(talon_companion.legacy_path(user_dir)))
+        except OSError as exc:
+            QMessageBox.warning(self, "Couldn't add the bridge", str(exc))
+            return False
+        self._refresh_companion_row()
+        self._refresh_connection()
+        return True
 
     def _on_install_companion(self):
-        user_dir = self._talon_user_dir()
-        if not user_dir:
-            return
-        dest = talon_companion.installed_path(user_dir)
-        if QMessageBox.question(
-                self, "Install companion",
-                f"Copy parrot_gui_bridge.py to\n{dest}?\n\n"
-                "Talon loads it immediately. It only observes detections and "
-                "publishes them to this app on localhost - remove it any time "
-                "by deleting the file.") != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            talon_companion.install(user_dir)
-        except OSError as exc:
-            QMessageBox.warning(self, "Install failed", str(exc))
-            return
-        self._refresh_companion_row()
+        """From the ... menu, where it is maintenance rather than a step on
+        the way to testing."""
+        self._ensure_bridge()
 
     def _on_setup_integration(self):
         user_dir = self._talon_user_dir()
-        if not user_dir:
+        if not user_dir or self._simulating():
             return
         models = self.app_state.get_model_names()
         if not models:
@@ -397,15 +607,10 @@ class TalonPage(QWidget):
         if not okd:
             return
         model_pkl = os.path.join(CLASSIFIER_FOLDER, f"{name}.pkl")
-        scaffold = QMessageBox.question(
-            self, "Starter patterns",
-            "Create one starter pattern per model sound (strict thresholds, "
-            "tune them in the editor)?\n\nChoosing No starts with an empty "
-            "patterns.json.") == QMessageBox.StandardButton.Yes
-        patterns = {}
-        if scaffold:
-            sounds = talon_discovery.load_model_sounds(model_pkl) or []
-            patterns = talon_setup.scaffold_patterns(sounds)
+        # Always scaffolded. An empty patterns.json is an integration that
+        # does nothing, which reads as a failed setup.
+        sounds = talon_discovery.load_model_sounds(model_pkl) or []
+        patterns = talon_setup.scaffold_patterns(sounds)
         dest = os.path.join(user_dir, talon_setup.DEFAULT_SUBFOLDER)
         if QMessageBox.question(
                 self, "Set up parrot integration",
@@ -422,15 +627,13 @@ class TalonPage(QWidget):
         self.refresh()
 
     def _on_create_patterns(self):
+        """The scaffolder, as the answer to an empty screen rather than as a
+        yes/no inside a yes/no. It writes the file Talon expects, filled."""
         result = self._bundle.get("result") if self._bundle else None
-        if not result or not result.intended_pattern_path:
+        if not result or not result.intended_pattern_path or self._simulating():
             return
         sounds = self._bundle.get("model_sounds") or []
-        scaffold = bool(sounds) and QMessageBox.question(
-            self, "Starter patterns",
-            "Create one starter pattern per model sound (strict thresholds)?"
-            "\n\nChoosing No starts empty.") == QMessageBox.StandardButton.Yes
-        patterns = talon_setup.scaffold_patterns(sounds) if scaffold else {}
+        patterns = talon_setup.scaffold_patterns(sounds)
         try:
             talon_setup.create_patterns_file(result.intended_pattern_path, patterns)
         except (OSError, patterns_store.PatternsError) as exc:
@@ -438,21 +641,20 @@ class TalonPage(QWidget):
             return
         self.refresh()
 
-    def _on_tab_changed(self, index):
-        if self.tabs.widget(index) is not None and index == 1:
-            self.live_view.start()
-        else:
-            self.live_view.stop()
-        if index == 2:
-            self.captures_view.refresh_sessions()
+    def _on_scaffold_into_draft(self):
+        """Same starter set, but into the draft when patterns.json exists and
+        is empty - so it is reviewed before Talon ever sees it."""
+        sounds = (self._bundle or {}).get("model_sounds") or []
+        self.working = talon_setup.scaffold_patterns(sounds)
+        self._refresh_from_working()
 
     def hideEvent(self, event):
-        self.live_view.stop()
+        self.test_view.stop()
         super().hideEvent(event)
 
     def showEvent(self, event):
-        if self.tabs.currentIndex() == 1:
-            self.live_view.start()
+        if self.stack.currentIndex() == 1:
+            self.test_view.start()
         super().showEvent(event)
 
     # ---- working-copy lifecycle ------------------------------------------
@@ -472,55 +674,313 @@ class TalonPage(QWidget):
         warnings = [i for i in issues if i.severity == "warning"]
 
         if not self.working:
-            self.status_rows["health"].setText("-")
+            self.health_label.setText("")
         elif not issues:
-            self.status_rows["health"].setText(
-                f"<span style='color:{ok};'>All good</span> - "
-                f"{len(self.working)} patterns, no issues")
+            self.health_label.setText(
+                f"<span style='color:{ok};'>· no issues</span>")
         else:
             parts = []
             if errors:
                 parts.append(f"<span style='color:{bad};'>{len(errors)} errors</span>")
             if warnings:
                 parts.append(f"<span style='color:#d3a45c;'>{len(warnings)} warnings</span>")
-            self.status_rows["health"].setText(
-                f"{len(self.working)} patterns - " + ", ".join(parts))
+            self.health_label.setText("· " + ", ".join(parts))
 
-        self.patterns_group.setTitle(
-            "Patterns - unsaved changes (Deploy to make live)" if self.dirty
-            else "Patterns")
         editable = self._patterns_path is not None
-        for btn in (self.new_btn, self.edit_btn, self.dup_btn, self.del_btn,
-                    self.raw_btn, self.save_variant_btn, self.snapshots_btn):
-            btn.setEnabled(editable)
-        self.deploy_btn.setEnabled(editable and self.dirty
-                                   and not patterns_schema.has_errors(issues))
+        self.new_btn.setEnabled(editable)
+        self._refresh_draft_banner(issues)
         self._populate_table(self.working, issues)
+        self._refresh_empty_state()
+        self._refresh_connection()
+
+    def _refresh_draft_banner(self, issues):
+        """Counts the changes rather than saying "unsaved": three edits and a
+        new pattern is a different thing to notice than a typo."""
+        if not self.dirty:
+            self.draft_banner.setVisible(False)
+            return
+        diff = patterns_store.diff_patterns(self._deployed, self.working)
+        changes = (len(diff["added"]) + len(diff["removed"])
+                   + len(diff["changed"]))
+        noun = "change" if changes == 1 else "changes"
+        self.draft_label.setText(
+            f"<b>Draft</b> - {changes} {noun}. Talon is still running the "
+            f"deployed set.")
+        blocked = patterns_schema.has_errors(issues)
+        self.deploy_btn.setEnabled(self._patterns_path is not None and not blocked)
+        self.deploy_btn.setToolTip(
+            "Fix the errors first - the integration crashes on them" if blocked
+            else "Write the draft to Talon's patterns.json")
+        self.draft_banner.setVisible(True)
+
+    def _setup_steps(self):
+        """The integration, as the four files it is made of plus the patterns
+        that make it do anything. Every row is a fact on disk, so the checklist
+        cannot claim a step is done when the file is not there."""
+        result = (self._bundle or {}).get("result")
+        sounds = (self._bundle or {}).get("model_sounds") or []
+        starters = len(talon_setup.scaffold_patterns(sounds))
+        model = self._deployed_model_name()
+
+        return [
+            {"key": "talon", "label": "Talon installed",
+             "done": bool(result and result.talon_found),
+             "title": "Talon is not installed here",
+             "body": "Everything else in parrot.py works without it. Install "
+                     "Talon from talonvoice.com, then come back - this page "
+                     "finds it on its own.",
+             "action": None},
+            {"key": "integration", "label": "Parrot integration",
+             "done": bool(result and result.integration_path),
+             "title": "Nothing connects Talon to parrot.py yet",
+             "body": "The integration is a folder in your Talon user "
+                     "directory holding three things: the integration file, "
+                     "one of your trained models, and a patterns.json. This "
+                     "makes all three.",
+             "action": "Set up parrot integration…",
+             "detail": self._integration_tree_html()},
+            {"key": "model", "label": "Model deployed",
+             "done": bool(result and result.model_path_from_talon),
+             "title": "The integration has no model to run",
+             "body": "Talon needs one of your trained models in that folder "
+                     "before it can hear anything.",
+             "action": "Change model…"},
+            {"key": "patterns_file", "label": "patterns.json",
+             "done": bool(result and result.integration_path
+                          and not self._patterns_missing),
+             "title": "No patterns.json yet",
+             "body": "The integration expects one and it is not there. Start "
+                     "from one pattern per sound the model knows, at safe "
+                     "thresholds you tune down later.",
+             "action": f"Create {starters} starter patterns"},
+            {"key": "patterns", "label": "At least one pattern",
+             "done": bool(self.working),
+             "title": f"Talon can hear {model or 'your model'}, but nothing "
+                      f"is mapped to it",
+             "body": "A pattern is a sound plus the rules that decide when it "
+                     "counts. Start from one per sound the model knows, at "
+                     "safe thresholds you tune down later.",
+             "action": f"Create {starters} starter patterns",
+             "note": "Written as a draft. Nothing reaches Talon until you "
+                     "deploy."},
+        ]
+
+    def _integration_tree_html(self):
+        result = (self._bundle or {}).get("result")
+        user_dir = result.talon_user_dir if result else None
+        if not user_dir:
+            return ""
+        folder = os.path.join(user_dir, talon_setup.DEFAULT_SUBFOLDER)
+        t = theme.colors()
+        rows = [f"<span style='color:{t['text_dim']};'>{user_dir}{os.sep}</span>",
+                f"<span style='color:{t['accent']};'>+ "
+                f"{talon_setup.DEFAULT_SUBFOLDER}{os.sep}</span>"
+                f"&nbsp;&nbsp;<span style='color:{t['text_dim']};'>"
+                f"new folder</span>"]
+        for name in ("parrot_integration.py", "model.pkl", "patterns.json"):
+            rows.append(f"&nbsp;&nbsp;&nbsp;&nbsp;"
+                        f"<span style='color:{t['accent']};'>+ {name}</span>")
+        return (f"<div style='font-family: Consolas, monospace; "
+                f"font-size: 12px;'>" + "<br>".join(rows) + "</div>")
+
+    def _on_setup_action(self, key):
+        {"integration": self._on_setup_integration,
+         "model": self._on_change_model,
+         "patterns_file": self._on_create_patterns,
+         "patterns": self._on_scaffold_into_draft}.get(key, lambda: None)()
+
+    def _refresh_empty_state(self):
+        """Setting the integration up and editing its patterns are two jobs,
+        not one screen with holes in it."""
+        steps = self._setup_steps()
+        setting_up = any(not step["done"] for step in steps)
+        self.setup_panel.setVisible(setting_up)
+        self.table.setVisible(not setting_up)
+        self.lint_label.setVisible(not setting_up)
+        self.new_btn.setVisible(not setting_up)
+        self.hint_label.setVisible(not setting_up)
+        self.health_label.setVisible(not setting_up)
+        self.patterns_title.setVisible(not setting_up)
+        if setting_up:
+            self.setup_panel.set_steps(steps)
 
     def _refresh_variants(self):
         current = self.variant_combo.currentText()
         self.variant_combo.clear()
-        names = patterns_store.list_variants()
-        self.variant_combo.addItems(names)
+        self.variant_combo.addItems(patterns_store.list_variants())
         idx = self.variant_combo.findText(current)
         if idx >= 0:
             self.variant_combo.setCurrentIndex(idx)
-        has = bool(names)
-        self.variant_combo.setVisible(True)
-        self.load_variant_btn.setEnabled(has)
 
     def _selected_name(self):
         row = self.table.currentRow()
         if row < 0 or self.table.item(row, 0) is None:
             return None
-        return self.table.item(row, 0).text()
+        return self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
 
-    def _tool_btn(self, layout, label, slot):
-        btn = QPushButton(label)
-        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn.clicked.connect(slot)
-        layout.addWidget(btn)
-        return btn
+    # ---- the ⋯ menu -------------------------------------------------------
+
+    def _build_more_menu(self):
+        """Everything that used to be a button row. Ordered by how often it is
+        wanted, with the two destructive-adjacent ones (bridge, folder) last."""
+        menu = self._more_menu
+        menu.clear()
+        result = (self._bundle or {}).get("result")
+        editable = self._patterns_path is not None
+
+        variants = patterns_store.list_variants()
+        if variants:
+            load = menu.addMenu("Load variant")
+            for name in variants:
+                load.addAction(name,
+                               lambda _c=False, n=name: self._load_variant(n))
+        action = menu.addAction("Save as variant…", self._on_save_variant)
+        action.setEnabled(editable)
+        action = menu.addAction("Snapshots…", self._on_snapshots)
+        action.setEnabled(editable)
+        action = menu.addAction("Edit patterns.json directly…", self._on_raw_json)
+        action.setEnabled(editable)
+        menu.addSeparator()
+
+        if result is not None and result.talon_user_dir:
+            info = self._companion_status()
+            if info is not None:
+                label = ("Install the test bridge" if not info["installed"]
+                         else "Update the test bridge" if info["outdated"]
+                         else "Reinstall the test bridge")
+                menu.addAction(label, self._on_install_companion)
+        if result is not None and not result.integration_path \
+                and result.talon_user_dir:
+            menu.addAction("Set up parrot integration…",
+                           self._on_setup_integration)
+        if self._patterns_missing:
+            menu.addAction("Create patterns.json", self._on_create_patterns)
+        menu.addSeparator()
+        show = menu.addAction("Show file paths")
+        show.setCheckable(True)
+        show.setChecked(self.details_group.isVisible())
+        show.toggled.connect(self.details_group.setVisible)
+        action = menu.addAction("Open Talon folder", self._open_talon_folder)
+        action.setEnabled(bool(result and result.pattern_path_from_talon))
+        menu.addAction("Refresh", self.refresh)
+        if integration_sim.enabled():
+            self._add_sim_menu(menu)
+
+    def _add_sim_menu(self, menu):
+        """PARROT_DEBUG=1 only. Every state this page has is on a machine that
+        does not have the setup working, which is not the machine it gets
+        written on."""
+        menu.addSeparator()
+        sim = menu.addMenu("Simulate")
+        for key, states, label in (
+                ("bundle", integration_sim.STATES, "Setup"),
+                ("bridge", integration_sim.BRIDGE_STATES, "Bridge")):
+            group = sim.addMenu(label)
+            for name, text in states:
+                action = group.addAction(text)
+                action.setCheckable(True)
+                action.setChecked(self._sim[key] == name)
+                action.triggered.connect(
+                    lambda _c=False, k=key, n=name: self._set_sim(k, n))
+        talon = sim.addMenu("Talon")
+        for name, text in integration_sim.TALON_STATES:
+            talon.addAction(
+                text, lambda n=name: self.test_view.simulate_talon(n))
+        sim.addAction("Feed a detection into the test screen",
+                      lambda: self.test_view.simulate_frames())
+
+    def _set_sim(self, key, name):
+        self._sim[key] = name
+        self._apply_bundle()
+        self._refresh_sim_chip()
+
+    def _simulating(self):
+        """True while any state on this page is faked. Every action that
+        writes to disk checks it: a simulated path is a real path with a
+        pretend fact attached, and creating files at one is how a dev tool
+        breaks a working Talon setup."""
+        if not any(v != "off" for v in self._sim.values()):
+            return False
+        QMessageBox.information(
+            self, "Simulated state",
+            "This page is showing a simulated state, so nothing is written.\n\n"
+            "Turn the simulation off in ⋯ > Simulate to use this for real.")
+        return True
+
+    def _refresh_sim_chip(self):
+        on = [v for v in self._sim.values() if v != "off"]
+        self.sim_chip.setVisible(bool(on))
+        self.sim_chip.setText("simulated: " + ", ".join(on))
+
+    def _load_variant(self, name):
+        idx = self.variant_combo.findText(name)
+        if idx >= 0:
+            self.variant_combo.setCurrentIndex(idx)
+        self._on_load_variant()
+
+    def _on_table_menu(self, pos):
+        item = self.table.itemAt(pos)
+        if item is None:
+            return
+        self.table.selectRow(item.row())
+        menu = QMenu(self)
+        menu.addAction("Edit…", self._on_edit)
+        menu.addAction("Duplicate", self._on_duplicate)
+        menu.addSeparator()
+        menu.addAction("Delete pattern", self._on_delete)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _on_discard_draft(self):
+        if QMessageBox.question(
+                self, "Discard draft",
+                "Throw away the changes and go back to what Talon is running?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        self.working = _copy(self._deployed)
+        self._refresh_from_working()
+
+    def _on_change_model(self):
+        """Swap the model Talon runs, without rebuilding the integration."""
+        result = (self._bundle or {}).get("result")
+        if result is None or not result.model_path_from_talon or self._simulating():
+            return
+        models = self.app_state.get_model_names()
+        if not models:
+            QMessageBox.information(self, "No models", "Train a model first.")
+            return
+        current = self._deployed_model_name()
+        index = models.index(current) if current in models else 0
+        name, okd = QInputDialog.getItem(
+            self, "Change model", "Model for Talon to run:", models, index, False)
+        if not okd or name == current:
+            return
+        source = os.path.join(CLASSIFIER_FOLDER, f"{name}.pkl")
+        deployed_sounds = talon_discovery.load_model_sounds(source) or []
+        missing = sorted({s for cfg in self.working.values()
+                          if isinstance(cfg, dict)
+                          for s in (cfg.get("sounds") or [])}
+                         - set(deployed_sounds))
+        warning = ""
+        if missing:
+            warning = ("\n\nPatterns listen for sounds this model does not "
+                       f"know: {', '.join(missing[:6])}"
+                       f"{'…' if len(missing) > 6 else ''}. They will never "
+                       "fire until you change them.")
+        if QMessageBox.question(
+                self, "Change model",
+                f"Replace the model at\n{result.model_path_from_talon}\n"
+                f"with '{name}'?{warning}\n\n"
+                "Talon reads the model when the integration loads, so this "
+                "touches the integration file to make it reload."
+                ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            talon_setup.deploy_model(source, result.model_path_from_talon,
+                                     result.integration_path)
+        except OSError as exc:
+            QMessageBox.warning(self, "Couldn't change the model", str(exc))
+            return
+        self.refresh()
 
     # ---- pattern editing --------------------------------------------------
 
@@ -706,7 +1166,7 @@ class TalonPage(QWidget):
 
     def _on_deploy(self):
         path = self._patterns_path
-        if not path:
+        if not path or self._simulating():
             return
         diff = patterns_store.diff_patterns(self._deployed, self.working)
         lines = []
@@ -729,7 +1189,7 @@ class TalonPage(QWidget):
             QMessageBox.warning(self, "Deploy failed", str(exc))
             return
         self._deployed = _copy(self.working)
-        self.live_view.set_patterns(self._deployed)
+        self.test_view.set_patterns(self._deployed)
         self._refresh_from_working()
         QMessageBox.information(
             self, "Deployed",
@@ -775,14 +1235,25 @@ class TalonPage(QWidget):
             self._refresh_from_working()
 
     def _populate_table(self, patterns, issues):
+        """Pattern, what it listens for, what it takes to fire. The colour
+        square is the same one the test view uses, so a row and a bar are
+        recognisably the same pattern.
+
+        Deployed values, and the draft's on top of them: a changed number reads
+        `0.99 → 0.94` in the row itself rather than only in the deploy dialog.
+        """
         t = theme.colors()
         by_pattern = {}
         for issue in issues:
             by_pattern.setdefault(issue.pattern, []).append(issue)
+        colors = pattern_colors.colors_for(patterns)
+        model_sounds = (self._bundle or {}).get("model_sounds") or []
 
         self.table.setRowCount(len(patterns))
         for row, (name, pattern) in enumerate(patterns.items()):
             pattern = pattern if isinstance(pattern, dict) else {}
+            was = self._deployed.get(name)
+            was = was if isinstance(was, dict) else {}
             sounds = pattern.get("sounds")
             throttle = pattern.get("throttle") or {}
             grace_bits = []
@@ -790,19 +1261,40 @@ class TalonPage(QWidget):
                 grace_bits.append(f"{pattern['graceperiod']}s")
             if pattern.get("grace_threshold"):
                 grace_bits.append(_fmt_threshold(pattern["grace_threshold"]))
+            fires = _fmt_threshold(pattern.get("threshold"),
+                                   was.get("threshold") if was else None)
+            if pattern.get("detect_after"):
+                fires += f"   after {pattern['detect_after']}s"
             cells = [
-                name,
+                f"■  {name}" if name in self._deployed else f"■  {name}   new",
                 ", ".join(sounds) if isinstance(sounds, list) else "",
-                _fmt_threshold(pattern.get("threshold")),
+                fires,
                 "  ".join(grace_bits),
+                # Count, list on hover. Spelled out it is the widest thing
+                # on the page and says less.
                 str(len(throttle)) if throttle else "",
-                str(pattern.get("detect_after", "")),
             ]
             for col, textval in enumerate(cells):
                 item = QTableWidgetItem(textval)
+                if col == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, name)
+                    item.setForeground(QColor(colors.get(name, "#ffffff")))
+                    if name not in self._deployed:
+                        item.setToolTip("not deployed yet")
+                if col == 1 and isinstance(sounds, list):
+                    unknown = [s for s in sounds if model_sounds
+                               and s not in model_sounds]
+                    if unknown:
+                        item.setForeground(QColor("#e06c75"))
+                        item.setToolTip(
+                            f"the deployed model does not know "
+                            f"{', '.join(unknown)}")
+                if col in (2, 3, 4):
+                    item.setForeground(QColor(t["text_dim"]))
                 if col == 4 and throttle:
-                    item.setToolTip("\n".join(
-                        f"{k}: {v}s" for k, v in throttle.items()))
+                    item.setToolTip("\n".join(f"{k}: {v}s"
+                                              for k, v in throttle.items()))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
 
             pattern_issues = by_pattern.get(name, [])
@@ -817,8 +1309,8 @@ class TalonPage(QWidget):
             if pattern_issues:
                 issue_item.setToolTip("\n".join(str(i) for i in pattern_issues))
                 issue_item.setForeground(
-                    Qt.GlobalColor.red if n_err else Qt.GlobalColor.darkYellow)
-            self.table.setItem(row, 6, issue_item)
+                    QColor("#e06c75") if n_err else QColor("#d3a45c"))
+            self.table.setItem(row, 5, issue_item)
 
         file_level = by_pattern.get("", [])
         listed = file_level + [i for i in issues if i.severity == "error" and i.pattern]
