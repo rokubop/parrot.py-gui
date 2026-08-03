@@ -21,11 +21,9 @@ WINNER_THRESHOLD = 0.5
 # dBFS is bounded below by the bit depth (16-bit silence is -96), so the low end
 # of the slider is "let everything through" rather than an arbitrary floor.
 QUIET_OFF = -96
-# On by default: the model answers with one of its sounds on every frame, so an
-# ungated dialog shows bars twitching at room noise the whole time it is open,
-# and the reading you want - what your sound scores - is the one moment the
-# bars are not moving anyway. Same number the Edit view's detection slider
-# starts at, so the two screens do not disagree about what counts as quiet.
+# On by default: the model answers on every frame, so an ungated dialog twitches
+# at room noise the whole time. Same number the Edit view's detection slider
+# starts at.
 QUIET_DEFAULT = -40
 
 
