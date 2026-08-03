@@ -42,7 +42,20 @@ class ProfileError(Exception):
 
 
 def debug_enabled():
-    return bool(os.environ.get("PARROT_DEBUG"))
+    """On in a source checkout, off in an installed build.
+
+    Tying it to the env var alone meant setting it on every launch, and
+    "always on because we haven't shipped" only stays true until we ship - a
+    debug menu reaching a real user is then one forgotten flag away.
+
+    The signal is the one DATA_ROOT already uses: a ./data dir beside the code
+    means a checkout. PARROT_DEBUG wins either way, so `PARROT_DEBUG=0` shows
+    a checkout exactly what a shipped build looks like.
+    """
+    override = os.environ.get("PARROT_DEBUG")
+    if override is not None:
+        return override.strip().lower() not in ("", "0", "false", "no")
+    return not getattr(sys, "frozen", False) and DATA_ROOT == ""
 
 
 def current_profile():
