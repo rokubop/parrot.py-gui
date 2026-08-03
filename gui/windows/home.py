@@ -63,22 +63,25 @@ class _StepCard(QFrame):
         v.setContentsMargins(18, 18, 18, 16)
         v.setSpacing(6)
 
+        # Number and title on one line: "1 Record sounds" is one heading, and
+        # a circle alone on its own row pushed the status line down a step.
         self.bubble = QLabel(str(number))
         self.bubble.setObjectName("stepBubble")
-        self.bubble.setFixedSize(44, 44)
+        self.bubble.setFixedSize(36, 36)
         self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bubble_row = QHBoxLayout()
+        bubble_row.setSpacing(10)
         bubble_row.addWidget(self.bubble)
-        bubble_row.addStretch()
+        self.number = number
+        self.title = QLabel(title)
+        self.title.setWordWrap(True)
+        bubble_row.addWidget(self.title, 1,
+                             Qt.AlignmentFlag.AlignVCenter)
         self.help_btn = QPushButton("?  Help")
         self.help_btn.setFlat(True)
         self.help_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        bubble_row.addWidget(self.help_btn, alignment=Qt.AlignmentFlag.AlignTop)
+        bubble_row.addWidget(self.help_btn, 0, Qt.AlignmentFlag.AlignTop)
         v.addLayout(bubble_row)
-
-        self.number = number
-        self.title = QLabel(title)
-        v.addWidget(self.title)
         # No blurb: the title says what the step is and the status line below
         # says where you actually stand. Anything longer belongs behind ? Help.
         self.status = QLabel("")
@@ -103,8 +106,8 @@ class _StepCard(QFrame):
         bubble_border = t["accent"] if (done or current) else t["border"]
         self.bubble.setStyleSheet(
             f"QLabel#stepBubble {{ background-color: {bubble_bg}; color: {bubble_fg}; "
-            f"border: 2px solid {bubble_border}; border-radius: 22px; "
-            f"font-size: 18px; font-weight: bold; }}")
+            f"border: 2px solid {bubble_border}; border-radius: 18px; "
+            f"font-size: 16px; font-weight: bold; }}")
         border = t["accent"] if current else t["border"]
         self.setStyleSheet(
             f"QFrame#stepCard {{ background-color: {t['card']}; "
