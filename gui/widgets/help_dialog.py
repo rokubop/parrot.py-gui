@@ -141,6 +141,10 @@ CONNECT_ROWS = (
              "sound to an action."),
     ("Patterns", "Each trigger, and the sound that fires it, lives in "
                  "patterns.json. Edit and deploy from the Integrations tab."),
+    ("Throttle", "Detection runs 60 times a second. A pattern's throttle on "
+                 "itself is how long before it fires again, so one utterance "
+                 "is one action. On another pattern, it silences that one "
+                 "instead."),
     ("Setup", "The Integrations tab finds your Talon install and can "
               "bootstrap the parrot integration from nothing."),
     ("Where", "Integrations tab."),

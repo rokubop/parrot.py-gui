@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QComboBox, QMessageBox, QInputDialog, QDialog,
     QPlainTextEdit, QListWidget, QListWidgetItem, QStackedWidget, QMenu,
-    QToolButton
+    QToolButton, QSizePolicy
 )
 
 from gui import theme
@@ -30,6 +30,7 @@ from gui.services import (talon_discovery, patterns_schema, patterns_store,
                           talon_companion, talon_setup, library_ops,
                           pattern_colors, integration_sim)
 from gui.widgets.pattern_edit_dialog import PatternEditDialog
+from gui.widgets.pattern_card import PatternCard, PatternCardGrid
 from gui.widgets.bridge_dialog import BridgeDialog
 from gui.widgets.setup_panel import SetupPanel
 from gui.widgets import help_dialog
@@ -105,6 +106,9 @@ class TalonPage(QWidget):
         self._patterns_missing = False
         self._raw_bundle = None
         self._sim = {"bundle": "off", "bridge": "off"}
+        # Two views of one selection, and only one of them is a table.
+        self._selected = None
+        self._view = "cards"
         self._setup_ui()
         self.refresh()
 
@@ -310,6 +314,7 @@ class TalonPage(QWidget):
 
         head = QHBoxLayout()
         self.patterns_title = QLabel("Patterns")
+        self.patterns_title.setTextFormat(Qt.TextFormat.RichText)
         self.patterns_title.setStyleSheet(
             f"font-size: 14px; font-weight: bold; color: {t['text_bright']};")
         head.addWidget(self.patterns_title)
@@ -320,31 +325,22 @@ class TalonPage(QWidget):
         self.hint_label = QLabel("double-click to edit · right-click for more")
         self.hint_label.setStyleSheet(f"color: {t['text_dim']};")
         head.addWidget(self.hint_label)
+        head.addWidget(self._build_view_toggle())
         self.new_btn = QPushButton("+ New pattern")
         self.new_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.new_btn.clicked.connect(self._on_new)
         head.addWidget(self.new_btn)
         v.addLayout(head)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(
-            ["Pattern", "Listens for", "Fires when", "Grace", "Throttles",
-             "Issues"])
-        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._on_table_menu)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.setMinimumHeight(300)
-        self.table.doubleClicked.connect(lambda _ix: self._on_edit())
-        v.addWidget(self.table, 1)
+        # Cards group a pattern into one block. The table is the one that
+        # reads down a column, for "which of these is the odd one out".
+        self.card_grid = PatternCardGrid()
+        self.table = self._build_table()
+        self.views = QStackedWidget()
+        self.views.addWidget(self.card_grid)
+        self.views.addWidget(self.table)
+        v.addWidget(self.views, 1)
+        self._set_view(self._view)
 
         self.lint_label = QLabel("")
         self.lint_label.setWordWrap(True)
@@ -361,6 +357,69 @@ class TalonPage(QWidget):
         self.setup_panel.setVisible(False)
         v.addWidget(self.setup_panel)
         return wrap
+
+    def _build_view_toggle(self):
+        t = theme.colors()
+        wrap = QWidget()
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(0, 0, 8, 0)
+        row.setSpacing(0)
+        self.view_buttons = {}
+        for key, label in (("cards", "Cards"), ("table", "Table")):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setChecked(key == self._view)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setObjectName(f"view{key.title()}")
+            # Scoped per qt-traps: an unscoped sheet on the wrap kills :checked.
+            button.setStyleSheet(
+                f"QPushButton#view{key.title()} {{ padding: 4px 12px; "
+                f"border: 1px solid {t['border']}; background: transparent; "
+                f"color: {t['text_dim']}; }} "
+                f"QPushButton#view{key.title()}:checked {{ "
+                f"background-color: {t['button']}; color: {t['text_bright']}; }}")
+            button.clicked.connect(lambda _c=False, k=key: self._set_view(k))
+            row.addWidget(button)
+            self.view_buttons[key] = button
+        self.view_toggle = wrap
+        return wrap
+
+    def _set_view(self, key):
+        self._view = key
+        for name, button in self.view_buttons.items():
+            button.setChecked(name == key)
+        index = 0 if key == "cards" else 1
+        self.views.setCurrentIndex(index)
+        # A QStackedWidget takes every page's size hint, so the card stack
+        # would reserve its height under the table. Only the shown page counts.
+        for i in range(self.views.count()):
+            page = self.views.widget(i)
+            policy = (QSizePolicy.Policy.Preferred if i == index
+                      else QSizePolicy.Policy.Ignored)
+            page.setSizePolicy(policy, policy)
+        self.views.widget(index).adjustSize()
+
+    def _build_table(self):
+        table = QTableWidget(0, 6)
+        table.setHorizontalHeaderLabels(
+            ["Pattern", "Listens for", "Fires when", "Throttle", "Grace",
+             "Issues"])
+        table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        table.customContextMenuRequested.connect(self._on_table_menu)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        table.setMinimumHeight(300)
+        table.doubleClicked.connect(lambda _ix: self._on_edit())
+        table.itemSelectionChanged.connect(self._on_table_selection)
+        return table
 
     def _build_hidden_controls(self):
         """Controls the ⋯ menu drives. They are widgets rather than plain
@@ -673,6 +732,11 @@ class TalonPage(QWidget):
         errors = [i for i in issues if i.severity == "error"]
         warnings = [i for i in issues if i.severity == "warning"]
 
+        # Card view has no last row number to read the count off.
+        self.patterns_title.setText(
+            f"Patterns <span style='color:{t['text_dim']}; "
+            f"font-weight: normal;'>({len(self.working)})</span>")
+
         if not self.working:
             self.health_label.setText("")
         elif not issues:
@@ -689,7 +753,15 @@ class TalonPage(QWidget):
         editable = self._patterns_path is not None
         self.new_btn.setEnabled(editable)
         self._refresh_draft_banner(issues)
+        # qt-traps: filling rows moves the current cell and raises the same
+        # signal the user does, overwriting the selection restored below.
+        self.table.blockSignals(True)
         self._populate_table(self.working, issues)
+        self.table.blockSignals(False)
+        self._populate_cards(self.working, issues)
+        if self._selected not in self.working:
+            self._selected = None
+        self._select(self._selected)
         self._refresh_empty_state()
         self._refresh_connection()
 
@@ -795,9 +867,10 @@ class TalonPage(QWidget):
         steps = self._setup_steps()
         setting_up = any(not step["done"] for step in steps)
         self.setup_panel.setVisible(setting_up)
-        self.table.setVisible(not setting_up)
+        self.views.setVisible(not setting_up)
         self.lint_label.setVisible(not setting_up)
         self.new_btn.setVisible(not setting_up)
+        self.view_toggle.setVisible(not setting_up)
         self.hint_label.setVisible(not setting_up)
         self.health_label.setVisible(not setting_up)
         self.patterns_title.setVisible(not setting_up)
@@ -813,10 +886,25 @@ class TalonPage(QWidget):
             self.variant_combo.setCurrentIndex(idx)
 
     def _selected_name(self):
+        return self._selected if self._selected in self.working else None
+
+    def _on_table_selection(self):
         row = self.table.currentRow()
-        if row < 0 or self.table.item(row, 0) is None:
-            return None
-        return self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        item = self.table.item(row, 0) if row >= 0 else None
+        if item is not None:
+            self._select(item.data(Qt.ItemDataRole.UserRole))
+
+    def _select(self, name):
+        """One selection, shown in whichever view is up."""
+        self._selected = name
+        for card in self.card_grid.cards():
+            card.set_selected(card.name == name)
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is not None and item.data(Qt.ItemDataRole.UserRole) == name:
+                if self.table.currentRow() != row:
+                    self.table.selectRow(row)
+                break
 
     # ---- the ⋯ menu -------------------------------------------------------
 
@@ -923,12 +1011,20 @@ class TalonPage(QWidget):
         if item is None:
             return
         self.table.selectRow(item.row())
+        self._pattern_menu(self.table.viewport().mapToGlobal(pos))
+
+    def _pattern_menu(self, global_pos):
+        """Same three actions from a row or a card.
+
+        Selection has already moved to the pattern under the cursor, so the
+        menu and the thing behind it match.
+        """
         menu = QMenu(self)
         menu.addAction("Edit…", self._on_edit)
         menu.addAction("Duplicate", self._on_duplicate)
         menu.addSeparator()
         menu.addAction("Delete pattern", self._on_delete)
-        menu.exec(self.table.viewport().mapToGlobal(pos))
+        menu.exec(global_pos)
 
     def _on_discard_draft(self):
         if QMessageBox.question(
@@ -1265,14 +1361,20 @@ class TalonPage(QWidget):
                                    was.get("threshold") if was else None)
             if pattern.get("detect_after"):
                 fires += f"   after {pattern['detect_after']}s"
+            # Spelled out, not counted: a count reads the same for a 0.12s
+            # throttle on itself and six patterns muted at 0.2s. Own name
+            # first, `none` when missing - the detector fills it with 0.
+            throttles = ([(name, throttle.get(name, "none"))] if throttle else
+                         []) + [(target, seconds)
+                                for target, seconds in throttle.items()
+                                if target != name]
             cells = [
                 f"■  {name}" if name in self._deployed else f"■  {name}   new",
                 ", ".join(sounds) if isinstance(sounds, list) else "",
                 fires,
+                # Throttle before grace: grace is the column that sits empty.
+                "  ".join(f"{target} {seconds}" for target, seconds in throttles),
                 "  ".join(grace_bits),
-                # Count, list on hover. Spelled out it is the widest thing
-                # on the page and says less.
-                str(len(throttle)) if throttle else "",
             ]
             for col, textval in enumerate(cells):
                 item = QTableWidgetItem(textval)
@@ -1291,10 +1393,14 @@ class TalonPage(QWidget):
                             f"{', '.join(unknown)}")
                 if col in (2, 3, 4):
                     item.setForeground(QColor(t["text_dim"]))
-                if col == 4 and throttle:
-                    item.setToolTip("\n".join(f"{k}: {v}s"
-                                              for k, v in throttle.items()))
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 3 and throttles:
+                    # The column stretches, a seven-entry list still outruns it.
+                    tip = "\n".join(f"{target}: {seconds}"
+                                    for target, seconds in throttles)
+                    if name not in throttle:
+                        tip += (f"\n\nno throttle on itself, so '{name}' fires "
+                                f"on every frame that passes its threshold")
+                    item.setToolTip(tip)
                 self.table.setItem(row, col, item)
 
             pattern_issues = by_pattern.get(name, [])
@@ -1315,6 +1421,29 @@ class TalonPage(QWidget):
         file_level = by_pattern.get("", [])
         listed = file_level + [i for i in issues if i.severity == "error" and i.pattern]
         self.lint_label.setText("\n".join(str(i) for i in listed[:10]))
+
+    def _populate_cards(self, patterns, issues):
+        """Rebuilt whole, not diffed: cheaper than tracking what a rename hit."""
+        by_pattern = {}
+        for issue in issues:
+            by_pattern.setdefault(issue.pattern, []).append(issue)
+        colors = pattern_colors.colors_for(patterns)
+        model_sounds = (self._bundle or {}).get("model_sounds") or []
+
+        cards = []
+        for name, pattern in patterns.items():
+            card = PatternCard(
+                name, pattern, colors,
+                deployed=self._deployed.get(name),
+                issues=by_pattern.get(name, []),
+                model_sounds=model_sounds,
+                is_new=name not in self._deployed)
+            card.clicked.connect(self._select)
+            card.activated.connect(lambda _n: self._on_edit())
+            card.menu_requested.connect(
+                lambda _n, pos: self._pattern_menu(pos))
+            cards.append(card)
+        self.card_grid.set_cards(cards)
 
     # ---- actions ---------------------------------------------------------
 
