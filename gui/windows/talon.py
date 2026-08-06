@@ -32,6 +32,7 @@ from gui.services import (talon_discovery, patterns_schema, patterns_store,
 from gui.widgets.pattern_edit_dialog import PatternEditDialog
 from gui.widgets.pattern_card import PatternCard, PatternCardGrid
 from gui.widgets.bridge_dialog import BridgeDialog
+from gui.widgets.change_model_dialog import ChangeModelDialog
 from gui.widgets.setup_panel import SetupPanel
 from gui.widgets import help_dialog
 from gui.windows.talon_test import TalonTestView
@@ -200,8 +201,8 @@ class TalonPage(QWidget):
         # simulation. Only ever visible with PARROT_DEBUG=1.
         self.sim_chip = QLabel("")
         self.sim_chip.setStyleSheet(
-            "color: #23272e; background-color: #d3a45c; border-radius: 11px; "
-            "padding: 3px 12px; font-weight: bold;")
+            f"color: {t['window']}; background-color: {t['warn']}; "
+            f"border-radius: 11px; padding: 3px 12px; font-weight: bold;")
         self.sim_chip.setVisible(False)
         row.addWidget(self.sim_chip)
 
@@ -374,8 +375,8 @@ class TalonPage(QWidget):
             # Scoped per qt-traps: an unscoped sheet on the wrap kills :checked.
             button.setStyleSheet(
                 f"QPushButton#view{key.title()} {{ padding: 4px 12px; "
-                f"border: 1px solid {t['border']}; background: transparent; "
-                f"color: {t['text_dim']}; }} "
+                f"border: 1px solid {t['control_border']}; "
+                f"background: transparent; color: {t['text_dim']}; }} "
                 f"QPushButton#view{key.title()}:checked {{ "
                 f"background-color: {t['button']}; color: {t['text_bright']}; }}")
             button.clicked.connect(lambda _c=False, k=key: self._set_view(k))
@@ -483,7 +484,7 @@ class TalonPage(QWidget):
         result = bundle.get("result")
         error = bundle.get("error")
 
-        ok, bad = t["accent"], "#e06c75"
+        ok, bad = t["ok"], t["bad"]
         if error or result is None:
             self.conn_facts.setText(
                 f"<span style='color:{bad};'>Discovery failed: {error}</span>")
@@ -537,7 +538,7 @@ class TalonPage(QWidget):
         """The one line that used to be five paths and a green tail."""
         t = theme.colors()
         result = (self._bundle or {}).get("result")
-        warn, bad = "#d3a45c", "#e06c75"
+        warn, bad = t["warn"], t["bad"]
         if result is None:
             return
         if not result.talon_found:
@@ -612,7 +613,7 @@ class TalonPage(QWidget):
                 "Not installed - Test integration needs it")
         elif info["outdated"]:
             self.status_rows["companion"].setText(
-                f"<span style='color:#d3a45c;'>v{info['installed_version']} installed, "
+                f"<span style='color:{t['warn']};'>v{info['installed_version']} installed, "
                 f"v{info['available_version']} available</span> - {info['path']}")
         else:
             self.status_rows["companion"].setText(
@@ -727,7 +728,7 @@ class TalonPage(QWidget):
 
     def _refresh_from_working(self):
         t = theme.colors()
-        ok, bad = t["accent"], "#e06c75"
+        ok, bad, warn = t["ok"], t["bad"], t["warn"]
         issues = self._validate_working()
         errors = [i for i in issues if i.severity == "error"]
         warnings = [i for i in issues if i.severity == "warning"]
@@ -747,7 +748,7 @@ class TalonPage(QWidget):
             if errors:
                 parts.append(f"<span style='color:{bad};'>{len(errors)} errors</span>")
             if warnings:
-                parts.append(f"<span style='color:#d3a45c;'>{len(warnings)} warnings</span>")
+                parts.append(f"<span style='color:{warn};'>{len(warnings)} warnings</span>")
             self.health_label.setText("· " + ", ".join(parts))
 
         editable = self._patterns_path is not None
@@ -1036,40 +1037,33 @@ class TalonPage(QWidget):
         self._refresh_from_working()
 
     def _on_change_model(self):
-        """Swap the model Talon runs, without rebuilding the integration."""
+        """Swap the model Talon runs, without rebuilding the integration.
+
+        The picker carries the path it writes and what each model knows, so it
+        is the decision - no confirm behind it. The one thing it cannot show is
+        what the swap destroys: a deployed model with no copy in the library
+        exists only at that path, and this is the last chance to say so.
+        """
         result = (self._bundle or {}).get("result")
         if result is None or not result.model_path_from_talon or self._simulating():
             return
-        models = self.app_state.get_model_names()
-        if not models:
+        if not self.app_state.get_model_names():
             QMessageBox.information(self, "No models", "Train a model first.")
             return
         current = self._deployed_model_name()
-        index = models.index(current) if current in models else 0
-        name, okd = QInputDialog.getItem(
-            self, "Change model", "Model for Talon to run:", models, index, False)
-        if not okd or name == current:
+        dialog = ChangeModelDialog(self, self.app_state, current,
+                                   result.model_path_from_talon, self.working)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.chosen:
             return
-        source = os.path.join(CLASSIFIER_FOLDER, f"{name}.pkl")
-        deployed_sounds = talon_discovery.load_model_sounds(source) or []
-        missing = sorted({s for cfg in self.working.values()
-                          if isinstance(cfg, dict)
-                          for s in (cfg.get("sounds") or [])}
-                         - set(deployed_sounds))
-        warning = ""
-        if missing:
-            warning = ("\n\nPatterns listen for sounds this model does not "
-                       f"know: {', '.join(missing[:6])}"
-                       f"{'…' if len(missing) > 6 else ''}. They will never "
-                       "fire until you change them.")
-        if QMessageBox.question(
+        name = dialog.chosen
+        if not current and QMessageBox.question(
                 self, "Change model",
-                f"Replace the model at\n{result.model_path_from_talon}\n"
-                f"with '{name}'?{warning}\n\n"
-                "Talon reads the model when the integration loads, so this "
-                "touches the integration file to make it reload."
+                f"The model Talon is running now is not in your library, so "
+                f"replacing it is the end of that copy.\n\n"
+                f"Overwrite {result.model_path_from_talon} with '{name}'?"
                 ) != QMessageBox.StandardButton.Yes:
             return
+        source = os.path.join(CLASSIFIER_FOLDER, f"{name}.pkl")
         try:
             talon_setup.deploy_model(source, result.model_path_from_talon,
                                      result.integration_path)
@@ -1387,7 +1381,7 @@ class TalonPage(QWidget):
                     unknown = [s for s in sounds if model_sounds
                                and s not in model_sounds]
                     if unknown:
-                        item.setForeground(QColor("#e06c75"))
+                        item.setForeground(QColor(t["bad"]))
                         item.setToolTip(
                             f"the deployed model does not know "
                             f"{', '.join(unknown)}")
@@ -1415,7 +1409,7 @@ class TalonPage(QWidget):
             if pattern_issues:
                 issue_item.setToolTip("\n".join(str(i) for i in pattern_issues))
                 issue_item.setForeground(
-                    QColor("#e06c75") if n_err else QColor("#d3a45c"))
+                    QColor(t["bad"]) if n_err else QColor(t["warn"]))
             self.table.setItem(row, 5, issue_item)
 
         file_level = by_pattern.get("", [])

@@ -239,7 +239,32 @@ def _facts_sections(meta, sound_count=None):
     return [("Model info", now), ("Training data", how), (heading, each)]
 
 
-def _label_scores(meta):
+def facts_html(meta, sound_count=None):
+    """The sections as one table, not one table per section: both columns then
+    line up down the whole card instead of per heading.
+
+    Public because the Integrations tab's model picker shows the same facts -
+    choosing which model Talon runs asks the same questions as reading one.
+    """
+    t = theme.colors()
+    parts = []
+    for heading, facts in _facts_sections(meta, sound_count):
+        if not facts:
+            continue
+        if parts:
+            parts.append("<tr><td colspan='2' style='font-size:7px;'>"
+                         "&nbsp;</td></tr>")
+        parts.append(
+            f"<tr><td colspan='2' style='color:{t['text']}; "
+            f"font-size:13px;'><b>{heading}</b></td></tr>")
+        parts.extend(
+            f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
+            f"{label}</td><td style='color:{t['text']};'>{value}</td></tr>"
+            for label, value in facts)
+    return "<table cellspacing='0' cellpadding='3'>" + "".join(parts) + "</table>"
+
+
+def label_scores(meta):
     """Per sound, what each net scored on the held-back split: {label: (text,
     worst)}. Sorted on the worst net, so ordering answers "weakest sound".
 
@@ -259,7 +284,7 @@ def _label_scores(meta):
     return out
 
 
-class _SoundItem(QTreeWidgetItem):
+class SoundItem(QTreeWidgetItem):
     """Sorts the accuracy column by number. As text, 100% sorts below 97%."""
 
     def __lt__(self, other):
@@ -517,7 +542,7 @@ class ModelsPage(QWidget):
         tree.setSortingEnabled(False)
         tree.clear()
         for label, score, worst, note, colour in rows:
-            item = _SoundItem([label, score, note])
+            item = SoundItem([label, score, note])
             item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight
                                   | Qt.AlignmentFlag.AlignVCenter)
             if worst is not None:
@@ -870,7 +895,7 @@ class ModelsPage(QWidget):
 
         mtime = self._model_mtime()
         recorded = self.app_state.get_sound_labels()
-        per_sound = _label_scores(meta)
+        per_sound = label_scores(meta)
         rows = []
         stale = []
         for label in labels:
@@ -895,25 +920,7 @@ class ModelsPage(QWidget):
         # A class, not a sound anyone made. Counting it overstates by one.
         spoken = [l for l in labels if l != BACKGROUND_LABEL]
         plus = f" + {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
-        # One table rather than one per section, so both sections' labels and
-        # values stay on the same two columns.
-        parts = []
-        for heading, facts in _facts_sections(meta, f"{len(spoken)}{plus}"):
-            if not facts:
-                continue
-            if parts:
-                parts.append("<tr><td colspan='2' style='font-size:7px;'>"
-                             "&nbsp;</td></tr>")
-            parts.append(
-                f"<tr><td colspan='2' style='color:{t['text']}; "
-                f"font-size:13px;'><b>{heading}</b></td></tr>")
-            parts.extend(
-                f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
-                f"{label}</td><td style='color:{t['text']};'>{value}</td></tr>"
-                for label, value in facts)
-
-        html = ("<table cellspacing='0' cellpadding='3'>" + "".join(parts)
-                + "</table>")
+        html = facts_html(meta, f"{len(spoken)}{plus}")
         return (html, stale, rows, [l for l in recorded if l not in labels])
 
     def _start_inspect(self, name):
