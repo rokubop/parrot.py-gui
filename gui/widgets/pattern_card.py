@@ -9,14 +9,15 @@ carry six or seven throttles and two threshold rules.
 Struck-through target = not a pattern, so the integration ignores it. Struck
 rather than red: the palette has reds in it.
 """
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSizePolicy,
-    QWidget)
+    QFrame, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
+    QSizePolicy, QWidget)
 
 from gui import theme
 from gui.services import pattern_colors
+from gui.widgets.session_card import _dots_icon
 
 # Throttle and grace match talon_test.py, so a colour means one thing in both.
 THROTTLE_COLOR = "#d3a45c"
@@ -131,6 +132,7 @@ class _ElidedLabel(QLabel):
 
 class PatternCard(QFrame):
     """Click selects, double-click edits, right-click is the row menu.
+    The header's Edit and dots buttons are the same two, visible.
 
     Same three the table answers to: the view changes how a pattern looks,
     not what it does.
@@ -284,6 +286,21 @@ class PatternCard(QFrame):
                 f"color: {BAD_COLOR if errors else '#d3a45c'}; font-size: 11px;")
             badge.setToolTip("\n".join(str(i) for i in issues))
             row.addWidget(badge)
+
+        # Same pair the sound cards carry: Edit direct, the rest behind dots.
+        edit_btn = QPushButton("Edit")
+        edit_btn.setToolTip("Edit this pattern (or double-click the card)")
+        edit_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        edit_btn.clicked.connect(self._on_edit_clicked)
+        row.addWidget(edit_btn)
+        self.menu_btn = QPushButton()
+        self.menu_btn.setIcon(_dots_icon(t["text"]))
+        self.menu_btn.setIconSize(QSize(13, 13))
+        self.menu_btn.setToolTip("Duplicate or delete this pattern")
+        self.menu_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.menu_btn.setFixedWidth(40)
+        self.menu_btn.clicked.connect(self._on_menu_clicked)
+        row.addWidget(self.menu_btn)
         return row
 
     def _section(self, text, t):
@@ -335,6 +352,16 @@ class PatternCard(QFrame):
             f"border: none; }}")
 
     # ---- input -----------------------------------------------------------
+
+    def _on_edit_clicked(self):
+        self.clicked.emit(self.name)
+        self.activated.emit(self.name)
+
+    def _on_menu_clicked(self):
+        self.clicked.emit(self.name)
+        self.menu_requested.emit(
+            self.name,
+            self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
 
     def mousePressEvent(self, event):
         self.clicked.emit(self.name)
