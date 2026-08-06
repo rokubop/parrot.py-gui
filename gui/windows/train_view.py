@@ -1719,5 +1719,8 @@ def primary_button_style():
     return (f"QPushButton#primaryAction {{ background-color: {t['accent']}; "
             f"color: {t['accent_text']}; font-weight: bold; border: none; "
             f"border-radius: 4px; padding: 6px 18px; }} "
-            f"QPushButton#primaryAction:disabled {{ background-color: {t['button']}; "
-            f"color: {t['text_dim']}; }}")
+            # Disabled matches the app-wide rule: sunken fill, disabled_text.
+            # text_dim on the live $button fill measured 3.29.
+            f"QPushButton#primaryAction:disabled {{ "
+            f"background-color: {t['disabled_bg']}; "
+            f"color: {t['disabled_text']}; }}")

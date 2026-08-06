@@ -605,7 +605,7 @@ class TalonTestView(QWidget):
             self._check_talon()
         if status.get("error"):
             self.status_label.setText(
-                f"<span style='color:#e06c75;'>{status['error']}</span>")
+                f"<span style='color:{t['bad']};'>{status['error']}</span>")
         elif status.get("connected"):
             hello = status.get("hello") or {}
             if hello.get("wrapped"):
@@ -613,7 +613,7 @@ class TalonTestView(QWidget):
                     f"<span style='color:{t['accent']};'>receiving</span>")
             else:
                 self.status_label.setText(
-                    f"<span style='color:#d3a45c;'>connected, waiting for the "
+                    f"<span style='color:{t['warn']};'>connected, waiting for the "
                     f"parrot integration to load</span>")
         else:
             self.status_label.setText(

@@ -20,10 +20,13 @@ from gui.services import pattern_colors
 from gui.widgets.session_card import _dots_icon
 
 # Throttle and grace match talon_test.py, so a colour means one thing in both.
-THROTTLE_COLOR = "#d3a45c"
-GRACE_COLOR = "#5ab0f5"
-BAD_COLOR = "#e06c75"
-CHANGED_COLOR = "#5ab0f5"
+# Read from the theme rather than repeated as literals: the status colours are
+# contrast-measured against the card these are printed on, in one place.
+_T = theme.colors()
+THROTTLE_COLOR = _T["warn"]
+GRACE_COLOR = _T["info"]
+BAD_COLOR = _T["bad"]
+CHANGED_COLOR = _T["info"]
 
 MONO = "Consolas, 'DejaVu Sans Mono', monospace"
 
@@ -283,7 +286,8 @@ class PatternCard(QFrame):
         if parts:
             badge = QLabel("  ".join(parts))
             badge.setStyleSheet(
-                f"color: {BAD_COLOR if errors else '#d3a45c'}; font-size: 11px;")
+                f"color: {BAD_COLOR if errors else THROTTLE_COLOR}; "
+                f"font-size: 11px;")
             badge.setToolTip("\n".join(str(i) for i in issues))
             row.addWidget(badge)
 

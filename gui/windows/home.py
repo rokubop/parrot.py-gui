@@ -125,8 +125,11 @@ class _StepCard(QFrame):
             self.action.setText(action_text)
         if current or action_primary:
             self.action.setStyleSheet(
-                f"QPushButton {{ background-color: {t['accent']}; color: #ffffff; "
-                f"font-weight: bold; border: none; border-radius: 4px; padding: 7px 14px; }}")
+                # accent_text, not white: white on the accent green measures
+                # 1.83, and this is the one button the landing page is for.
+                f"QPushButton {{ background-color: {t['accent']}; "
+                f"color: {t['accent_text']}; font-weight: bold; border: none; "
+                f"border-radius: 4px; padding: 7px 14px; }}")
         else:
             self.action.setStyleSheet("")
 

@@ -182,7 +182,7 @@ class TalonCapturesView(QWidget):
                 item = QTableWidgetItem(value)
                 if col == 3 and delta:
                     item.setForeground(QColor(
-                        "#41d97f" if delta > 0 else "#e06c75"))
+                        t["ok"] if delta > 0 else t["bad"]))
                 if col == 6 and near:
                     item.setToolTip("Blocked by: " + ", ".join(
                         f"{rule} ×{count}" for rule, count in blockers.items()))
@@ -194,10 +194,10 @@ class TalonCapturesView(QWidget):
             self.changes.setItem(row, 0, QTableWidgetItem(
                 f"{change['ts'] - t0:9.3f}"))
             dropped = QTableWidgetItem(", ".join(change["only_a"]))
-            dropped.setForeground(QColor("#e06c75"))
+            dropped.setForeground(QColor(t["bad"]))
             self.changes.setItem(row, 1, dropped)
             added = QTableWidgetItem(", ".join(change["only_b"]))
-            added.setForeground(QColor("#41d97f"))
+            added.setForeground(QColor(t["ok"]))
             self.changes.setItem(row, 2, added)
 
         total_a = sum(result_a.fires.values())

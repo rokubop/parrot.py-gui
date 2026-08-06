@@ -154,8 +154,11 @@ class SoundLibraryPage(QWidget):
         # three accent-filled buttons next to the one real call to action - so
         # they get a quieter segmented-control look, scoped to this header.
         toggle_style = (
+            # $text, not $text_dim: dim on the $button fill measures 3.29, and
+            # the unselected half of a segmented control still has to be read.
+            # It stays the quiet one through its fill and border, not its ink.
             f"QPushButton#viewToggle {{ background-color: {t['button']}; "
-            f"color: {t['text_dim']}; border: 1px solid {t['border']}; "
+            f"color: {t['text']}; border: 1px solid {t['control_border']}; "
             f"border-radius: 4px; padding: 5px 14px; }} "
             f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "

@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 import pyqtgraph as pg
 from gui.windows.main_window import MainWindow
-from gui import theme
+from gui import theme, indicator_style
 from gui.widgets import wheel_guard
 
 # macOS docks expect the rounded-tile version (a free-form mark renders
@@ -36,7 +36,7 @@ def create_app(argv):
     app = QApplication(argv)
     app.setApplicationName("Parrot.py")
     app.setWindowIcon(QIcon(ICON_PATH))
-    app.setStyle("Fusion")
+    indicator_style.install(app)
 
     # Smoother, antialiased pyqtgraph curves
     pg.setConfigOptions(antialias=True)

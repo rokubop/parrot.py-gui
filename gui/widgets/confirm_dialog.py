@@ -108,7 +108,10 @@ class _ConfirmDialog(QDialog):
             "QPushButton { background-color: #b03636; border: 1px solid #d14b4b;"
             " color: #ffffff; font-weight: bold; }"
             " QPushButton:hover { background-color: #c44141; }"
-            " QPushButton:disabled { background-color: #4c2a2a; color: #8a7575;"
+            # The label of the button you are being asked to unlock has to be
+            # readable while it is still locked. #8a7575 measured 2.92 on this
+            # fill; #ab9494 is 4.42 and still reads as off.
+            " QPushButton:disabled { background-color: #4c2a2a; color: #ab9494;"
             " border-color: #5e3636; }")
         self._confirm_btn.clicked.connect(self.accept)
         buttons.addWidget(self._confirm_btn)

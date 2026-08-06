@@ -68,6 +68,7 @@ class AccuracyDialog(QDialog):
         self.worker.start()
 
     def _on_result(self, result):
+        t = theme.colors()
         per_sound = result["per_sound"]
         self.table.setRowCount(len(per_sound))
         for row, (label, entry) in enumerate(
@@ -84,8 +85,8 @@ class AccuracyDialog(QDialog):
                 if col == 2:
                     recall = entry["recall"]
                     item.setForeground(QColor(
-                        "#41d97f" if recall >= 0.9 else
-                        "#d3a45c" if recall >= 0.75 else "#e06c75"))
+                        t["ok"] if recall >= 0.9 else
+                        t["warn"] if recall >= 0.75 else t["bad"]))
                 self.table.setItem(row, col, item)
         parts = [f"Overall: {result['overall']:.1%} of "
                  f"{sum(e['samples'] for e in per_sound.values())} segments "

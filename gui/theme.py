@@ -44,13 +44,51 @@ THEMES = {
         "text_faint": "#808995",
         "accent": "#41d97f",
         "accent_text": "#0c1f14",
+        # Status colours, measured the same way as the text tiers and against
+        # the same worst case - the top of the card gradient, #363c46, which is
+        # where most of them are actually printed.
+        #
+        #   token   card  panel  window  base
+        #   ok       6.1    7.0     8.2   9.7
+        #   warn     4.9    5.7     6.6   7.8
+        #   info     4.7    5.5     6.4   7.6
+        #   bad      4.5    5.3     6.1   7.3
+        #
+        # `bad` was #e06c75, which is 3.47 on a card - and a card is exactly
+        # where this app prints "Discovery failed" and "Not found". Lightened
+        # along its own hue rather than swapped for a different red.
+        "ok": "#41d97f",
+        "warn": "#d3a45c",
+        "info": "#5ab0f5",
+        "bad": "#e78c93",
         # Selected rows. Deliberately translucent rather than a flat colour, so
         # it reads the same over the list's $base and over a gradient card, and
         # so whatever the row itself is coloured survives underneath it.
         "selection": "rgba(65, 217, 127, 0.22)",
+        # Two boundary colours, because a border does two different jobs and
+        # only one of them is information.
+        #
+        # `border` groups things: group boxes, card edges, splitters, the line
+        # under the toolbar, gridlines. Decorative, and WCAG says so - nothing
+        # is unidentifiable without it. 2.1-2.9 against the surfaces it sits on.
+        #
+        # `control_border` is the edge that says "this is a control you can
+        # operate" - text inputs, combos, spinners, buttons, the slider groove,
+        # the scrollbar handle, and the check/radio indicators. That is the
+        # non-text contrast rule's own example, so it clears 3:1 on every
+        # surface: 3.5 card, 4.1 panel, 4.8 window, 5.7 base. It used to be
+        # `border` at 2.1-2.9, and an unchecked checkbox drawn from it measured
+        # 1.5 - a box you had to already know was there.
         "border": "#5b6372",
+        "control_border": "#8a929e",
         "button": "#4c5462",
         "button_hover": "#5c6577",
+        # Disabled was text_dim on an unchanged button fill, which measured the
+        # same as an enabled button and read as one. Sunken and dimmer: the
+        # fill drops below the window, and 3.6 of text on it is legible without
+        # looking live.
+        "disabled_text": "#828a96",
+        "disabled_bg": "#2f343c",
         "radius": "5px",
         # plot colors - glowing green curve on a dark analyzer, blue detection
         "plot_bg": "#15181c",
@@ -68,8 +106,13 @@ _current = "fabfilter"
 # Data-quantity rating colors, dimmest -> best. Shared so a rating means the
 # same thing (and looks the same) wherever it appears - the Sounds list, the
 # per-sound header, and the training checklist.
+#
+# All four are printed as text as well as drawn as bars, so all four clear 4.5
+# on a card: 4.5, 5.5, 5.7, 6.1. "Not enough" was #e05a5a, which cleared it on
+# the Sounds list's dark $base and nowhere else - 3.1 on a card, 4.1 on the
+# window, and it is the one rating that has to be read.
 QUANTITY_COLORS = {
-    "Not enough": "#e05a5a",
+    "Not enough": "#e98b8b",
     "Sufficient": "#e0b020",
     "Good": "#5ac8e0",
     "Excellent": "#41d97f",
@@ -107,10 +150,16 @@ _STYLESHEET = Template("""
     QToolBar QToolButton:checked { background-color: $accent; color: $accent_text; }
     QPushButton {
         padding: 6px 16px; border-radius: $radius;
-        background-color: $button; border: 1px solid $border; color: $text;
+        background-color: $button; border: 1px solid $control_border; color: $text;
     }
     QPushButton:hover { background-color: $button_hover; }
     QPushButton:checked { background-color: $accent; color: $accent_text; border-color: $accent; }
+    /* Was indistinguishable from an enabled button: the palette dimmed the
+       label to $text_dim and left the fill alone. */
+    QPushButton:disabled {
+        background-color: $disabled_bg; color: $disabled_text;
+        border-color: $border;
+    }
     QGroupBox {
         font-weight: bold; border: 1px solid $border; border-radius: $radius;
         margin-top: 12px; padding: 16px 12px 12px 12px;
@@ -137,12 +186,12 @@ _STYLESHEET = Template("""
     QListWidget::item:selected, QTreeWidget::item:selected {
         background-color: $selection; color: $text_bright;
     }
-    /* No ::indicator rules on purpose. Styling any indicator property makes Qt
-       take the stylesheet path for the whole thing, and a stylesheet indicator
-       draws no tick unless given an image - which is how this ended up a plain
-       green square with nothing in it. Fusion draws a proper checkbox with a
-       proper tick, and now that selection is a tint it stays legible on a
-       selected row, which is the only reason it was overridden. */
+    /* Still no ::indicator rules, and still for the same reason: styling any
+       indicator property makes Qt take the stylesheet path for the whole
+       thing, and a stylesheet indicator draws no tick unless given an image.
+       Fusion's own checkbox is drawn instead - but its box is derived from the
+       palette and came out at 1.5:1 against the window, so indicator_style.py
+       paints that one primitive over the top. See its docstring. */
     QTableWidget { gridline-color: $border; border: none; font-size: 12px; background-color: $base; }
     QHeaderView::section {
         background-color: $toolbar; color: $text_dim; border: none;
@@ -153,19 +202,24 @@ _STYLESHEET = Template("""
        inheritance, and QDoubleSpinBox is not a QSpinBox - with the narrower
        selector every double-spinner in the app rendered stock Fusion. */
     QLineEdit, QComboBox, QAbstractSpinBox {
-        padding: 5px 8px; border: 1px solid $border; border-radius: $radius; background-color: $base;
+        padding: 5px 8px; border: 1px solid $control_border; border-radius: $radius; background-color: $base;
+    }
+    QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled {
+        color: $disabled_text; border-color: $border;
     }
     QComboBox QAbstractItemView { background-color: $base; selection-background-color: $accent; }
+    /* Handle and groove are $control_border, not $border: they are the part
+       you grab, and at $border they sat at 2.5 against the window. */
     QScrollBar:vertical { background-color: $window; width: 12px; border: none; }
-    QScrollBar::handle:vertical { background-color: $border; border-radius: 5px; min-height: 20px; }
+    QScrollBar::handle:vertical { background-color: $control_border; border-radius: 5px; min-height: 20px; }
     QScrollBar::handle:vertical:hover { background-color: $accent; }
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
     QScrollBar:horizontal { background-color: $window; height: 12px; border: none; }
-    QScrollBar::handle:horizontal { background-color: $border; border-radius: 5px; min-width: 24px; }
+    QScrollBar::handle:horizontal { background-color: $control_border; border-radius: 5px; min-width: 24px; }
     QScrollBar::handle:horizontal:hover { background-color: $accent; }
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
     QStatusBar { background-color: $toolbar; color: $text_dim; border-top: 1px solid $border; font-size: 12px; }
-    QSlider::groove:horizontal { height: 4px; background: $border; border-radius: 2px; }
+    QSlider::groove:horizontal { height: 4px; background: $control_border; border-radius: 2px; }
     QSlider::handle:horizontal { background: $accent; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
     QSplitter::handle { background-color: $border; }
 """)
@@ -185,8 +239,12 @@ def _palette(t):
     palette.setColor(QPalette.ColorRole.Link, QColor(t["accent"]))
     palette.setColor(QPalette.ColorRole.Highlight, QColor(t["accent"]))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(t["accent_text"]))
-    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(t["text_dim"]))
-    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(t["text_dim"]))
+    # Disabled used to be text_dim, which is the colour of live secondary copy
+    # everywhere else in the app - so "off" and "quiet" looked identical.
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(t["disabled_text"]))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(t["disabled_text"]))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(t["disabled_text"]))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button, QColor(t["disabled_bg"]))
     return palette
 
 
