@@ -375,6 +375,22 @@ def scan(roots, on_hit=None, should_cancel=None, on_progress=None):
                  should_cancel=should_cancel, on_progress=on_progress)
 
 
+def relaunch(env=None):
+    """Start a fresh GUI process, detached so it survives the caller quitting.
+
+    Used by anything that only takes effect at startup - the profile switcher
+    below, and the interface-size setting, which Qt reads once when the
+    QApplication is built.
+    """
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = 0x00000008  # DETACHED_PROCESS
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen([sys.executable, "-m", "gui"], env=env or dict(os.environ),
+                     cwd=os.getcwd(), **kwargs)
+
+
 def spawn_into(name):
     """Start a fresh GUI process running as `name` (None for Main).
 
@@ -396,10 +412,4 @@ def spawn_into(name):
             env["PARROT_TALON_HOME"] = sim
         else:
             env.pop("PARROT_TALON_HOME", None)
-    kwargs = {}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = 0x00000008  # DETACHED_PROCESS
-    else:
-        kwargs["start_new_session"] = True
-    subprocess.Popen([sys.executable, "-m", "gui"], env=env,
-                     cwd=os.getcwd(), **kwargs)
+    relaunch(env)

@@ -113,6 +113,11 @@ def _load_with_splash():
 
 
 def main():
+    # Before everything: Qt reads QT_SCALE_FACTOR when the QApplication is
+    # built, and ui_prefs is stdlib-only so this cannot disturb the torch
+    # before Qt import order below.
+    from gui.services import ui_prefs
+    ui_prefs.apply_scale_env()
     _load_with_splash()
     # destroy() leaves the Tcl interpreter in a cycle. Collect it here or a Qt
     # worker collects it later and Tcl aborts: Tcl_AsyncDelete, wrong thread.

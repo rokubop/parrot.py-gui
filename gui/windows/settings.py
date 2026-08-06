@@ -7,10 +7,10 @@ they're live.
 """
 import os
 import sounddevice as sd
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox,
-    QPushButton, QGroupBox, QScrollArea, QFrame
+    QPushButton, QGroupBox, QScrollArea, QFrame, QMessageBox, QApplication
 )
 
 from config.config import (
@@ -18,7 +18,8 @@ from config.config import (
     RECORDINGS_FOLDER, CLASSIFIER_FOLDER,
 )
 from gui import theme
-from gui.services import user_config, strategies, library_ops, audio_devices
+from gui.services import (user_config, strategies, library_ops, audio_devices,
+                          ui_prefs, profiles)
 
 
 class SettingsPage(QWidget):
@@ -104,6 +105,35 @@ class SettingsPage(QWidget):
 
         layout.addWidget(audio_group)
 
+        # ---- Display ----
+        # Above the audio settings because it is the one thing here that is
+        # about the app rather than about the sound, and the one a returning
+        # user on a bigger monitor comes looking for.
+        display_group = QGroupBox("Display")
+        display_form = QFormLayout(display_group)
+        display_form.setSpacing(10)
+        self.scale_combo = QComboBox()
+        for value in ui_prefs.SCALES:
+            self.scale_combo.addItem(f"{value:.0%}", value)
+        self._scale_now = ui_prefs.scale()
+        self.scale_combo.setCurrentIndex(self._scale_index(self._scale_now))
+        self.scale_combo.setToolTip(
+            "Text, spacing and controls together, so nothing crops")
+        # Four short values. Stretched to the form's full width it reads as a
+        # field waiting to be filled in.
+        self.scale_combo.setMaximumWidth(150)
+        self.scale_combo.currentIndexChanged.connect(self._on_scale_changed)
+        display_form.addRow("Interface size:", self.scale_combo)
+        scale_note = QLabel(
+            "Ctrl + and Ctrl - anywhere in the app, Ctrl 0 for 100%. Scales "
+            "the whole window at once. Kept per machine, not in your data "
+            "folder, so it stays put when you switch profiles or copy your "
+            "data somewhere else. Restarts Parrot.py.")
+        scale_note.setWordWrap(True)
+        scale_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+        display_form.addRow("", scale_note)
+        layout.addWidget(display_group)
+
         # ---- Playback ----
         model_group = QGroupBox("Playback")
         model_form = QFormLayout(model_group)
@@ -174,6 +204,44 @@ class SettingsPage(QWidget):
         layout.addLayout(save_row)
 
         layout.addStretch()
+
+    def _scale_index(self, value):
+        return list(ui_prefs.SCALES).index(value) if value in ui_prefs.SCALES else 0
+
+    def _on_scale_changed(self, _index):
+        """Qt reads the scale factor once, when the QApplication is built, so
+        this cannot be applied in place - it is a relaunch or nothing. Asked
+        rather than done: the app is quitting, and it might be mid-recording."""
+        value = self.scale_combo.currentData()
+        if value == self._scale_now:
+            return
+        # The window knows what a restart would throw away - a training run, an
+        # undeployed patterns draft, unsaved edits - and names it. Falls back to
+        # a plain question only when this page is not inside the main window.
+        window = self.window()
+        if hasattr(window, "confirm_closing"):
+            accepted = window.confirm_closing(
+                "Interface size", "Restart now",
+                restart_reason=f"apply the {value:.0%} interface size")
+        else:
+            accepted = QMessageBox.question(
+                self, "Interface size",
+                f"Parrot.py needs to restart to apply the "
+                f"{value:.0%} interface size."
+                ) == QMessageBox.StandardButton.Yes
+        if not accepted:
+            self.scale_combo.blockSignals(True)
+            self.scale_combo.setCurrentIndex(self._scale_index(self._scale_now))
+            self.scale_combo.blockSignals(False)
+            return
+        ui_prefs.set_scale(value)
+        env = dict(os.environ)
+        # This process has the old factor in its environment, and an explicit
+        # one wins over the file. Drop it so the new process reads what was
+        # just written.
+        env.pop(ui_prefs.ENV, None)
+        profiles.relaunch(env)
+        QTimer.singleShot(0, QApplication.instance().quit)
 
     def _on_manage_profiles(self):
         window = self.window()

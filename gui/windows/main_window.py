@@ -1,15 +1,17 @@
+import os
+
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel, QWidget,
     QSizePolicy, QVBoxLayout, QToolButton, QMenu, QApplication, QPushButton,
     QMessageBox
 )
-from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QAction, QActionGroup, QShortcut, QKeySequence
+from PyQt6.QtCore import Qt, QTimer, QSize
 from gui.models.app_state import AppState
 from gui.services import profiles
 from gui.windows.home import HomePage
 from gui.windows.library import SoundLibraryPage
-from gui import theme
+from gui import theme, icons
 
 
 class MainWindow(QMainWindow):
@@ -50,6 +52,15 @@ class MainWindow(QMainWindow):
         # Toolbar navigation - checkable actions so the current tab is obvious.
         toolbar = QToolBar("Navigation")
         toolbar.setMovable(False)
+        # 16px against 13px text. The default 24 makes the two icons shout over
+        # the six nav tabs, which carry no icon at all.
+        toolbar.setIconSize(QSize(16, 16))
+        # A toolbar defaults to icon-only, and falls back to the text when a
+        # button has no icon - which is why the six nav tabs read fine while
+        # they had none. Giving the profile chip and Notes an icon silently
+        # dropped both labels.
+        toolbar.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
         self._nav_group = QActionGroup(self)
         self._nav_group.setExclusive(True)
@@ -82,12 +93,16 @@ class MainWindow(QMainWindow):
         # the entry point for creating one is in Settings.
         self.profile_chip = QToolButton()
         self.profile_chip.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        # Set on the button, not inherited: the toolbar's toolButtonStyle only
+        # reaches buttons it builds for actions, not one handed to addWidget.
+        self.profile_chip.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._profile_menu = QMenu(self)
         self._profile_menu.aboutToShow.connect(self._build_profile_menu)
         self.profile_chip.setMenu(self._profile_menu)
         toolbar.addWidget(self.profile_chip)
         self._refresh_profile_chip()
-        notes_action = QAction("📝 Notes", self)
+        notes_action = QAction(icons.note(), "Notes", self)
         notes_action.setCheckable(True)
         notes_action.toggled.connect(self.notes_dock.setVisible)
         self.notes_dock.visibilityChanged.connect(notes_action.setChecked)
@@ -117,6 +132,7 @@ class MainWindow(QMainWindow):
         self.status_bar.addPermanentWidget(self.keys_label)
         self._wire_keybindings(self.library_page)
         self._refresh_keybindings()
+        self._build_zoom_shortcuts()
 
     # ---- lazy page construction ---------------------------------------
 
@@ -252,7 +268,11 @@ class MainWindow(QMainWindow):
 
     def _refresh_profile_chip(self):
         current = profiles.current_profile()
-        self.profile_chip.setText(f"👤 {current or 'Main'}")
+        # Painted, not 👤: the emoji font drew it dark purple at 1.28:1 on this
+        # toolbar and no stylesheet could reach it. Rebuilt here rather than
+        # once at startup so it follows a theme change for free.
+        self.profile_chip.setIcon(icons.person())
+        self.profile_chip.setText(current or "Main")
         self.profile_chip.setVisible(
             bool(profiles.list_profiles()) or current is not None)
 
@@ -274,27 +294,68 @@ class MainWindow(QMainWindow):
 
     def _switch_profile(self, name):
         # Switching relaunches the app, which ends a run silently.
-        if not self._confirm_over_training("Switch profile?", "Switch"):
+        if not self.confirm_closing("Switch profile", "Restart now",
+                                    restart_reason="switch profiles"):
             return
         profiles.spawn_into(name)
         QTimer.singleShot(0, QApplication.instance().quit)
 
-    def _confirm_over_training(self, title, verb):
-        """True if there is no live run, or the user accepts losing it."""
-        if not self.training_chip.isVisible():
+    def at_risk(self):
+        """Everything a relaunch or a quit would throw away, in words.
+
+        A training run was the only thing this used to know about, so switching
+        profiles could silently drop an edited patterns draft or a half-edited
+        recording. Anything that relaunches asks the same question now, and the
+        answer names what is actually at stake rather than saying "unsaved
+        work".
+        """
+        losses = []
+        if self.training_chip.isVisible():
+            losses.append(f"{self.training_chip.text()} is still running")
+        if self.talon_page is not None and self.talon_page.dirty:
+            count = len(self.talon_page.working)
+            losses.append(f"an undeployed patterns draft ({count} pattern"
+                          f"{'' if count == 1 else 's'})")
+        if self.recording_view is not None and self.recording_view.worker:
+            losses.append("a recording in progress")
+        if self.edit_view is not None and self.edit_view.history.is_dirty():
+            losses.append(f"unsaved edits to “{self.edit_view.label}”")
+        return losses
+
+    def confirm_closing(self, title, verb, restart_reason=None):
+        """True if the user accepts the app going away.
+
+        `restart_reason` completes "Parrot.py needs to restart to ___", and
+        passing one is what makes this always ask. One rule, both ways round
+        it: **a restart always asks**, and quitting asks only when something is
+        at stake. An app disappearing and coming back is jarring however
+        deliberate the click was, and there is no undo for it; the X, by
+        contrast, is someone saying "go away" and being asked to confirm
+        nothing.
+
+        The lead says why, not what was lost, because most of the time nothing
+        is - the loss list is the exception and reads as one. The go button is
+        only styled destructive when there is actually something to destroy.
+        """
+        losses = self.at_risk()
+        if not losses and restart_reason is None:
             return True
         box = QMessageBox(self)
         box.setWindowTitle(title)
-        box.setText(f"{self.training_chip.text()} is still running.\n"
-                    f"It will be lost.")
-        go = box.addButton(verb, QMessageBox.ButtonRole.DestructiveRole)
-        box.addButton("Stay", QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(box.buttons()[-1])
+        box.setText(
+            (f"Parrot.py needs to restart to {restart_reason}."
+             if restart_reason else "This closes Parrot.py.")
+            + ("\n\nYou would lose:\n\n"
+               + "\n".join(f"  ·  {item}" for item in losses) if losses else ""))
+        go = box.addButton(verb, QMessageBox.ButtonRole.DestructiveRole
+                           if losses else QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(go if not losses else box.buttons()[-1])
         box.exec()
         return box.clickedButton() is go
 
     def closeEvent(self, event):
-        if self._confirm_over_training("Quit?", "Quit"):
+        if self.confirm_closing("Quit?", "Quit"):
             event.accept()
         else:
             event.ignore()
@@ -304,6 +365,84 @@ class MainWindow(QMainWindow):
         dialog = ProfilesDialog(self.app_state, self)
         dialog.exec()
         self._refresh_profile_chip()
+
+    # ---- interface size --------------------------------------------------
+
+    def _build_zoom_shortcuts(self):
+        """Ctrl +/- steps the interface size; Ctrl+0 goes back to 100%.
+
+        Qt reads the scale factor once, when the QApplication is built, so this
+        cannot repaint in place - it is a relaunch. Hence the delay: the keys
+        move a pending value and show it, and the restart happens ~1.5 s after
+        you stop pressing. Three presses cost one restart, and stepping back to
+        where you started cancels it entirely rather than restarting into the
+        size you already had.
+        """
+        self._zoom_pending = None
+        self._zoom_timer = QTimer(self)
+        self._zoom_timer.setSingleShot(True)
+        self._zoom_timer.setInterval(1500)
+        self._zoom_timer.timeout.connect(self._commit_zoom)
+        # A floating label rather than the status bar: showMessage() there
+        # hides the permanent widgets (see the status bar comment above).
+        self._zoom_toast = QLabel("", self)
+        self._zoom_toast.setVisible(False)
+        self._zoom_toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._zoom_toast.setStyleSheet(
+            f"background-color: {theme.colors()['panel']}; "
+            f"color: {theme.colors()['text_bright']}; "
+            f"border: 1px solid {theme.colors()['control_border']}; "
+            f"border-radius: 6px; padding: 10px 18px; font-size: 15px;")
+        for keys, step in (("Ctrl+=", 1), ("Ctrl++", 1), ("Ctrl+-", -1),
+                           ("Ctrl+0", 0)):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.activated.connect(lambda s=step: self._step_zoom(s))
+
+    def _step_zoom(self, step):
+        from gui.services import ui_prefs
+        sizes = list(ui_prefs.SCALES)
+        current = self._zoom_pending or ui_prefs.scale()
+        if step == 0:
+            pending = 1.0
+        else:
+            index = min(max(sizes.index(current) + step, 0), len(sizes) - 1)
+            pending = sizes[index]
+        self._zoom_pending = pending
+        if pending == ui_prefs.scale():
+            self._zoom_timer.stop()
+            self._show_zoom_toast(f"Interface size {pending:.0%}")
+            return
+        # Not "restarting…": a confirm comes first, and the pause before it is
+        # there so a run of presses asks once. Ctrl - back to where you were
+        # and nothing is asked at all.
+        self._show_zoom_toast(f"Interface size {pending:.0%}  ·  restart to apply")
+        self._zoom_timer.start()
+
+    def _show_zoom_toast(self, text):
+        self._zoom_toast.setText(text)
+        self._zoom_toast.adjustSize()
+        self._zoom_toast.move((self.width() - self._zoom_toast.width()) // 2,
+                              max(12, self.height() // 6))
+        self._zoom_toast.raise_()
+        self._zoom_toast.setVisible(True)
+        QTimer.singleShot(2200, self._zoom_toast.hide)
+
+    def _commit_zoom(self):
+        from gui.services import ui_prefs
+        pending, self._zoom_pending = self._zoom_pending, None
+        if pending is None or pending == ui_prefs.scale():
+            return
+        if not self.confirm_closing(
+                "Interface size", "Restart now",
+                restart_reason=f"apply the {pending:.0%} interface size"):
+            self._zoom_toast.hide()
+            return
+        ui_prefs.set_scale(pending)
+        env = dict(os.environ)
+        # This process carries the old factor; an explicit one beats the file.
+        env.pop(ui_prefs.ENV, None)
+        profiles.relaunch(env)
+        QTimer.singleShot(0, QApplication.instance().quit)
 
     # ---- keybinding status bar -----------------------------------------
 
