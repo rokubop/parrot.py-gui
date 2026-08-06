@@ -5,6 +5,7 @@ from PyQt6.QtGui import QIcon
 import pyqtgraph as pg
 from gui.windows.main_window import MainWindow
 from gui import theme
+from gui.widgets import wheel_guard
 
 # macOS docks expect the rounded-tile version (a free-form mark renders
 # oversized next to other apps). Windows takes the multi-size .ico so the
@@ -41,6 +42,7 @@ def create_app(argv):
     pg.setConfigOptions(antialias=True)
 
     theme.apply(app, theme.current_name())
+    wheel_guard.install(app)
 
     window = MainWindow()
     window.show()
