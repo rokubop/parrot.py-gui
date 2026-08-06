@@ -149,7 +149,10 @@ _STYLESHEET = Template("""
         border-bottom: 1px solid $border; padding: 6px 8px; font-weight: bold;
     }
     QTextEdit { border: 1px solid $border; border-radius: $radius; padding: 4px; background-color: $base; }
-    QLineEdit, QComboBox, QSpinBox {
+    /* QAbstractSpinBox, not QSpinBox: a QSS selector matches by real
+       inheritance, and QDoubleSpinBox is not a QSpinBox - with the narrower
+       selector every double-spinner in the app rendered stock Fusion. */
+    QLineEdit, QComboBox, QAbstractSpinBox {
         padding: 5px 8px; border: 1px solid $border; border-radius: $radius; background-color: $base;
     }
     QComboBox QAbstractItemView { background-color: $base; selection-background-color: $accent; }
