@@ -250,9 +250,6 @@ def facts_html(meta, sound_count=None):
     for heading, facts in _facts_sections(meta, sound_count):
         if not facts:
             continue
-        # Gap between sections as padding on the heading, not a spacer row
-        # of 7px &nbsp; - that was the smallest "font size" in the app and was
-        # never text.
         pad = "padding-top:14px;" if parts else ""
         parts.append(
             f"<tr><td colspan='2' style='color:{t['text']}; {pad}'>"

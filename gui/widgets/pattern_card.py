@@ -19,9 +19,7 @@ from gui import components, theme
 from gui.services import pattern_colors
 from gui.widgets.session_card import _dots_icon
 
-# Throttle and grace match talon_test.py, so a colour means one thing in both.
-# Both ends now go through theme.PATTERN_STATUS to say so, rather than one
-# reading $warn and the other pinning the hex that $warn happens to be.
+# theme.PATTERN_STATUS, so this and talon_test.py cannot drift apart.
 _T = theme.colors()
 THROTTLE_COLOR = theme.status_color("throttled")
 GRACE_COLOR = theme.status_color("grace_detected")
@@ -271,9 +269,6 @@ class PatternCard(QFrame):
             row.addStretch()
 
         if is_new:
-            # A badge, like the issue count beside it. It was a plain accent
-            # label, so the two states a card can carry were built two ways and
-            # only one of them read as a badge.
             row.addWidget(components.badge("new", "accent", outlined=False,
                                            tip="not deployed yet"))
 

@@ -42,10 +42,8 @@ def _quality_from_snr(snr, ms_recorded):
     if ms_recorded <= 10000:
         return "-", theme.colors()["text_dim"]
     t = theme.colors()
-    # The two ends come from the theme, the graded middle does not: "Unusable"
-    # was #e05a5a, the red theme.py measured at 3.47 on a card and replaced -
-    # this band list kept the old value and so printed the one word that has to
-    # be read in the one colour that failed.
+    # Ends from the theme, graded middle not. The old "Unusable" red measured
+    # 3.47 on a card.
     bands = [(25, "Excellent", t["ok"]), (20, "Great", t["ok"]),
              (15, "Good", "#5ac8e0"), (10, "Average", "#e0b020"),
              (7, "Poor", "#e0853a")]

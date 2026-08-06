@@ -124,8 +124,6 @@ class _StepCard(QFrame):
         self.status.setText(status_text)
         if action_text is not None:
             self.action.setText(action_text)
-        # The same accent button as everywhere else, rather than a hand-rolled
-        # near-copy: this one had its own padding and no :disabled rule.
         self.action.setObjectName(
             "primaryAction" if (current or action_primary) else "")
         self.action.setStyleSheet(

@@ -1,17 +1,9 @@
-"""Shared UI primitives - the pieces that were being retyped per page.
+"""Shared UI primitives.
 
-Sits below ``windows/`` and ``widgets/`` and imports neither, so anything may
-import it. That is half the point: ``primary_button_style`` used to live in
-``windows/train_view.py``, and five modules reached it through a function-local
-import to dodge the circular dependency that a module-level one would have made.
+Imports nothing from ``windows/`` or ``widgets/``, so anything may import it.
 
-Each primitive comes in two forms:
-
-  * ``x_style()`` returns the stylesheet string, for restyling a widget that
-    already exists (the ``refresh_theme`` paths).
-  * ``x()`` builds the widget with that style already on it.
-
-Colours and sizes come from ``theme`` - nothing here hardcodes a hex or a px.
+``x_style()`` returns the stylesheet string, ``x()`` builds the widget with it.
+Colours and sizes come from ``theme``; nothing here hardcodes a hex or a px.
 """
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QFrame, QLabel, QPushButton, QVBoxLayout, QWidget)
@@ -24,11 +16,8 @@ from gui import theme
 def heading_style(rank="card", color=None):
     """One of the ranks in ``theme.TYPE_SCALE``.
 
-    `eyebrow` is the same size as body copy - the scale has a floor and it is
-    at the bottom of it - so it carries its rank without size: dim ink, bold,
-    and a little letter-spacing. That last one is what still reads as "label
-    naming the thing below" once the 11px is gone; bold dim text at body size
-    on its own reads as emphasis instead.
+    `eyebrow` sits on the floor, so it carries rank without size: dim, bold,
+    tracked. Without the tracking it reads as emphasis, not as a label.
     """
     t = theme.colors()
     size = theme.TYPE_SCALE[rank]
@@ -56,16 +45,9 @@ def dim_label(text="", wrap=False):
 def painter_font(widget, rank="body"):
     """A font at a scale rank, for text drawn in a paintEvent.
 
-    Stylesheets do not reach QPainter text, so a diagram that annotates itself
-    has to size its own font - and the three that do got it wrong in the same
-    way. They each did
-
-        f.setPointSizeF(max(8.5, f.pointSizeF() - 1.5))
-
-    meaning "a point and a half under the base". The stylesheet sets the widget
-    font in *pixels*, so pointSizeF() returns -1, the subtraction goes negative
-    and max() pins every one of them at exactly 8.5pt - about 11px, under the
-    floor, and not what the arithmetic says.
+    Stylesheets do not reach QPainter text. Size it in pixels: the stylesheet
+    sets the widget font in pixels too, so ``pointSizeF()`` returns -1 and any
+    arithmetic on it silently collapses.
     """
     font = widget.font()
     font.setPixelSize(theme.TYPE_SCALE[rank])
@@ -73,20 +55,11 @@ def painter_font(widget, rank="body"):
 
 
 def set_wrapped_text(label, text, width):
-    """Set a word-wrapped label's text and give it the height that copy needs.
+    """Set a word-wrapped label's text and the height that copy needs at `width`.
 
-    A word-wrapped QLabel reports a one-line sizeHint, so a layout that is not
-    asked for heightForWidth clips it. Pin the width once, then re-ask what
-    height this particular copy needs at that width.
-
-    The guard is the point. heightForWidth returns -1 on a label that has never
-    held text, and passing that straight to setMinimumHeight prints
-
-        QWidget::setMinimumSize: (/QLabel) Negative sizes (460,-1)
-
-    which is what an empty state built before its copy arrives does. Four
-    places in the app pin a width this way and only the help dialog's
-    WrappingLabel checked the return value.
+    A word-wrapped QLabel reports a one-line sizeHint, so an unasked layout
+    clips it. heightForWidth is -1 before the label has ever held text, and
+    setMinimumHeight(-1) is a Qt warning, hence the guard.
     """
     label.setText(text)
     needed = label.heightForWidth(width)
@@ -98,14 +71,12 @@ def set_wrapped_text(label, text, width):
 def card_style(object_name, surface="panel", children="> QLabel"):
     """A rounded panel with a border.
 
-    Scoped to `object_name` rather than written bare: a selector-less stylesheet
-    on an ancestor silently breaks :checked on descendant buttons.
+    Scoped to `object_name`: a selector-less stylesheet on an ancestor silently
+    breaks :checked on descendant buttons.
 
-    `children` is the selector for what inside the card must declare itself
-    transparent. The global ``QWidget`` rule paints an opaque $window box behind
-    every child otherwise, so each one gets its own dark rectangle inside the
-    card - see memory/qt-traps.md. Direct children only by default; pass a
-    descendant selector (no ``>``) when the card nests them deeper.
+    `children` must declare itself transparent or the global QWidget rule paints
+    an opaque box behind each one (memory/qt-traps.md). Direct children only by
+    default; pass a descendant selector when the card nests them deeper.
     """
     t = theme.colors()
     return (f"QFrame#{object_name} {{ background-color: {t[surface]}; "
@@ -115,8 +86,6 @@ def card_style(object_name, surface="panel", children="> QLabel"):
             f"background: transparent; border: none; }}")
 
 
-# The card interior. Was five different tuples across six cards, none of them
-# deliberately different from the others.
 CARD_MARGINS = (18, 16, 18, 18)
 
 
@@ -134,13 +103,7 @@ def card_frame(object_name, surface="panel", children="> QLabel", spacing=8):
 # ---- buttons ------------------------------------------------------------
 
 def primary_button_style():
-    """Accent-filled call to action - Sounds' "Add recording", Models' "Test
-    live", the training button, the empty-state panels.
-
-    There were two of these, and they had drifted: one carried the :disabled
-    rule and no :hover, the other the reverse, so the same rank of button
-    greyed out differently depending on which page it was on. Both are here.
-    """
+    """Accent-filled call to action. One per screen."""
     t = theme.colors()
     return (f"QPushButton#primaryAction {{ background-color: {t['accent']}; "
             f"color: {t['accent_text']}; font-weight: bold; border: none; "
@@ -189,27 +152,21 @@ def ghost_button(text, slot=None, tip=None):
 # ---- badges -------------------------------------------------------------
 
 def badge_style(tone="accent", outlined=True):
-    """A small pill stating a fact about the thing beside it - "Live in Talon".
+    """A small pill stating a fact about the thing beside it.
 
-    `tone` is a theme colour key, so a badge can be accent/ok/warn/bad/info and
-    stay on the measured palette. Outlined badges get the border; a plain one is
-    just coloured text at badge size, which is what the pattern-card issue
-    counts already were.
+    `tone` is a theme colour key, so a badge stays on the measured palette.
     """
     t = theme.colors()
     css = (f"color: {t[tone]}; font-size: {theme.TYPE_SCALE['eyebrow']}px; "
            f"font-weight: bold;")
     if outlined:
-        # Padding grew with the type: at the old 11px a 1px inset made a pill,
-        # at body size it made a box with the text touching the border.
         css += (f" border: 1px solid {t[tone]}; "
                 f"border-radius: {t['radius_pill']}; padding: 2px 10px;")
     return css
 
 
 def section_label(text, color=None):
-    """An eyebrow with a rule under it - the lowercase file keys on the pattern
-    cards and in the pattern editor, which had this idiom twice, by hand."""
+    """An eyebrow with a rule under it. The lowercase file keys."""
     t = theme.colors()
     label = QLabel(text)
     label.setStyleSheet(
@@ -229,18 +186,11 @@ def badge(text, tone="accent", outlined=True, tip=None):
 # ---- tables -------------------------------------------------------------
 
 def style_table(table, *, stretch=None, single=True, fit=True):
-    """The behaviour every table in the app wants, applied in one place.
+    """Row selection, no editing, no row numbers. Every table wants this.
 
-    Six tables set this up by hand and four of them agreed. The two that did
-    not (the accuracy dialog, the live tester's stats tab) never asked for row
-    selection, so a click lit a single cell rather than the row it was in -
-    which, before the theme grew a ::item:selected rule, meant one cell of
-    solid accent green in the middle of a row.
-
-    `stretch` is the column, or columns, that absorb the leftover width; the
-    rest size to their contents when `fit`. Pass ``fit=False`` to stretch every
-    column evenly instead - the captures view wants that, because its two
-    tables are read side by side in a splitter rather than scanned for a value.
+    `stretch` takes the leftover width, the rest size to contents. `fit=False`
+    stretches every column evenly, for tables read side by side rather than
+    scanned for a value.
     """
     from PyQt6.QtWidgets import QAbstractItemView, QHeaderView
 
@@ -264,11 +214,9 @@ def style_table(table, *, stretch=None, single=True, fit=True):
 # ---- empty states -------------------------------------------------------
 
 class EmptyState(QWidget):
-    """Centered title / body / action, used wherever a page has nothing to show.
+    """Centered title / body / action, for a page with nothing to show.
 
-    Built once and re-worded via ``set_state`` rather than rebuilt, because the
-    Models tab has four of these and swapping the copy is cheaper than swapping
-    the widget. The Sounds tab builds one per state and just never re-words it.
+    Build once, re-word with ``set_state``.
     """
 
     # Measured line length for the body copy. Wider reads as a paragraph.
@@ -296,8 +244,7 @@ class EmptyState(QWidget):
         self.set_state(title, body, button_text, slot)
 
     def set_state(self, title, body, button_text=None, slot=None):
-        """Re-word in place. Disconnects the previous action first, or a panel
-        re-used across states accumulates every slot it has ever been given."""
+        """Re-word in place. Disconnects first, or slots accumulate."""
         self.title.setText(title)
         self.set_body(body)
         try:

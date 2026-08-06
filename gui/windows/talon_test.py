@@ -42,11 +42,7 @@ _STATUS_MARK = {"detected": "fired", "grace_detected": "grace",
                 "throttled": "throttled"}
 
 
-# Looked up, not pinned. The neutral one always was; the three status colours
-# were literals that happened to equal the theme's $ok/$info/$warn - which is
-# what pattern_card.py reads for these same three states. See
-# theme.PATTERN_STATUS: the invariant is that a state is one colour in both
-# places, so both ends go through the same mapping to get it.
+# theme.PATTERN_STATUS, so this and pattern_card.py cannot drift apart.
 def _status_color(status):
     return theme.status_color(status) or theme.colors()["text_dim"]
 
@@ -289,8 +285,6 @@ class TalonTestView(QWidget):
         row.setContentsMargins(*components.CARD_MARGINS)
         row.setSpacing(20)
 
-        # The same rank as the training page's "best so far" figure: the one
-        # number on the screen you are reading from across the room.
         self.big_name = components.heading("–", "stat", color=t["accent"])
         self.big_name.setMinimumWidth(220)
         row.addWidget(self.big_name)

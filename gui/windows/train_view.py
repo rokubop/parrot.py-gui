@@ -43,10 +43,8 @@ from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
 from lib.print_status import get_quantity_rating
 
-# Both are printed as text on cards and panels. They used to be literals here -
-# #e0b020 and #e05a5a - which predate the contrast pass in theme.py and so
-# quietly kept the values it moved away from: #e05a5a measures 3.47 on a card,
-# and a card is where "You don't have N yet" and "Training failed" are printed.
+# From the theme, not literals: these print as text on cards, where the
+# pre-contrast-pass red measured 3.47.
 def _warn():
     return theme.colors()["warn"]
 
@@ -543,8 +541,7 @@ class TrainView(QWidget):
         outer = QVBoxLayout(col)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        # The checkbox needs the transparency rule too, or it gets its own
-        # opaque rectangle inside the card.
+        # The checkbox needs the transparency rule too.
         card, v = components.card_frame(
             "actionCard",
             children="> QLabel, QFrame#actionCard > QCheckBox",

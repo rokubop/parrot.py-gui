@@ -65,18 +65,15 @@ THEMES = {
         # it reads the same over the list's $base and over a gradient card, and
         # so whatever the row itself is coloured survives underneath it.
         "selection": "rgba(65, 217, 127, 0.22)",
-        # The same selection, pre-composited over `base`, for tables only.
+        # `selection` pre-composited over `base`, for tables only.
         #
-        # A table paints the palette's Highlight - solid $accent - underneath
-        # the item before the stylesheet's ::item:selected lands on top. Lists
-        # and trees do not. So the translucent `selection` above composites
-        # over solid green there instead of over $base, which for this
-        # particular colour lands back on almost exactly the green it started
-        # from: the rule was in the stylesheet and changed nothing.
+        # A table paints the palette Highlight under the item before
+        # ::item:selected lands on top; lists and trees do not. A translucent
+        # tint there composites over solid $accent, not over $base, and comes
+        # back out the same green - the rule applies and changes nothing.
         #
-        # Opaque, and the measured value of `selection` over `base` in a tree
-        # (#1e4332) rather than the arithmetic one (#1f4232), so a selected
-        # table row and a selected tree row are the same pixels.
+        # The measured value from a tree, not the arithmetic one (#1f4232), so
+        # a selected row is the same pixels in both.
         "selection_opaque": "#1e4332",
         # Two boundary colours, because a border does two different jobs and
         # only one of them is information.
@@ -96,10 +93,7 @@ THEMES = {
         "control_border": "#8a929e",
         "button": "#4c5462",
         "button_hover": "#5c6577",
-        # Cards are rounder than controls. Two tokens rather than one, because
-        # they were drifting apart by hand anyway - 8px on every card, 4px or
-        # 5px on every button, and a scattering of 2/6/7/11/18 that meant
-        # nothing. A pill is a radius large enough to always be a half-circle.
+        # Cards are rounder than controls. A pill is always a half-circle.
         "radius_card": "8px",
         "radius_pill": "9px",
         # Disabled was text_dim on an unchanged button fill, which measured the
@@ -138,19 +132,10 @@ QUANTITY_COLORS = {
 }
 
 # What a pattern's state looks like, wherever it is shown: the live tester's
-# rows and legend, and the throttle/grace values on a pattern card. Shared for
-# the same reason as the ratings above - the invariant is "throttled is the
-# same colour in both places", not "throttled happens to be warn".
+# rows and legend, the throttle and grace values on a pattern card.
 #
-# It was not shared, and the two ends disagreed about how to do it. pattern_card
-# read $warn/$info from the theme and said so; talon_test pinned #d3a45c and
-# #5ab0f5 as literals and said they "stay literal because they carry meaning".
-# Same three colours, same stated invariant, opposite mechanisms - so they
-# matched by coincidence, and retuning $warn would have moved the cards and left
-# the tester behind.
-#
-# A state maps to a status *token*, not to a hex, so the contrast work above
-# stays the single source for what the colour actually is.
+# The invariant is "throttled is the same colour in both places", not
+# "throttled happens to be warn". A state maps to a token, never to a hex.
 PATTERN_STATUS = {
     "detected": "ok",
     "grace_detected": "info",
@@ -163,36 +148,20 @@ def status_color(state):
     token = PATTERN_STATUS.get(state)
     return colors()[token] if token else None
 
-# Type scale. Seven ranks, each a distinct job - not seven sizes that happened.
-#
-# Before this there were eight sizes doing five jobs: card headings were 15px
-# in seven files and 16px in six more, with no rule telling them apart, and
-# sub-view titles were 18px while the tab titles they replace were 20px.
-#
-# A ladder in steps of two from the floor: 14, 16, 18, 20, then the two display
-# sizes. The step matters as much as the floor - at a one pixel gap a heading
-# does not read as a heading, it reads as the same text rendered wrong.
+# Type scale. Every size in the app comes from here.
 #
 #   hero      the Home landing title. One in the app.
-#   stat      a big numeric readout - "84%", the live-test sound name.
-#   title     what this page or sub-view is about: a sound name, a model name,
-#             "Settings", "Record". The largest thing on a working page.
-#   section   a titled region or an empty state or a dialog's own question.
+#   stat      a big numeric readout: "84%", the live-test sound name.
+#   title     what a page or sub-view is about. The largest thing on it.
+#   section   a titled region, an empty state, a dialog's question.
 #   card      a heading inside a card or panel.
-#   eyebrow   the small dim label naming the value under it. Always text_dim,
-#             so `heading()` colours it that way rather than text_bright.
-#   body      running copy, and the floor. Nothing in the app is smaller.
+#   eyebrow   the dim label naming the value under it.
+#   body      running copy, and the floor.
 #
-# `body` is a floor, not just an entry. Lists, trees, tables and the status bar
-# used to declare 11px or 12px and twenty-odd labels did the same by hand, so
-# the app's secondary copy was dim *and* small, which is two de-emphases
-# stacked. The contrast tiers above are measured against WCAG's
-# 4.5:1, and that threshold assumes normal-size text; going under it asks for
-# more contrast, not less. Interface size is a uniform QT_SCALE_FACTOR, so it
-# scales everything together and never rescues the small end.
-#
-# Nothing below `body`. `eyebrow` is the same size and stays subordinate
-# through weight, dim ink and letter-spacing - see components.heading_style.
+# Two rules. Nothing below `body`: the contrast tiers above assume normal-size
+# text, and interface size is a uniform QT_SCALE_FACTOR that never rescues the
+# small end. And steps of two, because at a one pixel gap a heading reads as
+# body copy rendered wrong.
 TYPE_SCALE = {
     "hero": 28,
     "stat": 26,
@@ -277,21 +246,13 @@ _STYLESHEET = Template("""
        Fusion's own checkbox is drawn instead - but its box is derived from the
        palette and came out at 1.5:1 against the window, so indicator_style.py
        paints that one primitive over the top. See its docstring. */
-    /* Tables get the same treatment as the lists above, which they had none
-       of: no ::item:selected rule, so a selected row fell through to the
-       palette's Highlight - solid $accent, with $accent_text printed on it.
-       Measured: a selected tree row is #1e4332, a selected table row was
-       #41d97f. That is the fill the comment on the lists above is about, and
-       the Integrations table is the worst place in the app to have kept it -
-       every row there is coloured to mean something.
+    /* Same treatment as the lists above, which tables had none of. Without an
+       ::item:selected rule a selected row falls through to the palette's
+       Highlight, which is solid $accent.
 
-       $selection_opaque, not $selection: see its comment. A translucent tint
-       here composites over the green rather than over $base and comes back out
-       the same green.
+       $selection_opaque, not $selection: see its comment.
 
-       Gridlines stay. Unlike a list, these tables are read across as well as
-       down - twelve columns of numbers in the live tester - which is the job
-       gridlines do. */
+       Gridlines stay. These tables are read across as well as down. */
     QTableWidget {
         gridline-color: $border; border: 1px solid $border;
         border-radius: $radius; background-color: $base;

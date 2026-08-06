@@ -1,15 +1,12 @@
 """The scroll wheel never edits a value. It scrolls.
 
-A combo, a spin box and a slider all take the wheel, so scrolling a form past
-one silently changes a setting - and the ones that bite are the ones you just
-clicked, because focus was the only thing the old guard checked.
+Combos, spin boxes and sliders all take the wheel, so scrolling a form past one
+silently changes a setting. Focus is no exception: a control you just clicked is
+the one you scroll over next.
 
-This application-level filter runs before the event reaches the widget and
-drops it for those three types, focused or not. Then it hands the gesture to
-the nearest enclosing scroll area, so a control is not a dead patch in a page
-that otherwise scrolls.
-
-An open combo popup still scrolls: the popup is a QListView, not a QComboBox.
+Blocking alone would make each control a dead patch, so the gesture is forwarded
+to the enclosing scroll area. An open combo popup still scrolls; it is a
+QListView.
 """
 from PyQt6.QtCore import QEvent, QObject
 from PyQt6.QtWidgets import (QAbstractScrollArea, QAbstractSpinBox,

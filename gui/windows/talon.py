@@ -178,8 +178,7 @@ class TalonPage(QWidget):
         t = theme.colors()
         card = QFrame()
         card.setObjectName("connCard")
-        # The gradient surface, not flat $panel: this is the page's identity
-        # card, and it sits directly on the window rather than inside anything.
+        # Gradient, not flat $panel: this one sits directly on the window.
         card.setStyleSheet(components.card_style(
             "connCard", surface="card", children="QLabel"))
         row = QHBoxLayout(card)
@@ -406,7 +405,7 @@ class TalonPage(QWidget):
              "Issues"])
         table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         table.customContextMenuRequested.connect(self._on_table_menu)
-        # "Fires when" and "Throttle" are the two that run long.
+        # "Fires when" and "Throttle" run long.
         components.style_table(table, stretch=(2, 3))
         table.setMinimumHeight(300)
         table.doubleClicked.connect(lambda _ix: self._on_edit())

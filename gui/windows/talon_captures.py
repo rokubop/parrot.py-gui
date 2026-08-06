@@ -90,8 +90,7 @@ class TalonCapturesView(QWidget):
         splitter.setStretchFactor(1, 1)
 
     def _style_table(self, table):
-        # Even columns, not content-sized: these two are read side by side in a
-        # splitter, so each should fill its own pane rather than leave a gutter.
+        # Even columns: these two are read side by side in a splitter.
         components.style_table(table, fit=False)
 
     # ---- data -----------------------------------------------------------
