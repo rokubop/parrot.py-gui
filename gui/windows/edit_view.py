@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QMessageBox
 )
 
-from gui import theme
+from gui import components, theme
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui.widgets.click_slider import ClickSlider, slider_qss
 from gui.services import library_ops, playback
@@ -124,8 +124,7 @@ class EditRecordingView(QWidget):
         back.clicked.connect(self._on_back)
         top.addWidget(back)
         self.title = QLabel("Edit recording")
-        self.title.setStyleSheet(
-            f"font-size: 18px; font-weight: bold; color: {theme.colors()['text_bright']};")
+        self.title.setStyleSheet(components.heading_style("title"))
         top.addWidget(self.title)
         top.addStretch()
         self.save_btn = QPushButton("Save")

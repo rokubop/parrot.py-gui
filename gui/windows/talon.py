@@ -19,13 +19,14 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QGroupBox,
-    QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QComboBox, QMessageBox, QInputDialog, QDialog,
+    QScrollArea, QFrame, QTableWidget, QTableWidgetItem,
+    QComboBox, QMessageBox, QInputDialog, QDialog,
     QPlainTextEdit, QListWidget, QListWidgetItem, QStackedWidget, QMenu,
     QToolButton, QSizePolicy
 )
 
-from gui import theme
+from gui import components, theme
+from gui.components import primary_button_style
 from gui.services import (talon_discovery, patterns_schema, patterns_store,
                           talon_companion, talon_setup, library_ops,
                           pattern_colors, integration_sim)
@@ -177,19 +178,17 @@ class TalonPage(QWidget):
         t = theme.colors()
         card = QFrame()
         card.setObjectName("connCard")
-        card.setStyleSheet(
-            f"QFrame#connCard {{ background-color: {t['card']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
-            f"QFrame#connCard QLabel {{ background: transparent; border: none; }}")
+        # The gradient surface, not flat $panel: this is the page's identity
+        # card, and it sits directly on the window rather than inside anything.
+        card.setStyleSheet(components.card_style(
+            "connCard", surface="card", children="QLabel"))
         row = QHBoxLayout(card)
-        row.setContentsMargins(18, 14, 18, 14)
+        row.setContentsMargins(*components.CARD_MARGINS)
         row.setSpacing(16)
 
         who = QVBoxLayout()
         who.setSpacing(2)
-        self.conn_name = QLabel("Talon")
-        self.conn_name.setStyleSheet(
-            f"font-size: 17px; font-weight: bold; color: {t['text_bright']};")
+        self.conn_name = components.heading("Talon", "section")
         who.addWidget(self.conn_name)
         self.conn_facts = QLabel("…")
         self.conn_facts.setWordWrap(True)
@@ -202,7 +201,8 @@ class TalonPage(QWidget):
         self.sim_chip = QLabel("")
         self.sim_chip.setStyleSheet(
             f"color: {t['window']}; background-color: {t['warn']}; "
-            f"border-radius: 11px; padding: 3px 12px; font-weight: bold;")
+            f"border-radius: {t['radius_pill']}; padding: 3px 12px; "
+            f"font-weight: bold;")
         self.sim_chip.setVisible(False)
         row.addWidget(self.sim_chip)
 
@@ -217,7 +217,6 @@ class TalonPage(QWidget):
         self.test_btn.setObjectName("primaryAction")
         self.test_btn.setMinimumHeight(32)
         self.test_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        from gui.windows.train_view import primary_button_style
         self.test_btn.setStyleSheet(primary_button_style())
         self.test_btn.setToolTip(
             "Watch what Talon actually hears, sound by sound")
@@ -278,7 +277,8 @@ class TalonPage(QWidget):
         banner.setObjectName("draftBanner")
         banner.setStyleSheet(
             f"QFrame#draftBanner {{ background-color: rgba(90, 175, 245, 0.10); "
-            f"border: 1px solid rgba(90, 175, 245, 0.45); border-radius: 6px; }} "
+            f"border: 1px solid rgba(90, 175, 245, 0.45); "
+            f"border-radius: {t['radius_card']}; }} "
             f"QFrame#draftBanner QLabel {{ background: transparent; "
             f"border: none; color: {t['text']}; }}")
         row = QHBoxLayout(banner)
@@ -316,8 +316,7 @@ class TalonPage(QWidget):
         head = QHBoxLayout()
         self.patterns_title = QLabel("Patterns")
         self.patterns_title.setTextFormat(Qt.TextFormat.RichText)
-        self.patterns_title.setStyleSheet(
-            f"font-size: 14px; font-weight: bold; color: {t['text_bright']};")
+        self.patterns_title.setStyleSheet(components.heading_style("card"))
         head.addWidget(self.patterns_title)
         self.health_label = QLabel("")
         self.health_label.setTextFormat(Qt.TextFormat.RichText)
@@ -347,7 +346,7 @@ class TalonPage(QWidget):
         self.lint_label.setWordWrap(True)
         self.lint_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.lint_label.setStyleSheet(f"color: {t['text_dim']}; font-size: 12px;")
+        self.lint_label.setStyleSheet(f"color: {t['text_dim']}; ")
         v.addWidget(self.lint_label)
 
         # Until the integration exists, this page IS the setup: checklist down
@@ -407,16 +406,8 @@ class TalonPage(QWidget):
              "Issues"])
         table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         table.customContextMenuRequested.connect(self._on_table_menu)
-        table.verticalHeader().setVisible(False)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows)
-        table.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection)
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        # "Fires when" and "Throttle" are the two that run long.
+        components.style_table(table, stretch=(2, 3))
         table.setMinimumHeight(300)
         table.doubleClicked.connect(lambda _ix: self._on_edit())
         table.itemSelectionChanged.connect(self._on_table_selection)
@@ -854,7 +845,7 @@ class TalonPage(QWidget):
             rows.append(f"&nbsp;&nbsp;&nbsp;&nbsp;"
                         f"<span style='color:{t['accent']};'>+ {name}</span>")
         return (f"<div style='font-family: Consolas, monospace; "
-                f"font-size: 12px;'>" + "<br>".join(rows) + "</div>")
+                f"'>" + "<br>".join(rows) + "</div>")
 
     def _on_setup_action(self, key):
         {"integration": self._on_setup_integration,
@@ -1181,7 +1172,7 @@ class TalonPage(QWidget):
         dialog.setMinimumSize(640, 560)
         layout = QVBoxLayout(dialog)
         editor = QPlainTextEdit()
-        editor.setStyleSheet("font-family: Consolas, monospace; font-size: 12px;")
+        editor.setStyleSheet("font-family: Consolas, monospace; ")
         editor.setPlainText(patterns_store.dumps_patterns(self.working))
         layout.addWidget(editor, 1)
         note = QLabel("")

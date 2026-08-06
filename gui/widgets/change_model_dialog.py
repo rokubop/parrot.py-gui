@@ -23,11 +23,12 @@ AppState caches it, so coming back to a model is instant.
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QTreeWidget, QHeaderView, QFrame, QWidget, QSplitter
+    QListWidgetItem, QTreeWidget, QHeaderView, QWidget, QSplitter
 )
 
 from config.config import BACKGROUND_LABEL
-from gui import theme
+from gui import components, theme
+from gui.components import primary_button_style
 
 
 class _InspectWorker(QThread):
@@ -79,9 +80,7 @@ class ChangeModelDialog(QDialog):
         layout.setContentsMargins(20, 18, 20, 16)
         layout.setSpacing(10)
 
-        title = QLabel("Which model should Talon run?")
-        title.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {t['text_bright']};")
+        title = components.heading("Which model should Talon run?", "section")
         layout.addWidget(title)
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -108,7 +107,6 @@ class ChangeModelDialog(QDialog):
         cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         cancel.clicked.connect(self.reject)
         row.addWidget(cancel)
-        from gui.windows.train_view import primary_button_style
         self.go = QPushButton("Use this model")
         self.go.setObjectName("primaryAction")
         self.go.setMinimumHeight(32)
@@ -129,7 +127,8 @@ class ChangeModelDialog(QDialog):
         self.list = QListWidget()
         self.list.setStyleSheet(
             f"QListWidget {{ background-color: {t['base']}; "
-            f"border: 1px solid {t['border']}; border-radius: 6px; }} "
+            f"border: 1px solid {t['border']}; "
+            f"border-radius: {t['radius']}; }} "
             f"QListWidget::item {{ padding: 6px 8px; }}")
         self.list.currentItemChanged.connect(self._on_select)
         self.list.itemDoubleClicked.connect(
@@ -145,15 +144,9 @@ class ChangeModelDialog(QDialog):
 
         head = QHBoxLayout()
         head.setSpacing(10)
-        self.detail_title = QLabel("")
-        self.detail_title.setStyleSheet(
-            f"font-size: 18px; font-weight: bold; color: {t['text_bright']};")
+        self.detail_title = components.heading("", "title")
         head.addWidget(self.detail_title)
-        self.live_badge = QLabel("In Talon now")
-        self.live_badge.setStyleSheet(
-            f"color: {t['accent']}; border: 1px solid {t['accent']}; "
-            f"border-radius: 9px; padding: 1px 8px; font-size: 11px; "
-            f"font-weight: bold;")
+        self.live_badge = components.badge("In Talon now")
         self.live_badge.setVisible(False)
         head.addWidget(self.live_badge)
         head.addStretch()
@@ -162,18 +155,8 @@ class ChangeModelDialog(QDialog):
         columns = QHBoxLayout()
         columns.setSpacing(14)
 
-        card = QFrame()
-        card.setObjectName("factsCard")
+        card, card_layout = components.card_frame("factsCard")
         card.setFixedWidth(300)
-        # The global QWidget rule paints an opaque box behind every child
-        # unless they declare themselves transparent (memory/qt-traps.md).
-        card.setStyleSheet(
-            f"QFrame#factsCard {{ background-color: {t['panel']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
-            f"QFrame#factsCard > QLabel {{ background: transparent; "
-            f"border: none; }}")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 15, 16, 16)
         self.facts = QLabel("")
         self.facts.setWordWrap(True)
         self.facts.setTextFormat(Qt.TextFormat.RichText)

@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
-from gui import theme
+from gui import components, theme
 from lib.print_status import get_quantity_rating
 
 # A frame is one sliding window, not a whole sample. Same arithmetic as
@@ -282,8 +282,7 @@ class FramesDiagram(QWidget):
         fill = QColor(*t["wave_fill"])
         border = QColor(t["border"])
 
-        chip_font = self.font()
-        chip_font.setPointSizeF(max(8.5, chip_font.pointSizeF() - 1.5))
+        chip_font = components.painter_font(self)
 
         for i in range(self.FRAMES):
             rect = self._frame_rect(i, w)
@@ -408,8 +407,7 @@ class NetsDiagram(QWidget):
         total_gap = self.PANEL_GAP * (n - 2) + self.GROUP_GAP
         span = (self.width() - total_gap) / n
 
-        title_font = self.font()
-        title_font.setPointSizeF(max(8.5, title_font.pointSizeF() - 1.5))
+        title_font = components.painter_font(self)
 
         accent = QColor(t["accent"])
         wrong = QColor(theme.QUANTITY_COLORS["Sufficient"])  # shared caution amber
@@ -524,8 +522,7 @@ class ClosedSetDiagram(QWidget):
         wrong = QColor(theme.QUANTITY_COLORS["Sufficient"])   # shared caution amber
         dim = QColor(t["text_dim"])
 
-        small = self.font()
-        small.setPointSizeF(max(8.5, small.pointSizeF() - 1.5))
+        small = components.painter_font(self)
 
         y = 0.0
         for heading, boxes, target, harmless in self.GROUPS:
@@ -742,8 +739,7 @@ def training_sections(parent=None, live=None):
         if widget is None:
             continue
         heading = QLabel(title, content)
-        heading.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
+        heading.setStyleSheet(components.heading_style("card"))
         v.addWidget(heading)
         v.addWidget(widget)
         line = WrappedBody(caption, content)

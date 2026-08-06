@@ -10,7 +10,8 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 )
 
-from gui import theme
+from gui import components, theme
+from gui.components import primary_button_style
 
 BODY_WIDTH = 520
 
@@ -33,7 +34,7 @@ def _tree_html(path):
                     f"<span style='color:{colour};'>{mark} {name}</span>"
                     f"&nbsp;&nbsp;<span style='color:{t['text_dim']};'>"
                     f"{label}</span>")
-    return (f"<div style='font-family: Consolas, monospace; font-size: 12px;'>"
+    return (f"<div style='font-family: Consolas, monospace; '>"
             + "<br>".join(rows) + "</div>")
 
 
@@ -53,8 +54,7 @@ class BridgeDialog(QDialog):
 
         title = QLabel("Let parrot.py listen to Talon"
                        if not outdated else "The bridge is out of date")
-        title.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {t['text_bright']};")
+        title.setStyleSheet(components.heading_style("section"))
         title.setWordWrap(True)
         layout.addWidget(title)
 
@@ -88,7 +88,6 @@ class BridgeDialog(QDialog):
         cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         cancel.clicked.connect(self.reject)
         row.addWidget(cancel)
-        from gui.windows.train_view import primary_button_style
         go = QPushButton("Update the bridge" if outdated
                          else "Add it and start testing")
         go.setObjectName("primaryAction")

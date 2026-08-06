@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import RATE
-from gui import theme
+from gui import components, theme
 from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.audio_preview import AudioPreviewWidget
@@ -41,13 +41,18 @@ def _quality_from_snr(snr, ms_recorded):
     """Mirror lib/print_status quality bands (needs a few seconds of audio)."""
     if ms_recorded <= 10000:
         return "-", theme.colors()["text_dim"]
-    bands = [(25, "Excellent", "#41d97f"), (20, "Great", "#41d97f"),
+    t = theme.colors()
+    # The two ends come from the theme, the graded middle does not: "Unusable"
+    # was #e05a5a, the red theme.py measured at 3.47 on a card and replaced -
+    # this band list kept the old value and so printed the one word that has to
+    # be read in the one colour that failed.
+    bands = [(25, "Excellent", t["ok"]), (20, "Great", t["ok"]),
              (15, "Good", "#5ac8e0"), (10, "Average", "#e0b020"),
              (7, "Poor", "#e0853a")]
     for threshold, name, color in bands:
         if snr >= threshold:
             return name, color
-    return "Unusable", "#e05a5a"
+    return "Unusable", t["bad"]
 
 
 class RecordingView(QWidget):
@@ -124,8 +129,7 @@ class RecordingView(QWidget):
         back.clicked.connect(self._on_back)
         top.addWidget(back)
         self.title = QLabel("Record")
-        self.title.setStyleSheet(
-            f"font-size: 18px; font-weight: bold; color: {theme.colors()['text_bright']};")
+        self.title.setStyleSheet(components.heading_style("title"))
         top.addWidget(self.title)
         top.addStretch()
         self.state_label = QLabel("")
@@ -169,7 +173,7 @@ class RecordingView(QWidget):
             self.strategy_combo.currentText()))
         self.strategy_desc.setWordWrap(True)
         self.strategy_desc.setStyleSheet(
-            f"color: {theme.colors()['text_dim']}; font-size: 12px;")
+            f"color: {theme.colors()['text_dim']}; ")
         self.strategy_combo.currentTextChanged.connect(
             lambda lbl: self.strategy_desc.setText(
                 strategies.description_for_label(lbl)))

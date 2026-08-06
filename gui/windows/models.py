@@ -37,11 +37,10 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
-from gui import theme
+from gui import components, theme
 from gui.services import balance, library_ops
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets import help_dialog
-from gui.windows.train_view import primary_button_style
 from gui.workers.combine_worker import CombineWorker
 from lib.print_status import get_quantity_rating
 
@@ -251,12 +250,13 @@ def facts_html(meta, sound_count=None):
     for heading, facts in _facts_sections(meta, sound_count):
         if not facts:
             continue
-        if parts:
-            parts.append("<tr><td colspan='2' style='font-size:7px;'>"
-                         "&nbsp;</td></tr>")
+        # Gap between sections as padding on the heading, not a spacer row
+        # of 7px &nbsp; - that was the smallest "font size" in the app and was
+        # never text.
+        pad = "padding-top:14px;" if parts else ""
         parts.append(
-            f"<tr><td colspan='2' style='color:{t['text']}; "
-            f"font-size:13px;'><b>{heading}</b></td></tr>")
+            f"<tr><td colspan='2' style='color:{t['text']}; {pad}'>"
+            f"<b>{heading}</b></td></tr>")
         parts.extend(
             f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
             f"{label}</td><td style='color:{t['text']};'>{value}</td></tr>"
@@ -361,7 +361,6 @@ class ModelsPage(QWidget):
     # ---- ui ------------------------------------------------------------
 
     def _setup_ui(self):
-        t = theme.colors()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -372,9 +371,7 @@ class ModelsPage(QWidget):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
         title_row = QHBoxLayout()
-        title = QLabel("Models")
-        title.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
+        title = components.heading("Models", "card")
         title_row.addWidget(title)
         title_row.addStretch()
         title_row.addWidget(help_dialog.help_button(self, "train"))
@@ -489,18 +486,7 @@ class ModelsPage(QWidget):
         col.setFixedWidth(310)
         outer = QVBoxLayout(col)
         outer.setContentsMargins(0, 0, 0, 0)
-        card = QFrame()
-        card.setObjectName("factsCard")
-        # Same trap as the training page's card: the global QWidget rule paints
-        # an opaque box behind every child unless they declare transparency.
-        card.setStyleSheet(
-            f"QFrame#factsCard {{ background-color: {t['panel']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
-            f"QFrame#factsCard > QLabel {{ background: transparent; "
-            f"border: none; }}")
-        v = QVBoxLayout(card)
-        v.setContentsMargins(18, 17, 18, 18)
-        v.setSpacing(8)
+        card, v = components.card_frame("factsCard")
         self.detail_body = QLabel("")
         self.detail_body.setWordWrap(True)
         self.detail_body.setTextFormat(Qt.TextFormat.RichText)
@@ -568,20 +554,14 @@ class ModelsPage(QWidget):
 
         name_row = QHBoxLayout()
         name_row.setSpacing(10)
-        self.detail_title = QLabel("")
-        self.detail_title.setStyleSheet(
-            f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
+        self.detail_title = components.heading("", "title")
         name_row.addWidget(self.detail_title)
         # The list carries this as a tick in a narrow last column, which is not
         # where anyone reading a model is looking. get_talon_model_name compares
         # the actual files and never falls back to a guess, so it can be stated
         # flatly rather than hedged.
-        self.live_badge = QLabel("Live in Talon")
-        self.live_badge.setStyleSheet(
-            f"color: {t['accent']}; border: 1px solid {t['accent']}; "
-            f"border-radius: 9px; padding: 1px 8px; font-size: 11px; "
-            f"font-weight: bold;")
-        self.live_badge.setToolTip("Talon is running this model right now")
+        self.live_badge = components.badge(
+            "Live in Talon", tip="Talon is running this model right now")
         self.live_badge.setVisible(False)
         name_row.addWidget(self.live_badge)
         name_row.addStretch()
@@ -596,11 +576,7 @@ class ModelsPage(QWidget):
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 10, 0, 0)
-        self.live_test_btn = QPushButton("Test live")
-        self.live_test_btn.setObjectName("primaryAction")
-        self.live_test_btn.setMinimumHeight(34)
-        self.live_test_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.live_test_btn.setStyleSheet(primary_button_style())
+        self.live_test_btn = components.primary_button("Test live")
         self.live_test_btn.setToolTip(
             "Make each sound into the mic and watch the raw per-sound probabilities")
         self.live_test_btn.clicked.connect(self._on_test_live)
@@ -625,63 +601,18 @@ class ModelsPage(QWidget):
                  "Merge two or more models into one ensemble"),
                 ("Open folder", self._on_open_folder, "Reveal data/models"),
                 ("Delete", self._on_delete, "Delete this model and its files")):
-            btn = QPushButton(text)
-            btn.setObjectName("secondaryAction")
-            btn.setFlat(True)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            btn.setToolTip(tip)
-            btn.setStyleSheet(
-                f"QPushButton#secondaryAction {{ color: {t['text_dim']}; border: none; "
-                f"background: transparent; padding: 3px 8px; }} "
-                f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }}")
-            btn.clicked.connect(slot)
+            btn = components.ghost_button(text, slot, tip)
             secondary.addWidget(btn)
             self._secondary_btns.append(btn)
         secondary.addStretch()
         v.addLayout(secondary)
         return header
 
-    # Measure line length for the empty-state body copy, as on the Sounds tab.
-    _EMPTY_BODY_WIDTH = 460
-
-    def _set_empty_body(self, text):
-        """A word-wrapped QLabel reports a one-line sizeHint, so a layout that
-        isn't asked for heightForWidth clips it. Pin the width (done once) and
-        re-ask for the height this particular copy needs."""
-        self.empty_body.setText(text)
-        self.empty_body.setMinimumHeight(
-            self.empty_body.heightForWidth(self._EMPTY_BODY_WIDTH))
-
     def _build_empty_panel(self):
-        """Centered title/body/action, same shape as the Sounds tab's empty
-        states. Its text is filled in per case by _show_empty_state."""
-        t = theme.colors()
-        panel = QWidget()
-        v = QVBoxLayout(panel)
-        v.setContentsMargins(24, 24, 24, 24)
-        v.setSpacing(8)
-
-        self.empty_title = QLabel("")
-        self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_title.setStyleSheet(
-            f"font-size: 17px; font-weight: bold; color: {t['text_bright']};")
-        v.addWidget(self.empty_title)
-
-        self.empty_body = QLabel("")
-        self.empty_body.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_body.setWordWrap(True)
-        self.empty_body.setFixedWidth(self._EMPTY_BODY_WIDTH)
-        self.empty_body.setStyleSheet(f"color: {t['text_dim']};")
-        v.addWidget(self.empty_body, 0, Qt.AlignmentFlag.AlignHCenter)
-
-        self.empty_btn = QPushButton("")
-        self.empty_btn.setObjectName("primaryAction")
-        self.empty_btn.setMinimumHeight(34)
-        self.empty_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.empty_btn.setStyleSheet(primary_button_style())
-        v.addSpacing(6)
-        v.addWidget(self.empty_btn, 0, Qt.AlignmentFlag.AlignHCenter)
-        return panel
+        """Centered title/body/action, the same widget the Sounds tab uses. Its
+        text is filled in per case by _show_empty_state."""
+        self.empty_panel_widget = components.EmptyState()
+        return self.empty_panel_widget
 
     def refresh_theme(self):
         pass
@@ -960,10 +891,7 @@ class ModelsPage(QWidget):
         self.empty_wrapper.setVisible(True)
 
         labels = self.app_state.get_sound_labels()
-        try:
-            self.empty_btn.clicked.disconnect()
-        except TypeError:
-            pass
+        panel = self.empty_panel_widget
         if len(labels) < 2:
             self.train_btn.setEnabled(False)
             if labels:
@@ -971,20 +899,20 @@ class ModelsPage(QWidget):
                 # Seconds, not the rating: a first sound scoring "Not enough"
                 # reads as a failure rather than a start.
                 seconds = self.app_state.get_label_duration_ms(only) / 1000.0
-                self.empty_title.setText("One more sound and you can train")
-                self._set_empty_body(
+                title = "One more sound and you can train"
+                body = (
                     f"You've recorded “{only}” - {seconds:.0f}s of detected sound "
                     f"so far. A model works by telling sounds apart, so it needs "
                     f"a second one to compare against. Record another in the "
                     f"Sounds tab and come back.")
             else:
-                self.empty_title.setText("Record some sounds first")
-                self._set_empty_body(
+                title = "Record some sounds first"
+                body = (
                     "A model learns to tell your sounds apart, so it needs at "
                     "least two of them to compare. Record a couple in the Sounds "
                     "tab and come back.")
-            self.empty_btn.setText("Go to Sounds")
-            self.empty_btn.clicked.connect(lambda: self.navigate.emit("Sounds"))
+            panel.set_state(title, body, "Go to Sounds",
+                            lambda: self.navigate.emit("Sounds"))
             return
 
         self.train_btn.setEnabled(True)
@@ -1001,10 +929,8 @@ class ModelsPage(QWidget):
                  "produces one model file. It runs unattended for hours - you "
                  "can stop it early for a rough first model, and retrain "
                  "whenever you record more.")
-        self.empty_title.setText("Train your first model")
-        self._set_empty_body(body)
-        self.empty_btn.setText("+ New model")
-        self.empty_btn.clicked.connect(self.train_requested.emit)
+        panel.set_state("Train your first model", body, "+ New model",
+                        self.train_requested.emit)
 
     # ---- actions -------------------------------------------------------
 

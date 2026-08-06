@@ -32,7 +32,8 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
-from gui import theme
+from gui import components, theme
+from gui.components import primary_button_style
 from gui.services import balance, keep_awake, library_ops
 from gui.widgets import help_dialog
 from gui.widgets.balance_column import (BalanceBarDelegate, balance_legend,
@@ -42,8 +43,16 @@ from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
 from lib.print_status import get_quantity_rating
 
-WARN = "#e0b020"
-BAD = "#e05a5a"
+# Both are printed as text on cards and panels. They used to be literals here -
+# #e0b020 and #e05a5a - which predate the contrast pass in theme.py and so
+# quietly kept the values it moved away from: #e05a5a measures 3.47 on a card,
+# and a card is where "You don't have N yet" and "Training failed" are printed.
+def _warn():
+    return theme.colors()["warn"]
+
+
+def _bad():
+    return theme.colors()["bad"]
 
 # The column the balance delegate paints into.
 BAR_COLUMN = 3
@@ -324,7 +333,7 @@ class TrainView(QWidget):
         self.recover_row.setVisible(False)
         self.best_value.setText("Nothing yet")
         self.best_value.setStyleSheet(
-            f"font-size: 26px; font-weight: bold; color: {theme.colors()['text_dim']};")
+            components.heading_style("stat", theme.colors()["text_dim"]))
         self.best_detail.setText("Waiting for the first epoch")
         self.epoch_label.setText("Preparing")
         self.prep_box.setVisible(True)
@@ -339,7 +348,6 @@ class TrainView(QWidget):
     # ---- ui ------------------------------------------------------------
 
     def _setup_ui(self):
-        t = theme.colors()
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 12, 16, 12)
         root.setSpacing(10)
@@ -349,10 +357,7 @@ class TrainView(QWidget):
         back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         back.clicked.connect(self._on_back)
         top.addWidget(back)
-        title = QLabel("New model")
-        title.setStyleSheet(
-            f"font-size: 18px; font-weight: bold; color: {t['text_bright']};")
-        top.addWidget(title)
+        top.addWidget(components.heading("New model", "title"))
         top.addStretch()
         # Everything behind this is on the setup screen already; it is here for
         # reaching once a run is under way and that screen is gone.
@@ -394,12 +399,8 @@ class TrainView(QWidget):
         v.setSpacing(8)
 
         list_head = QHBoxLayout()
-        sounds_title = QLabel("Sounds to include")
-        sounds_title.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
-        list_head.addWidget(sounds_title)
-        self.selected_count = QLabel("")
-        self.selected_count.setStyleSheet(f"color: {t['text_dim']};")
+        list_head.addWidget(components.heading("Sounds to include", "card"))
+        self.selected_count = components.dim_label("")
         list_head.addWidget(self.selected_count)
         list_head.addStretch()
         quiet = (f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
@@ -490,7 +491,7 @@ class TrainView(QWidget):
         t = theme.colors()
         self._copy_worker = None
         if error or not labels:
-            self.copy_note.setStyleSheet(f"color: {WARN};")
+            self.copy_note.setStyleSheet(f"color: {_warn()};")
             self.copy_note.setText(
                 f"Could not read which sounds “{model_name}” used."
                 + (f" {error}" if error else ""))
@@ -524,7 +525,7 @@ class TrainView(QWidget):
             note += (f"  It also used {listed}, which you no longer have "
                      f"recordings for.")
         self.copy_note.setStyleSheet(
-            f"color: {WARN if missing else t['text_dim']};")
+            f"color: {_warn() if missing else t['text_dim']};")
         self.copy_note.setText(note)
         self._update_readiness()
         self._plan_timer.start()
@@ -542,24 +543,14 @@ class TrainView(QWidget):
         outer = QVBoxLayout(col)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        card = QFrame()
-        card.setObjectName("actionCard")
-        # The global QWidget rule paints an opaque $window box behind every
-        # child, which is what gave the checkbox its own rectangle inside the
-        # card. Children declare themselves transparent so the card shows through.
-        card.setStyleSheet(
-            f"QFrame#actionCard {{ background-color: {t['panel']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
-            f"QFrame#actionCard > QLabel, QFrame#actionCard > QCheckBox {{ "
-            f"background: transparent; border: none; }}")
-        v = QVBoxLayout(card)
-        v.setContentsMargins(18, 17, 18, 18)
-        v.setSpacing(14)
+        # The checkbox needs the transparency rule too, or it gets its own
+        # opaque rectangle inside the card.
+        card, v = components.card_frame(
+            "actionCard",
+            children="> QLabel, QFrame#actionCard > QCheckBox",
+            spacing=14)
 
-        heading = QLabel("New model")
-        heading.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
-        v.addWidget(heading)
+        v.addWidget(components.heading("New model", "card"))
 
         # Label rather than a placeholder: a placeholder disappears the moment
         # the field has anything in it, and this one arrives pre-filled, so the
@@ -737,12 +728,9 @@ class TrainView(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(8)
 
-        self.run_title = QLabel("")
-        self.run_title.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {t['text_bright']};")
+        self.run_title = components.heading("", "card")
         v.addWidget(self.run_title)
-        self.run_subtitle = QLabel("")
-        self.run_subtitle.setStyleSheet(f"color: {t['text_dim']};")
+        self.run_subtitle = components.dim_label("")
         v.addWidget(self.run_subtitle)
 
         # Everything that changes every epoch on the left, everything worth
@@ -811,42 +799,25 @@ class TrainView(QWidget):
         the figure it is keeping, stopping stops being a decision.
         """
         t = theme.colors()
-        card = QFrame()
-        card.setObjectName("runCard")
+        card, v = components.card_frame(
+            "runCard",
+            children="> QLabel, QFrame#runCard > QWidget",
+            spacing=2)
         card.setFixedWidth(250)
-        # The global QWidget rule paints an opaque $window box behind every
-        # child, so children declare themselves transparent or each gets its own
-        # dark rectangle inside the card. Same fix as actionCard above.
-        card.setStyleSheet(
-            f"QFrame#runCard {{ background-color: {t['panel']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
-            f"QFrame#runCard > QLabel, QFrame#runCard > QWidget {{ "
-            f"background: transparent; border: none; }}")
-        v = QVBoxLayout(card)
-        v.setContentsMargins(14, 12, 14, 14)
-        v.setSpacing(2)
 
-        head = QLabel("Best so far")
-        head.setStyleSheet(
-            f"color: {t['text_dim']}; font-size: 11px; font-weight: bold;")
-        v.addWidget(head)
+        v.addWidget(components.heading("Best so far", "eyebrow"))
 
         # Nothing exists yet until an epoch lands, and saying so beats a 0%
         # that reads as a result.
-        self.best_value = QLabel("Nothing yet")
-        self.best_value.setStyleSheet(
-            f"font-size: 26px; font-weight: bold; color: {t['text_dim']};")
+        self.best_value = components.heading("Nothing yet", "stat",
+                                             color=t["text_dim"])
         v.addWidget(self.best_value)
-        self.best_detail = QLabel("Waiting for the first epoch")
-        self.best_detail.setWordWrap(True)
-        self.best_detail.setStyleSheet(f"color: {t['text_dim']};")
+        self.best_detail = components.dim_label(
+            "Waiting for the first epoch", wrap=True)
         v.addWidget(self.best_detail)
 
         v.addSpacing(14)
-        progress_head = QLabel("Progress")
-        progress_head.setStyleSheet(
-            f"color: {t['text_dim']}; font-size: 11px; font-weight: bold;")
-        v.addWidget(progress_head)
+        v.addWidget(components.heading("Progress", "eyebrow"))
         # How far through, against a total that is otherwise only stated once in
         # the status line and scrolls away.
         self.epoch_label = QLabel("Preparing")
@@ -906,7 +877,7 @@ class TrainView(QWidget):
         self.prep_warn.setWordWrap(True)
         self.prep_warn.setVisible(False)
         self.prep_warn.setStyleSheet(
-            f"color: {t['text_dim']}; border-left: 2px solid {WARN}; "
+            f"color: {t['text_dim']}; border-left: 2px solid {_warn()}; "
             f"padding: 3px 0 3px 10px;")
         prep.addWidget(self.prep_warn)
         prep.addStretch(1)
@@ -931,10 +902,9 @@ class TrainView(QWidget):
         per_label_layout = QVBoxLayout(self.per_label_box)
         per_label_layout.setContentsMargins(0, 0, 0, 0)
         per_label_layout.setSpacing(4)
-        per_label_title = QLabel("Accuracy by sound")
+        per_label_title = components.heading("Accuracy by sound", "card")
         per_label_title.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']}; "
-            f"margin-top: 6px;")
+            components.heading_style("card") + " margin-top: 6px;")
         per_label_layout.addWidget(per_label_title)
         self.per_label = PerLabelAccuracy()
         per_label_layout.addWidget(self.per_label)
@@ -958,7 +928,7 @@ class TrainView(QWidget):
         self.log_view.setStyleSheet(
             f"QPlainTextEdit {{ background-color: {t['plot_bg']}; "
             f"color: {t['text_dim']}; border: 1px solid {t['border']}; "
-            f"border-radius: 6px; }}")
+            f"border-radius: {t['radius']}; }}")
         font = self.log_view.font()
         font.setFamily("Consolas")
         font.setStyleHint(font.StyleHint.Monospace)
@@ -978,15 +948,15 @@ class TrainView(QWidget):
         frame.setObjectName("successPanel")
         frame.setStyleSheet(
             f"QFrame#successPanel {{ background-color: {t['card']}; "
-            f"border: 1px solid {t['accent']}; border-radius: 8px; }}")
+            f"border: 1px solid {t['accent']}; "
+            f"border-radius: {t['radius_card']}; }}")
         v = QVBoxLayout(frame)
         v.setContentsMargins(16, 14, 16, 14)
         v.setSpacing(6)
 
         self.success_title = QLabel("")
         self.success_title.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {t['text_bright']}; "
-            f"border: none;")
+            components.heading_style("card") + " border: none;")
         v.addWidget(self.success_title)
         self.success_body = QLabel("")
         self.success_body.setWordWrap(True)
@@ -1282,16 +1252,16 @@ class TrainView(QWidget):
             missing = "any sounds" if total == 0 else "a second sound"
             self._set_readiness(
                 f"A model tells sounds apart, so it needs at least two. "
-                f"You don't have {missing} yet.", BAD)
+                f"You don't have {missing} yet.", _bad())
             self.train_btn.setEnabled(False)
             return
         if len(selected) < 2:
-            self._set_readiness("Select at least 2 sounds to train on.", WARN)
+            self._set_readiness("Select at least 2 sounds to train on.", _warn())
             self.train_btn.setEnabled(False)
             return
         name = self.name_input.text().strip()
         if not name:
-            self._set_readiness("Give the model a name.", WARN)
+            self._set_readiness("Give the model a name.", _warn())
             self.train_btn.setEnabled(False)
             return
         # Check the name the trainer would actually write, not the one typed.
@@ -1300,7 +1270,7 @@ class TrainView(QWidget):
         try:
             name = library_ops.sanitize_name(name, kind="model name")
         except library_ops.LibraryOpError as exc:
-            self._set_readiness(str(exc), BAD)
+            self._set_readiness(str(exc), _bad())
             self.train_btn.setEnabled(False)
             return
         # Training a name that exists used to overwrite it behind one confirm.
@@ -1311,7 +1281,7 @@ class TrainView(QWidget):
         if library_ops.model_exists(name):
             self._set_readiness(
                 f"“{name}” already exists. Models can't be overwritten - "
-                f"try “{_next_free_name(name)}”.", BAD)
+                f"try “{_next_free_name(name)}”.", _bad())
             self.train_btn.setEnabled(False)
             return
 
@@ -1321,7 +1291,7 @@ class TrainView(QWidget):
             # strong sound left for it to be weak *against*.
             warning = help_dialog.thin_data_warning(thin, len(selected))
             self._set_readiness(
-                "Ready, but " + warning[0].lower() + warning[1:], WARN)
+                "Ready, but " + warning[0].lower() + warning[1:], _warn())
         else:
             self._set_readiness("Ready to train.", t["accent"])
         self.train_btn.setEnabled(not running)
@@ -1391,7 +1361,7 @@ class TrainView(QWidget):
         try:
             name = library_ops.sanitize_name(name, kind="model name")
         except library_ops.LibraryOpError as exc:
-            self._set_readiness(str(exc), BAD)
+            self._set_readiness(str(exc), _bad())
             return
         if library_ops.model_exists(name):
             # The button is disabled for this, so reaching here means the
@@ -1564,7 +1534,7 @@ class TrainView(QWidget):
             return
         self.best_value.setText(f"{self._best_accuracy:.1%}")
         self.best_value.setStyleSheet(
-            f"font-size: 26px; font-weight: bold; color: {t['accent']};")
+            components.heading_style("stat", t["accent"]))
         at = (f"at epoch {self._best_epoch + 1}"
               if self._best_epoch is not None else "")
         tail = "Saved to disk." if self.worker is None else "Already on disk."
@@ -1636,7 +1606,7 @@ class TrainView(QWidget):
         self.eta.setText("")
         if name:
             self.run_title.setText(f"“{name}” did not train")
-        self._set_status(f"Training failed: {message}", BAD)
+        self._set_status(f"Training failed: {message}", _bad())
         self.controls_row.setVisible(False)
         self.recover_row.setVisible(True)
         self._update_readiness()
@@ -1710,17 +1680,3 @@ class TrainView(QWidget):
 
     def refresh_theme(self):
         pass
-
-
-def primary_button_style():
-    """Accent-filled call to action - the same rank of button as the Sounds
-    tab's 'Add recording' and the empty-state panels."""
-    t = theme.colors()
-    return (f"QPushButton#primaryAction {{ background-color: {t['accent']}; "
-            f"color: {t['accent_text']}; font-weight: bold; border: none; "
-            f"border-radius: 4px; padding: 6px 18px; }} "
-            # Disabled matches the app-wide rule: sunken fill, disabled_text.
-            # text_dim on the live $button fill measured 3.29.
-            f"QPushButton#primaryAction:disabled {{ "
-            f"background-color: {t['disabled_bg']}; "
-            f"color: {t['disabled_text']}; }}")

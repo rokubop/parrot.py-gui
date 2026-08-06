@@ -9,11 +9,11 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QTableWidget, QTableWidgetItem,
     QListWidget, QScrollArea, QWidget, QFrame
 )
 
-from gui import theme
+from gui import components, theme
 from gui.widgets.click_slider import ClickSlider, slider_qss
 from gui.workers.eval_worker import AccuracyWorker, LiveTestWorker
 
@@ -46,11 +46,7 @@ class AccuracyDialog(QDialog):
             "Of this sound's recorded segments, how many the model labels correctly")
         self.table.horizontalHeaderItem(3).setToolTip(
             "When the model says this sound, how often it's right (within this test set)")
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        components.style_table(self.table, stretch=4)
         layout.addWidget(self.table, 1)
 
         row = QHBoxLayout()

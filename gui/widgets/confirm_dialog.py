@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QFrame
 )
 
-from gui import theme
+from gui import components, theme
 
 
 def confirm_destructive(parent, *, title, body, detail=None,
@@ -49,8 +49,7 @@ class _ConfirmDialog(QDialog):
 
         heading = QLabel(title)
         heading.setWordWrap(True)
-        heading.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {t['text_bright']};")
+        heading.setStyleSheet(components.heading_style("section"))
         layout.addWidget(heading)
 
         body_label = QLabel(body)
@@ -62,7 +61,7 @@ class _ConfirmDialog(QDialog):
             detail_label = QLabel(detail)
             detail_label.setWordWrap(True)
             detail_label.setStyleSheet(
-                f"color: {t['text_dim']}; font-size: 12px;")
+                f"color: {t['text_dim']}; ")
             frame = QFrame()
             frame.setStyleSheet(
                 f"QFrame {{ background-color: {t['base']}; border: 1px solid "

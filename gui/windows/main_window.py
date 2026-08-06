@@ -392,7 +392,9 @@ class MainWindow(QMainWindow):
             f"background-color: {theme.colors()['panel']}; "
             f"color: {theme.colors()['text_bright']}; "
             f"border: 1px solid {theme.colors()['control_border']}; "
-            f"border-radius: 6px; padding: 10px 18px; font-size: 15px;")
+            f"border-radius: {theme.colors()['radius_card']}; "
+            f"padding: 10px 18px; "
+            f"font-size: {theme.TYPE_SCALE['card']}px;")
         for keys, step in (("Ctrl+=", 1), ("Ctrl++", 1), ("Ctrl+-", -1),
                            ("Ctrl+0", 0)):
             shortcut = QShortcut(QKeySequence(keys), self)

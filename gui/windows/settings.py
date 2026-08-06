@@ -17,7 +17,7 @@ from config.config import (
     THRESHOLD_DETECTION, TWO_PASS_DETECTION,
     RECORDINGS_FOLDER, CLASSIFIER_FOLDER,
 )
-from gui import theme
+from gui import components, theme
 from gui.services import (user_config, strategies, library_ops, audio_devices,
                           ui_prefs, profiles)
 
@@ -44,8 +44,7 @@ class SettingsPage(QWidget):
         scroll.setWidget(body)
 
         title = QLabel("Settings")
-        title.setStyleSheet(
-            f"font-size: 20px; font-weight: bold; color: {theme.colors()['text_bright']};")
+        title.setStyleSheet(components.heading_style("title"))
         layout.addWidget(title)
 
         note = QLabel(f"Changes are saved to {user_config.USER_CONFIG_PATH} "
@@ -84,7 +83,7 @@ class SettingsPage(QWidget):
             "threshold set in a recording's edit view always wins over either.")
         two_pass_desc.setWordWrap(True)
         two_pass_desc.setStyleSheet(
-            f"color: {theme.colors()['text_dim']}; font-size: 12px;")
+            f"color: {theme.colors()['text_dim']}; ")
         form.addRow("", two_pass_desc)
 
         self.strategy_combo = QComboBox()
@@ -100,7 +99,7 @@ class SettingsPage(QWidget):
             self.strategy_combo.currentText()))
         self.strategy_desc.setWordWrap(True)
         self.strategy_desc.setStyleSheet(
-            f"color: {theme.colors()['text_dim']}; font-size: 12px;")
+            f"color: {theme.colors()['text_dim']}; ")
         form.addRow("", self.strategy_desc)
 
         layout.addWidget(audio_group)

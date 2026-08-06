@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem
 )
 
-from gui import theme
+from gui import components, theme
 from gui.services import (capture_model, live_stats, pattern_colors,
                           talon_companion)
 from gui.workers.bridge_worker import BridgeWorker
@@ -35,11 +35,6 @@ CAPTURES_DIR = os.path.join(DATA_DIR, "talon", "captures")
 # tools can be compared by eye.
 POWER_SCALE = 30.0
 
-# The neutral one is the theme's own dim text, looked up rather than pinned:
-# a hardcoded grey here was the one place in the app that missed the contrast
-# fix. The three status colours stay literal because they carry meaning.
-_STATUS_COLOR = {"detected": "#41d97f", "grace_detected": "#5ab0f5",
-                 "throttled": "#d3a45c"}
 # Words, not glyphs. The tester uses drawn icons; the nearest characters here
 # are emoji on Windows, and a clock face rendered in full colour next to a
 # monospace number reads as a bug. Colour still carries the meaning.
@@ -47,8 +42,13 @@ _STATUS_MARK = {"detected": "fired", "grace_detected": "grace",
                 "throttled": "throttled"}
 
 
+# Looked up, not pinned. The neutral one always was; the three status colours
+# were literals that happened to equal the theme's $ok/$info/$warn - which is
+# what pattern_card.py reads for these same three states. See
+# theme.PATTERN_STATUS: the invariant is that a state is one colour in both
+# places, so both ends go through the same mapping to get it.
 def _status_color(status):
-    return _STATUS_COLOR.get(status) or theme.colors()["text_dim"]
+    return theme.status_color(status) or theme.colors()["text_dim"]
 
 
 def _status_of(row):
@@ -227,9 +227,7 @@ class TalonTestView(QWidget):
         back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         back.clicked.connect(self.done.emit)
         head.addWidget(back)
-        self.title = QLabel("")
-        self.title.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
+        self.title = components.heading("", "card")
         head.addWidget(self.title)
         self.status_label = QLabel("Waiting for Talon…")
         self.status_label.setStyleSheet(f"color: {t['text_dim']};")
@@ -286,18 +284,14 @@ class TalonTestView(QWidget):
         t = theme.colors()
         card = QFrame()
         card.setObjectName("readoutCard")
-        card.setStyleSheet(
-            f"QFrame#readoutCard {{ background-color: {t['panel']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
-            f"QFrame#readoutCard > QLabel {{ background: transparent; "
-            f"border: none; }}")
+        card.setStyleSheet(components.card_style("readoutCard"))
         row = QHBoxLayout(card)
-        row.setContentsMargins(18, 12, 18, 12)
+        row.setContentsMargins(*components.CARD_MARGINS)
         row.setSpacing(20)
 
-        self.big_name = QLabel("–")
-        self.big_name.setStyleSheet(
-            f"font-size: 30px; font-weight: bold; color: {t['accent']};")
+        # The same rank as the training page's "best so far" figure: the one
+        # number on the screen you are reading from across the room.
+        self.big_name = components.heading("–", "stat", color=t["accent"])
         self.big_name.setMinimumWidth(220)
         row.addWidget(self.big_name)
 
@@ -309,7 +303,7 @@ class TalonTestView(QWidget):
             f"color: {t['text']};")
         numbers.addWidget(self.big_numbers)
         caption = QLabel("power / probability")
-        caption.setStyleSheet(f"color: {t['text_dim']}; font-size: 11px;")
+        caption.setStyleSheet(f"color: {t['text_dim']}; ")
         numbers.addWidget(caption)
         row.addLayout(numbers)
 
@@ -402,18 +396,12 @@ class TalonTestView(QWidget):
                               "Power × Prob."]
         self.table.setColumnCount(len(self._base_headers))
         self.table.setHorizontalHeaderLabels(self._base_headers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setItemDelegateForColumn(11, RatioBarDelegate(self.table))
-        header = self.table.horizontalHeader()
         # Numbers sized to their contents, and the leftover width goes to the
         # bar - it is the column that gets more useful the wider it is, and
         # stretching the pattern names instead pushed every number off to one
         # side of a very empty row.
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Stretch)
+        components.style_table(self.table, stretch=11)
         self.stack.addWidget(self.table)
 
         # min · avg · max on one line per pattern rather than the tester's
@@ -431,12 +419,7 @@ class TalonTestView(QWidget):
                 "pattern was the one winning")
         self.stats_table.horizontalHeaderItem(1).setToolTip(
             "how many frames this pattern won in this session")
-        self.stats_table.verticalHeader().setVisible(False)
-        self.stats_table.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers)
-        stats_header = self.stats_table.horizontalHeader()
-        stats_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        stats_header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
+        components.style_table(self.stats_table, stretch=7)
         self.stack.addWidget(self.stats_table)
         v.addWidget(self.stack, 1)
         self._show_tab("frames")
@@ -457,8 +440,7 @@ class TalonTestView(QWidget):
         inner.setSpacing(8)
         self.empty_title = QLabel("")
         self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_title.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {t['text_bright']};")
+        self.empty_title.setStyleSheet(components.heading_style("section"))
         inner.addWidget(self.empty_title)
         # A word-wrapped label reports a one-line sizeHint, so a layout that is
         # not asked for heightForWidth clips it. Pin the width, ask for the
@@ -507,9 +489,8 @@ class TalonTestView(QWidget):
             body = ("Connected. Nothing has been loud or clear enough to "
                     "trigger a pattern yet.")
         self.empty_title.setText(title)
-        self.empty_body.setText(body)
-        self.empty_body.setMinimumHeight(
-            self.empty_body.heightForWidth(self._EMPTY_BODY_WIDTH))
+        components.set_wrapped_text(self.empty_body, body,
+                                    self._EMPTY_BODY_WIDTH)
         self.empty_note.setVisible(False)
 
     def _show_tab(self, key):
@@ -581,10 +562,10 @@ class TalonTestView(QWidget):
     def _refresh_legend(self):
         t = theme.colors()
         parts = [
-            f"<span style='color:{_STATUS_COLOR['detected']};'>fired</span>",
-            f"<span style='color:{_STATUS_COLOR['grace_detected']};'>grace</span> "
+            f"<span style='color:{_status_color('detected')};'>fired</span>",
+            f"<span style='color:{_status_color('grace_detected')};'>grace</span> "
             f"- fired under the softer rules after a detection",
-            f"<span style='color:{_STATUS_COLOR['throttled']};'>throttled</span> "
+            f"<span style='color:{_status_color('throttled')};'>throttled</span> "
             f"- would have fired, held back",
             f"<span style='color:#d33333;'>|</span> the pattern's power threshold",
         ]
@@ -670,8 +651,7 @@ class TalonTestView(QWidget):
         winner = frame.winner
         colour = self.colors.get(winner["name"], theme.colors()["accent"])
         self.big_name.setText(winner["name"])
-        self.big_name.setStyleSheet(
-            f"font-size: 30px; font-weight: bold; color: {colour};")
+        self.big_name.setStyleSheet(components.heading_style("stat", colour))
         self.big_numbers.setText(
             f"{frame.power:.2f} / {winner['probability']:.4f}")
         self.readout_bar.set_frame(frame.power, self._segments(frame),
@@ -799,7 +779,7 @@ class TalonTestView(QWidget):
                     item.setForeground(
                         QColor(_status_color(_status_of(frame.patterns[0]))))
                 if col == 0 and frame.detected:
-                    item.setForeground(QColor(_STATUS_COLOR["detected"]))
+                    item.setForeground(QColor(_status_color("detected")))
                 self.table.setItem(row, col, item)
             winner = frame.winner
             self.table.item(row, 11).setData(

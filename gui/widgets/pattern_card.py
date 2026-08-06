@@ -15,16 +15,16 @@ from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QSizePolicy, QWidget)
 
-from gui import theme
+from gui import components, theme
 from gui.services import pattern_colors
 from gui.widgets.session_card import _dots_icon
 
 # Throttle and grace match talon_test.py, so a colour means one thing in both.
-# Read from the theme rather than repeated as literals: the status colours are
-# contrast-measured against the card these are printed on, in one place.
+# Both ends now go through theme.PATTERN_STATUS to say so, rather than one
+# reading $warn and the other pinning the hex that $warn happens to be.
 _T = theme.colors()
-THROTTLE_COLOR = _T["warn"]
-GRACE_COLOR = _T["info"]
+THROTTLE_COLOR = theme.status_color("throttled")
+GRACE_COLOR = theme.status_color("grace_detected")
 BAD_COLOR = _T["bad"]
 CHANGED_COLOR = _T["info"]
 
@@ -249,8 +249,7 @@ class PatternCard(QFrame):
             f"color: {colors.get(name, pattern_colors.UNKNOWN)}; font-size: 14px;")
         row.addWidget(chip)
         title = QLabel(name)
-        title.setStyleSheet(
-            f"color: {t['text_bright']}; font-size: 15px; font-weight: bold;")
+        title.setStyleSheet(components.heading_style("card"))
         row.addWidget(title)
 
         sounds = pattern.get("sounds")
@@ -260,21 +259,22 @@ class PatternCard(QFrame):
         if suffix:
             label = _ElidedLabel(suffix)
             if not sounds or unknown:
-                label.setStyleSheet(f"color: {BAD_COLOR}; font-size: 12px;")
+                label.setStyleSheet(f"color: {BAD_COLOR}; ")
                 label.setToolTip(
                     "at least one sound is required" if not sounds else
                     f"the deployed model does not know {', '.join(unknown)}")
             else:
-                label.setStyleSheet(f"color: {t['text_dim']}; font-size: 12px;")
+                label.setStyleSheet(f"color: {t['text_dim']}; ")
             row.addWidget(label, 1)
         else:
             row.addStretch()
 
         if is_new:
-            new = QLabel("new")
-            new.setStyleSheet(f"color: {t['accent']}; font-size: 11px;")
-            new.setToolTip("not deployed yet")
-            row.addWidget(new)
+            # A badge, like the issue count beside it. It was a plain accent
+            # label, so the two states a card can carry were built two ways and
+            # only one of them read as a badge.
+            row.addWidget(components.badge("new", "accent", outlined=False,
+                                           tip="not deployed yet"))
 
         errors = [i for i in issues if i.severity == "error"]
         warnings = [i for i in issues if i.severity == "warning"]
@@ -284,12 +284,10 @@ class PatternCard(QFrame):
         if warnings:
             parts.append(f"{len(warnings)} ⚠")
         if parts:
-            badge = QLabel("  ".join(parts))
-            badge.setStyleSheet(
-                f"color: {BAD_COLOR if errors else THROTTLE_COLOR}; "
-                f"font-size: 11px;")
-            badge.setToolTip("\n".join(str(i) for i in issues))
-            row.addWidget(badge)
+            row.addWidget(components.badge(
+                "  ".join(parts), "bad" if errors else "warn",
+                outlined=False,
+                tip="\n".join(str(i) for i in issues)))
 
         # Same pair the sound cards carry: Edit direct, the rest behind dots.
         edit_btn = QPushButton("Edit")
@@ -308,11 +306,7 @@ class PatternCard(QFrame):
         return row
 
     def _section(self, text, t):
-        label = QLabel(text)
-        label.setStyleSheet(
-            f"color: {t['text_dim']}; font-size: 11px; "
-            f"border-bottom: 1px solid {t['border']}; padding-bottom: 3px;")
-        return label
+        return components.section_label(text)
 
     def _grid(self, column):
         grid = QGridLayout()
@@ -327,10 +321,10 @@ class PatternCard(QFrame):
         row = grid.rowCount()
         name = QLabel(label)
         name.setStyleSheet(
-            f"color: {label_color}; font-family: {MONO}; font-size: 12px;")
+            f"color: {label_color}; font-family: {MONO}; ")
         val = QLabel(value)
         val.setStyleSheet(
-            f"color: {value_color}; font-family: {MONO}; font-size: 12px;")
+            f"color: {value_color}; font-family: {MONO}; ")
         if tip:
             name.setToolTip(tip)
             val.setToolTip(tip)
@@ -351,7 +345,8 @@ class PatternCard(QFrame):
         # Scoped per qt-traps: unscoped, this recolours every label inside.
         self.setStyleSheet(
             f"QFrame#patternCard {{ background-color: {t['panel']}; "
-            f"border: 1px solid {border}; border-radius: 7px; }} "
+            f"border: 1px solid {border}; "
+            f"border-radius: {t['radius_card']}; }} "
             f"QFrame#patternCard QLabel {{ background: transparent; "
             f"border: none; }}")
 

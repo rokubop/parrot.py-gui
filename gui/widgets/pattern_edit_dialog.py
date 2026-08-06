@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
     QInputDialog, QScrollArea, QWidget, QFrame
 )
 
-from gui import theme
+from gui import components, theme
 from gui.services import patterns_schema
 from gui.widgets.pattern_card import BAD_COLOR, GRACE_COLOR, MONO
 
@@ -61,7 +61,7 @@ class _Spin(QDoubleSpinBox):
 
 def _mono(widget, color):
     widget.setStyleSheet(
-        f"color: {color}; font-family: {MONO}; font-size: 12px;")
+        f"color: {color}; font-family: {MONO}; ")
     return widget
 
 
@@ -75,12 +75,8 @@ def _check_row(check, spin):
 
 
 def _section(text, t, color=None):
-    """Same idiom as the card: the lowercase file key, thin rule under it."""
-    label = QLabel(text)
-    label.setStyleSheet(
-        f"color: {color or t['text_dim']}; font-size: 11px; "
-        f"border-bottom: 1px solid {t['border']}; padding-bottom: 3px;")
-    return label
+    """Same idiom as the card, and now literally the same widget."""
+    return components.section_label(text, color)
 
 
 # One entry per file key, led by "pattern" for the thing being edited.
@@ -126,7 +122,7 @@ def _legend_panel(t):
         line = QLabel(text)
         line.setWordWrap(True)
         line.setStyleSheet(
-            f"color: {t['text_dim']}; font-size: 11px; border: none;")
+            f"color: {t['text_dim']}; border: none;")
         col.addWidget(line)
     col.addStretch()
     return panel
@@ -196,7 +192,7 @@ class _RuleRows:
         remove.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         remove.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; "
-            f"padding: 0; color: {self.t['text_dim']}; font-size: 12px; }} "
+            f"padding: 0; color: {self.t['text_dim']}; }} "
             f"QPushButton:hover {{ color: {BAD_COLOR}; }}")
         remove.setToolTip(f"remove {op}")
         row.addWidget(label, 1)
@@ -313,7 +309,7 @@ class PatternEditDialog(QDialog):
                 info_label = QLabel(info)
                 info_label.setWordWrap(True)
                 info_label.setStyleSheet(
-                    f"color: {t['text_dim']}; font-size: 12px; border: none;")
+                    f"color: {t['text_dim']}; border: none;")
                 left.addWidget(info_label)
         self.threshold_rows = _RuleRows(left, ops, self._revalidate, t)
         for op, value in (pattern.get("threshold") or {}).items():
@@ -349,7 +345,7 @@ class PatternEditDialog(QDialog):
         # ---- validation + buttons
         self.issues_label = QLabel("")
         self.issues_label.setWordWrap(True)
-        self.issues_label.setStyleSheet(f"color: {t['text_dim']}; font-size: 12px;")
+        self.issues_label.setStyleSheet(f"color: {t['text_dim']}; ")
         outer.addWidget(self.issues_label)
         buttons = QHBoxLayout()
         buttons.addStretch()

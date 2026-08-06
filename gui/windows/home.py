@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import CLASSIFIER_FOLDER
-from gui import theme
+from gui import components, theme
 from gui.services import library_ops
 from gui.widgets import help_dialog
 from gui.services.talon_discovery import find_matching_local_model
@@ -111,9 +111,10 @@ class _StepCard(QFrame):
         border = t["accent"] if current else t["border"]
         self.setStyleSheet(
             f"QFrame#stepCard {{ background-color: {t['card']}; "
-            f"border: 1px solid {border}; border-radius: 8px; }}")
+            f"border: 1px solid {border}; "
+            f"border-radius: {t['radius_card']}; }}")
         self.title.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']}; border: none;")
+            components.heading_style("card") + " border: none;")
         self.help_btn.setStyleSheet(
             f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
             f"border: none; padding: 2px 6px; }} "
@@ -123,15 +124,13 @@ class _StepCard(QFrame):
         self.status.setText(status_text)
         if action_text is not None:
             self.action.setText(action_text)
-        if current or action_primary:
-            self.action.setStyleSheet(
-                # accent_text, not white: white on the accent green measures
-                # 1.83, and this is the one button the landing page is for.
-                f"QPushButton {{ background-color: {t['accent']}; "
-                f"color: {t['accent_text']}; font-weight: bold; border: none; "
-                f"border-radius: 4px; padding: 7px 14px; }}")
-        else:
-            self.action.setStyleSheet("")
+        # The same accent button as everywhere else, rather than a hand-rolled
+        # near-copy: this one had its own padding and no :disabled rule.
+        self.action.setObjectName(
+            "primaryAction" if (current or action_primary) else "")
+        self.action.setStyleSheet(
+            components.primary_button_style()
+            if (current or action_primary) else "")
 
 
 class HomePage(QWidget):
@@ -358,24 +357,23 @@ class HomePage(QWidget):
 
     def _apply_theme_styles(self):
         t = theme.colors()
-        self.hero_title.setStyleSheet(
-            f"font-size: 28px; font-weight: bold; color: {t['text_bright']};")
+        self.hero_title.setStyleSheet(components.heading_style("hero"))
         self.hero_sub.setStyleSheet(f"font-size: 14px; color: {t['text_dim']};")
         self.guide_label.setStyleSheet(f"color: {t['text_dim']};")
         self.guide_btn.setStyleSheet(
             f"QPushButton {{ color: {t['accent']}; background: transparent; "
             f"border: none; padding: 2px 4px; text-decoration: underline; }}")
         self.status_title.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {t['text_bright']}; "
-            f"margin-top: 8px;")
+            components.heading_style("section") + " margin-top: 8px;")
         for panel in (self.model_panel, self.talon_panel, self.import_panel):
             panel.setStyleSheet(
                 f"QFrame#homePanel {{ background-color: {t['card']}; "
-                f"border: 1px solid {t['border']}; border-radius: 8px; }}")
+                f"border: 1px solid {t['border']}; "
+                f"border-radius: {t['radius_card']}; }}")
         for label in (self.model_panel_title, self.talon_panel_title,
                       self.import_title):
             label.setStyleSheet(
-                f"font-size: 14px; font-weight: bold; color: {t['text_bright']}; border: none;")
+                components.heading_style("card") + " border: none;")
 
     def refresh_theme(self):
         self._apply_theme_styles()

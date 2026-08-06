@@ -16,7 +16,8 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 )
 
-from gui import theme
+from gui import components, theme
+from gui.components import primary_button_style
 
 BODY_WIDTH = 460
 
@@ -40,16 +41,15 @@ class SetupPanel(QWidget):
         side.setObjectName("setupSide")
         side.setStyleSheet(
             f"QFrame#setupSide {{ background-color: {t['panel']}; "
-            f"border: 1px solid {t['border']}; border-radius: 8px; }} "
+            f"border: 1px solid {t['border']}; "
+            f"border-radius: {t['radius_card']}; }} "
             f"QFrame#setupSide QLabel {{ background: transparent; "
             f"border: none; }}")
         side.setFixedWidth(260)
         self._side_layout = QVBoxLayout(side)
         self._side_layout.setContentsMargins(18, 16, 18, 18)
         self._side_layout.setSpacing(9)
-        heading = QLabel("Setup")
-        heading.setStyleSheet(
-            f"font-size: 13px; font-weight: bold; color: {t['text_bright']};")
+        heading = components.heading("Setup", "card")
         self._side_layout.addWidget(heading)
         # Held by reference rather than by index: taking items back out of the
         # layout by position also takes the stretch, and the rows pile up on
@@ -63,8 +63,7 @@ class SetupPanel(QWidget):
         # checklist it belongs to.
         self.title = QLabel("")
         self.title.setWordWrap(True)
-        self.title.setStyleSheet(
-            f"font-size: 17px; font-weight: bold; color: {t['text_bright']};")
+        self.title.setStyleSheet(components.heading_style("section"))
         self.title.setFixedWidth(BODY_WIDTH)
         main.addWidget(self.title, 0, Qt.AlignmentFlag.AlignLeft)
         self.body = QLabel("")
@@ -72,7 +71,6 @@ class SetupPanel(QWidget):
         self.body.setFixedWidth(BODY_WIDTH)
         self.body.setStyleSheet(f"color: {t['text_dim']};")
         main.addWidget(self.body, 0, Qt.AlignmentFlag.AlignLeft)
-        from gui.windows.train_view import primary_button_style
         self.button = QPushButton("")
         self.button.setObjectName("primaryAction")
         self.button.setMinimumHeight(32)
@@ -129,8 +127,8 @@ class SetupPanel(QWidget):
             self.note.setText("")
             return
         self.title.setText(current.get("title", ""))
-        self.body.setText(current.get("body", ""))
-        self.body.setMinimumHeight(self.body.heightForWidth(BODY_WIDTH))
+        components.set_wrapped_text(self.body, current.get("body", ""),
+                                    BODY_WIDTH)
         action = current.get("action")
         self.button.setVisible(bool(action))
         if action:

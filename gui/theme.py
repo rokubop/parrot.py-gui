@@ -65,6 +65,19 @@ THEMES = {
         # it reads the same over the list's $base and over a gradient card, and
         # so whatever the row itself is coloured survives underneath it.
         "selection": "rgba(65, 217, 127, 0.22)",
+        # The same selection, pre-composited over `base`, for tables only.
+        #
+        # A table paints the palette's Highlight - solid $accent - underneath
+        # the item before the stylesheet's ::item:selected lands on top. Lists
+        # and trees do not. So the translucent `selection` above composites
+        # over solid green there instead of over $base, which for this
+        # particular colour lands back on almost exactly the green it started
+        # from: the rule was in the stylesheet and changed nothing.
+        #
+        # Opaque, and the measured value of `selection` over `base` in a tree
+        # (#1e4332) rather than the arithmetic one (#1f4232), so a selected
+        # table row and a selected tree row are the same pixels.
+        "selection_opaque": "#1e4332",
         # Two boundary colours, because a border does two different jobs and
         # only one of them is information.
         #
@@ -83,6 +96,12 @@ THEMES = {
         "control_border": "#8a929e",
         "button": "#4c5462",
         "button_hover": "#5c6577",
+        # Cards are rounder than controls. Two tokens rather than one, because
+        # they were drifting apart by hand anyway - 8px on every card, 4px or
+        # 5px on every button, and a scattering of 2/6/7/11/18 that meant
+        # nothing. A pill is a radius large enough to always be a half-circle.
+        "radius_card": "8px",
+        "radius_pill": "9px",
         # Disabled was text_dim on an unchanged button fill, which measured the
         # same as an enabled button and read as one. Sunken and dimmer: the
         # fill drops below the window, and 3.6 of text on it is legible without
@@ -118,6 +137,70 @@ QUANTITY_COLORS = {
     "Excellent": "#41d97f",
 }
 
+# What a pattern's state looks like, wherever it is shown: the live tester's
+# rows and legend, and the throttle/grace values on a pattern card. Shared for
+# the same reason as the ratings above - the invariant is "throttled is the
+# same colour in both places", not "throttled happens to be warn".
+#
+# It was not shared, and the two ends disagreed about how to do it. pattern_card
+# read $warn/$info from the theme and said so; talon_test pinned #d3a45c and
+# #5ab0f5 as literals and said they "stay literal because they carry meaning".
+# Same three colours, same stated invariant, opposite mechanisms - so they
+# matched by coincidence, and retuning $warn would have moved the cards and left
+# the tester behind.
+#
+# A state maps to a status *token*, not to a hex, so the contrast work above
+# stays the single source for what the colour actually is.
+PATTERN_STATUS = {
+    "detected": "ok",
+    "grace_detected": "info",
+    "throttled": "warn",
+}
+
+
+def status_color(state):
+    """The colour for a pattern state, or None if it is not one of them."""
+    token = PATTERN_STATUS.get(state)
+    return colors()[token] if token else None
+
+# Type scale. Seven ranks, each a distinct job - not seven sizes that happened.
+#
+# Before this there were eight sizes doing five jobs: card headings were 15px
+# in seven files and 16px in six more, with no rule telling them apart, and
+# sub-view titles were 18px while the tab titles they replace were 20px. The
+# sizes that vanished (14, 16, 18) were each within 1-2px of a neighbour, so
+# nothing here is a resize anyone asked for - it is the same headings agreeing.
+#
+#   hero      the Home landing title. One in the app.
+#   stat      a big numeric readout - "84%", the live-test sound name.
+#   title     what this page or sub-view is about: a sound name, a model name,
+#             "Settings", "Record". The largest thing on a working page.
+#   section   a titled region or an empty state or a dialog's own question.
+#   card      a heading inside a card or panel.
+#   eyebrow   the small dim label naming the value under it. Always text_dim,
+#             so `heading()` colours it that way rather than text_bright.
+#   body      running copy, and the floor. Nothing in the app is smaller.
+#
+# `body` is a floor, not just an entry. It used to be that lists, trees, tables
+# and the status bar declared 11px or 12px, and twenty-odd labels did the same
+# by hand - so the app's secondary copy was dim *and* small, which is two
+# de-emphases stacked. The contrast tiers above are measured against WCAG's
+# 4.5:1, and that threshold assumes normal-size text; going under it asks for
+# more contrast, not less. Interface size is a uniform QT_SCALE_FACTOR, so it
+# scales everything together and never rescues the small end.
+#
+# Nothing below `body`. `eyebrow` is the same size and stays subordinate
+# through weight, dim ink and letter-spacing - see components.heading_style.
+TYPE_SCALE = {
+    "hero": 28,
+    "stat": 26,
+    "title": 20,
+    "section": 17,
+    "card": 15,
+    "eyebrow": 13,
+    "body": 13,
+}
+
 
 def names():
     return list(THEMES.keys())
@@ -132,7 +215,7 @@ def colors():
 
 
 _STYLESHEET = Template("""
-    * { font-size: 13px; }
+    * { font-size: ${fs_body}px; }
     QMainWindow, QWidget { background-color: $window; color: $text; }
     /* QWidget rule matches subclasses: without this, every QLabel paints
        an opaque box over gradient panels */
@@ -167,7 +250,7 @@ _STYLESHEET = Template("""
     QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: $text_dim; }
     QListWidget, QTreeWidget {
         border: 1px solid $border; border-radius: $radius;
-        background-color: $base; font-size: 12px;
+        background-color: $base;
         /* Kills the focus rectangle the style draws around the *current cell*.
            It was always there; a solid selection fill was opaque enough to hide
            it, and a tint is not - so clicking a row lit one cell a shade
@@ -192,7 +275,30 @@ _STYLESHEET = Template("""
        Fusion's own checkbox is drawn instead - but its box is derived from the
        palette and came out at 1.5:1 against the window, so indicator_style.py
        paints that one primitive over the top. See its docstring. */
-    QTableWidget { gridline-color: $border; border: none; font-size: 12px; background-color: $base; }
+    /* Tables get the same treatment as the lists above, which they had none
+       of: no ::item:selected rule, so a selected row fell through to the
+       palette's Highlight - solid $accent, with $accent_text printed on it.
+       Measured: a selected tree row is #1e4332, a selected table row was
+       #41d97f. That is the fill the comment on the lists above is about, and
+       the Integrations table is the worst place in the app to have kept it -
+       every row there is coloured to mean something.
+
+       $selection_opaque, not $selection: see its comment. A translucent tint
+       here composites over the green rather than over $base and comes back out
+       the same green.
+
+       Gridlines stay. Unlike a list, these tables are read across as well as
+       down - twelve columns of numbers in the live tester - which is the job
+       gridlines do. */
+    QTableWidget {
+        gridline-color: $border; border: 1px solid $border;
+        border-radius: $radius; background-color: $base;
+        outline: none;
+    }
+    QTableWidget::item { padding: 4px 2px; }
+    QTableWidget::item:selected {
+        background-color: $selection_opaque; color: $text_bright;
+    }
     QHeaderView::section {
         background-color: $toolbar; color: $text_dim; border: none;
         border-bottom: 1px solid $border; padding: 6px 8px; font-weight: bold;
@@ -218,7 +324,7 @@ _STYLESHEET = Template("""
     QScrollBar::handle:horizontal { background-color: $control_border; border-radius: 5px; min-width: 24px; }
     QScrollBar::handle:horizontal:hover { background-color: $accent; }
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
-    QStatusBar { background-color: $toolbar; color: $text_dim; border-top: 1px solid $border; font-size: 12px; }
+    QStatusBar { background-color: $toolbar; color: $text_dim; border-top: 1px solid $border; }
     QSlider::groove:horizontal { height: 4px; background: $control_border; border-radius: 2px; }
     QSlider::handle:horizontal { background: $accent; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
     QSplitter::handle { background-color: $border; }
@@ -259,4 +365,7 @@ def apply(app, name):
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
     app.setPalette(_palette(t))
-    app.setStyleSheet(_STYLESHEET.substitute(t))
+    # The type scale goes in as $fs_<rank>, so the stylesheet states the
+    # floor from the same table everything else reads.
+    subs = dict(t, **{f"fs_{k}": v for k, v in TYPE_SCALE.items()})
+    app.setStyleSheet(_STYLESHEET.substitute(subs))

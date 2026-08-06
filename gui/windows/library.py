@@ -11,7 +11,7 @@ from gui.widgets.session_card import SessionCard, _wav_duration
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
 from gui.widgets import help_dialog
-from gui import theme
+from gui import components, theme
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating
 
@@ -130,10 +130,8 @@ class SoundLibraryPage(QWidget):
 
     def _apply_theme_styles(self):
         t = theme.colors()
-        self.left_title.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {t['text_bright']};")
-        self.sound_title.setStyleSheet(
-            f"font-size: 20px; font-weight: bold; color: {t['text_bright']};")
+        self.left_title.setStyleSheet(components.heading_style("card"))
+        self.sound_title.setStyleSheet(components.heading_style("title"))
         self.sound_stats.setStyleSheet(f"color: {t['text_dim']};")
         self.sound_quantity.setStyleSheet(f"color: {t['text_dim']}; margin-top: 2px;")
         # Scope styles to the objects themselves: a selector-less stylesheet on an
@@ -142,13 +140,10 @@ class SoundLibraryPage(QWidget):
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
         # Add recording is the headline action - accent-filled, stands apart.
-        self.add_recording_btn.setStyleSheet(self._primary_button_style())
+        self.add_recording_btn.setStyleSheet(components.primary_button_style())
         # Rename / Clone / Open / Delete are quiet, second-class actions.
         for b in self._secondary_btns:
-            b.setStyleSheet(
-                f"QPushButton#secondaryAction {{ color: {t['text_dim']}; border: none; "
-                f"background: transparent; padding: 3px 8px; }} "
-                f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }}")
+            b.setStyleSheet(components.ghost_button_style())
         # View / Normalize are state toggles, not actions. The app-wide
         # QPushButton:checked rule fills them with the accent color, which put
         # three accent-filled buttons next to the one real call to action - so
@@ -159,7 +154,7 @@ class SoundLibraryPage(QWidget):
             # It stays the quiet one through its fill and border, not its ink.
             f"QPushButton#viewToggle {{ background-color: {t['button']}; "
             f"color: {t['text']}; border: 1px solid {t['control_border']}; "
-            f"border-radius: 4px; padding: 5px 14px; }} "
+            f"border-radius: {t['radius']}; padding: 5px 14px; }} "
             f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
             f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }}")
@@ -171,16 +166,6 @@ class SoundLibraryPage(QWidget):
         # dedicated place to scroll the page even when waveforms fill the view.
         self.scroll.setStyleSheet(
             f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }}")
-
-    @staticmethod
-    def _primary_button_style():
-        """Accent-filled call to action, shared by the header's Add recording
-        and the empty-state panels so they read as the same rank of button."""
-        t = theme.colors()
-        return (f"QPushButton#primaryAction {{ background-color: {t['accent']}; "
-                f"color: {t['accent_text']}; font-weight: bold; border: none; "
-                f"border-radius: 4px; padding: 6px 18px; }} "
-                f"QPushButton#primaryAction:hover {{ background-color: {t['accent']}; }}")
 
     def refresh_theme(self):
         self._apply_theme_styles()
@@ -440,9 +425,6 @@ class SoundLibraryPage(QWidget):
     # leaves "Not enough" at 16.5s.
     _MIN_TRAIN_SECONDS = 17
 
-    # Measure line length for the empty-state body copy.
-    _EMPTY_BODY_WIDTH = 440
-
     @staticmethod
     def _short(label, limit=18):
         """Keep a sound name from stretching a button off the panel."""
@@ -453,46 +435,10 @@ class SoundLibraryPage(QWidget):
 
     def _build_empty_panel(self, title, body, button_text, slot):
         """A centered title/body/action block used by both empty states."""
-        t = theme.colors()
-        panel = QWidget()
-        v = QVBoxLayout(panel)
-        v.setContentsMargins(24, 24, 24, 24)
-        v.setSpacing(8)
-
-        title_label = QLabel(title)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet(
-            f"font-size: 17px; font-weight: bold; color: {t['text_bright']};")
-        v.addWidget(title_label)
-
-        body_label = QLabel(body)
-        body_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        body_label.setWordWrap(True)
-        # A word-wrapped QLabel reports a one-line sizeHint, so a layout that
-        # isn't asked for heightForWidth clips it. Pin the width and give it the
-        # height that width actually needs.
-        body_label.setFixedWidth(self._EMPTY_BODY_WIDTH)
-        body_label.setMinimumHeight(
-            body_label.heightForWidth(self._EMPTY_BODY_WIDTH))
-        body_label.setStyleSheet(f"color: {t['text_dim']};")
-        v.addWidget(body_label, 0, Qt.AlignmentFlag.AlignHCenter)
-
-        btn = QPushButton(button_text)
-        btn.setObjectName("primaryAction")
-        btn.setMinimumHeight(34)
-        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn.setStyleSheet(self._primary_button_style())
-        btn.clicked.connect(slot)
-        v.addSpacing(6)
-        v.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
-        return panel
+        return components.EmptyState(title, body, button_text, slot)
 
     def _fill_empty_state(self, layout, panel):
-        """Center `panel` vertically in an otherwise empty card area: springs
-        above and below, ahead of the container's own trailing stretch."""
-        layout.insertStretch(layout.count() - 1)
-        layout.insertWidget(layout.count() - 1, panel, 0,
-                            Qt.AlignmentFlag.AlignHCenter)
+        components.center_in(layout, panel)
 
     def _destroy_cards(self, cards, container):
         """Clean up replaced cards (stop playback/animations, clear their plots)
@@ -740,7 +686,7 @@ class SoundLibraryPage(QWidget):
             the same rule rather than accepting an empty name."""
             ready = bool(edit.text().strip())
             ok.setEnabled(ready)
-            ok.setStyleSheet(self._primary_button_style() if ready else "")
+            ok.setStyleSheet(components.primary_button_style() if ready else "")
 
         edit.textChanged.connect(sync_ok)
         edit.returnPressed.connect(lambda: dlg.accept() if ok.isEnabled() else None)

@@ -12,10 +12,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QSplitter
+    QTableWidget, QTableWidgetItem, QSplitter
 )
 
-from gui import theme
+from gui import components, theme
 from gui.services import patterns_replay, patterns_store, session_stats
 from config.config import DATA_DIR
 
@@ -90,11 +90,9 @@ class TalonCapturesView(QWidget):
         splitter.setStretchFactor(1, 1)
 
     def _style_table(self, table):
-        table.verticalHeader().setVisible(False)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+        # Even columns, not content-sized: these two are read side by side in a
+        # splitter, so each should fill its own pane rather than leave a gutter.
+        components.style_table(table, fit=False)
 
     # ---- data -----------------------------------------------------------
 

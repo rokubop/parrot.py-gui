@@ -202,7 +202,7 @@ class AboutPage(QWidget):
         rapid back-to-back sounds, <i>lenient</i> leaves more room between sounds
         to settle on a threshold. You can pick a strategy when recording.</p>
 
-        <p style='color:{dim}; margin-top:24px; font-size:12px;'>
+        <p style='color:{dim}; margin-top:24px; '>
             Audio is captured at {RATE} Hz and processed in {ms_per_frame} ms
             frames. Your recordings live under <code>data/recordings/</code> and
             models under <code>data/models/</code>.
