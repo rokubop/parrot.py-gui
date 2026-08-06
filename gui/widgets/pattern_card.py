@@ -246,7 +246,8 @@ class PatternCard(QFrame):
         row.setSpacing(7)
         chip = QLabel("■")
         chip.setStyleSheet(
-            f"color: {colors.get(name, pattern_colors.UNKNOWN)}; font-size: 14px;")
+            f"color: {colors.get(name, pattern_colors.UNKNOWN)}; "
+            f"font-size: {theme.TYPE_SCALE['body']}px;")
         row.addWidget(chip)
         title = QLabel(name)
         title.setStyleSheet(components.heading_style("card"))

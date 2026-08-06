@@ -231,7 +231,7 @@ class TalonPage(QWidget):
         self.more_btn.setToolTip("Files, variants, snapshots, the bridge")
         self.more_btn.setStyleSheet(
             f"QToolButton {{ color: {t['text_dim']}; border: none; "
-            f"padding: 6px 10px; font-size: 15px; }} "
+            f"padding: 6px 10px; font-size: {theme.TYPE_SCALE['card']}px; }} "
             f"QToolButton::menu-indicator {{ image: none; }} "
             f"QToolButton:hover {{ color: {t['text_bright']}; }}")
         self._more_menu = QMenu(self)

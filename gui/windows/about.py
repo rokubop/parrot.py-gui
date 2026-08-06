@@ -62,6 +62,7 @@ class AboutPage(QWidget):
         bright = t["text_bright"]
         dim = t["text_dim"]
         text = t["text"]
+        body_px = theme.TYPE_SCALE["body"]
         ms_per_frame = int(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
         def h(txt):
@@ -87,7 +88,7 @@ class AboutPage(QWidget):
         )
 
         return f"""
-        <div style='color:{text}; font-size:14px; line-height:150%;'>
+        <div style='color:{text}; font-size:{body_px}px; line-height:150%;'>
         <h1 style='color:{bright}; margin-bottom:2px;'>Parrot.py</h1>
         <p style='color:{dim}; margin-top:0;'>
             Train a model to recognize the sounds you make - clicks, pops,

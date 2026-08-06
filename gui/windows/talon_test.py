@@ -299,7 +299,8 @@ class TalonTestView(QWidget):
         numbers.setSpacing(0)
         self.big_numbers = QLabel("")
         self.big_numbers.setStyleSheet(
-            f"font-family: Consolas, monospace; font-size: 17px; "
+            f"font-family: Consolas, monospace; "
+            f"font-size: {theme.TYPE_SCALE['section']}px; "
             f"color: {t['text']};")
         numbers.addWidget(self.big_numbers)
         caption = QLabel("power / probability")

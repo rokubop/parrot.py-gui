@@ -107,7 +107,7 @@ class _StepCard(QFrame):
         self.bubble.setStyleSheet(
             f"QLabel#stepBubble {{ background-color: {bubble_bg}; color: {bubble_fg}; "
             f"border: 2px solid {bubble_border}; border-radius: 18px; "
-            f"font-size: 16px; font-weight: bold; }}")
+            f"font-size: {theme.TYPE_SCALE['card']}px; font-weight: bold; }}")
         border = t["accent"] if current else t["border"]
         self.setStyleSheet(
             f"QFrame#stepCard {{ background-color: {t['card']}; "
@@ -358,7 +358,8 @@ class HomePage(QWidget):
     def _apply_theme_styles(self):
         t = theme.colors()
         self.hero_title.setStyleSheet(components.heading_style("hero"))
-        self.hero_sub.setStyleSheet(f"font-size: 14px; color: {t['text_dim']};")
+        self.hero_sub.setStyleSheet(
+            f"font-size: {theme.TYPE_SCALE['card']}px; color: {t['text_dim']};")
         self.guide_label.setStyleSheet(f"color: {t['text_dim']};")
         self.guide_btn.setStyleSheet(
             f"QPushButton {{ color: {t['accent']}; background: transparent; "
@@ -476,7 +477,8 @@ class HomePage(QWidget):
             "Active model (deployed to Talon)" if deployed_name
             else "Latest model (not deployed)")
 
-        lines = [f"<b style='color:{t['text_bright']}; font-size:15px;'>{name}</b>",
+        lines = [f"<b style='color:{t['text_bright']}; "
+                 f"font-size:{theme.TYPE_SCALE['card']}px;'>{name}</b>",
                  f"<span style='color:{t['text_dim']};'>Trained {_ago(mtime)}</span>"]
 
         stale = [(l, n) for l in labels

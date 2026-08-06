@@ -167,9 +167,11 @@ def status_color(state):
 #
 # Before this there were eight sizes doing five jobs: card headings were 15px
 # in seven files and 16px in six more, with no rule telling them apart, and
-# sub-view titles were 18px while the tab titles they replace were 20px. The
-# sizes that vanished (14, 16, 18) were each within 1-2px of a neighbour, so
-# nothing here is a resize anyone asked for - it is the same headings agreeing.
+# sub-view titles were 18px while the tab titles they replace were 20px.
+#
+# A ladder in steps of two from the floor: 14, 16, 18, 20, then the two display
+# sizes. The step matters as much as the floor - at a one pixel gap a heading
+# does not read as a heading, it reads as the same text rendered wrong.
 #
 #   hero      the Home landing title. One in the app.
 #   stat      a big numeric readout - "84%", the live-test sound name.
@@ -181,10 +183,10 @@ def status_color(state):
 #             so `heading()` colours it that way rather than text_bright.
 #   body      running copy, and the floor. Nothing in the app is smaller.
 #
-# `body` is a floor, not just an entry. It used to be that lists, trees, tables
-# and the status bar declared 11px or 12px, and twenty-odd labels did the same
-# by hand - so the app's secondary copy was dim *and* small, which is two
-# de-emphases stacked. The contrast tiers above are measured against WCAG's
+# `body` is a floor, not just an entry. Lists, trees, tables and the status bar
+# used to declare 11px or 12px and twenty-odd labels did the same by hand, so
+# the app's secondary copy was dim *and* small, which is two de-emphases
+# stacked. The contrast tiers above are measured against WCAG's
 # 4.5:1, and that threshold assumes normal-size text; going under it asks for
 # more contrast, not less. Interface size is a uniform QT_SCALE_FACTOR, so it
 # scales everything together and never rescues the small end.
@@ -195,10 +197,10 @@ TYPE_SCALE = {
     "hero": 28,
     "stat": 26,
     "title": 20,
-    "section": 17,
-    "card": 15,
-    "eyebrow": 13,
-    "body": 13,
+    "section": 18,
+    "card": 16,
+    "eyebrow": 14,
+    "body": 14,
 }
 
 
