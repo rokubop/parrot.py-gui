@@ -1,29 +1,29 @@
-"""Audacity-style device toolbar: recording + playback device pickers.
+"""Mic picker for the recording view: primary mic combo + extras menu.
 
 Primary mic is the combo; a "+" menu checks extra mics for simultaneous
-multi-mic recording (each records to its own file). Lives in the main toolbar.
+multi-mic recording (each records to its own file). Selections persist via
+audio_devices, so the live test dialogs follow the same primary mic.
 """
 import sounddevice as sd
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QComboBox, QPushButton, QMenu
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QComboBox, QPushButton, QMenu
 
 from gui.services import audio_devices
 
 
-class DeviceBar(QWidget):
+class MicPicker(QWidget):
     input_changed = pyqtSignal(int)
     extras_changed = pyqtSignal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         h = QHBoxLayout(self)
-        h.setContentsMargins(0, 0, 8, 0)
+        h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(6)
 
-        h.addWidget(QLabel("🎙"))
         self.input_combo = QComboBox()
         self.input_combo.setToolTip("Recording device")
-        self.input_combo.setMaximumWidth(220)
+        self.input_combo.setMaximumWidth(260)
         h.addWidget(self.input_combo)
 
         self.extras_btn = QPushButton("+")
@@ -32,17 +32,9 @@ class DeviceBar(QWidget):
         self.extras_btn.clicked.connect(self._show_extras_menu)
         h.addWidget(self.extras_btn)
 
-        h.addSpacing(6)
-        h.addWidget(QLabel("🔊"))
-        self.output_combo = QComboBox()
-        self.output_combo.setToolTip("Playback device")
-        self.output_combo.setMaximumWidth(220)
-        h.addWidget(self.output_combo)
-
         self._populate()
         self._update_extras_button()
         self.input_combo.currentIndexChanged.connect(self._on_input_changed)
-        self.output_combo.currentIndexChanged.connect(self._on_output_changed)
 
     def _input_devices(self):
         """[(index, name)] for the default host API (others are duplicates)."""
@@ -58,22 +50,19 @@ class DeviceBar(QWidget):
         return result
 
     def _populate(self):
+        self.input_combo.blockSignals(True)
+        self.input_combo.clear()
         for i, name in self._input_devices():
             self.input_combo.addItem(name, i)
-        try:
-            default_api = sd.default.hostapi
-            for i, dev in enumerate(sd.query_devices()):
-                if dev.get("hostapi") == default_api and \
-                        dev.get("max_output_channels", 0) > 0:
-                    self.output_combo.addItem(dev["name"], i)
-        except Exception:
-            pass
         idx = self.input_combo.findData(audio_devices.input_index)
         if idx >= 0:
             self.input_combo.setCurrentIndex(idx)
-        idx = self.output_combo.findData(audio_devices.output_index)
-        if idx >= 0:
-            self.output_combo.setCurrentIndex(idx)
+        self.input_combo.blockSignals(False)
+
+    def refresh(self):
+        """Re-enumerate devices - indices shift when hardware changes."""
+        self._populate()
+        self._update_extras_button()
 
     # ---- extras ----------------------------------------------------------
 
@@ -109,7 +98,7 @@ class DeviceBar(QWidget):
             self.extras_btn.setToolTip(
                 "Record with additional mics at the same time")
 
-    # ---- primary / output -------------------------------------------------
+    # ---- primary ---------------------------------------------------------
 
     def _on_input_changed(self, _index):
         device = self.input_combo.currentData()
@@ -117,8 +106,3 @@ class DeviceBar(QWidget):
             audio_devices.set_input(device)
             self._update_extras_button()   # primary may have been an extra
             self.input_changed.emit(device)
-
-    def _on_output_changed(self, _index):
-        device = self.output_combo.currentData()
-        if device is not None:
-            audio_devices.set_output(device)

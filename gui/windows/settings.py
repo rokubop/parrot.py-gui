@@ -14,11 +14,11 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import (
-    INPUT_DEVICE_INDEX, THRESHOLD_DETECTION, TWO_PASS_DETECTION,
+    THRESHOLD_DETECTION, TWO_PASS_DETECTION,
     RECORDINGS_FOLDER, CLASSIFIER_FOLDER,
 )
 from gui import theme
-from gui.services import user_config, strategies, library_ops
+from gui.services import user_config, strategies, library_ops, audio_devices
 
 
 class SettingsPage(QWidget):
@@ -57,10 +57,6 @@ class SettingsPage(QWidget):
         audio_group = QGroupBox("Audio & detection")
         form = QFormLayout(audio_group)
         form.setSpacing(10)
-
-        self.device_combo = QComboBox()
-        self._populate_devices()
-        form.addRow("Input device:", self.device_combo)
 
         self.threshold_combo = QComboBox()
         self.threshold_combo.addItem("Strict - rapid back-to-back sounds", "strict")
@@ -108,9 +104,15 @@ class SettingsPage(QWidget):
 
         layout.addWidget(audio_group)
 
-        # ---- Default model ----
+        # ---- Playback ----
         model_group = QGroupBox("Playback")
         model_form = QFormLayout(model_group)
+        self.output_combo = QComboBox()
+        self.output_combo.setToolTip("Where recordings play back - applies "
+                                     "immediately, no save needed")
+        self._populate_output_devices()
+        self.output_combo.currentIndexChanged.connect(self._on_output_changed)
+        model_form.addRow("Output device:", self.output_combo)
         self.model_combo = QComboBox()
         self._populate_models()
         model_form.addRow("Default model:", self.model_combo)
@@ -238,21 +240,26 @@ class SettingsPage(QWidget):
         except library_ops.LibraryOpError as exc:
             self.status_label.setText(str(exc))
 
-    def _populate_devices(self):
-        self.device_combo.clear()
+    def _populate_output_devices(self):
+        self.output_combo.blockSignals(True)
+        self.output_combo.clear()
         try:
-            devices = sd.query_devices()
-            for i, dev in enumerate(devices):
-                if dev.get("max_input_channels", 0) > 0:
-                    self.device_combo.addItem(f"[{i}] {dev['name']}", i)
+            default_api = sd.default.hostapi
+            for i, dev in enumerate(sd.query_devices()):
+                if dev.get("hostapi") == default_api and \
+                        dev.get("max_output_channels", 0) > 0:
+                    self.output_combo.addItem(dev["name"], i)
         except Exception:
             pass
-        if self.device_combo.count() == 0:
-            self.device_combo.addItem(f"[{INPUT_DEVICE_INDEX}] Default",
-                                      INPUT_DEVICE_INDEX)
-        idx = self.device_combo.findData(INPUT_DEVICE_INDEX)
+        idx = self.output_combo.findData(audio_devices.output_index)
         if idx >= 0:
-            self.device_combo.setCurrentIndex(idx)
+            self.output_combo.setCurrentIndex(idx)
+        self.output_combo.blockSignals(False)
+
+    def _on_output_changed(self, _index):
+        device = self.output_combo.currentData()
+        if device is not None:
+            audio_devices.set_output(device)
 
     def _populate_models(self):
         if not hasattr(self, "model_combo"):
@@ -273,7 +280,6 @@ class SettingsPage(QWidget):
 
     def _on_save(self):
         updates = {
-            "INPUT_DEVICE_INDEX": self.device_combo.currentData(),
             "THRESHOLD_DETECTION": self.threshold_combo.currentData(),
             "TWO_PASS_DETECTION": bool(self.two_pass_combo.currentData()),
             "CURRENT_DETECTION_STRATEGY": strategies.strategy_for_label(

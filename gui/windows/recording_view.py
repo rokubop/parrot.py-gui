@@ -28,6 +28,7 @@ from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui.widgets.confirm_dialog import confirm_destructive
+from gui.widgets.mic_picker import MicPicker
 from gui.workers.audio_worker import AudioWorker
 from gui.workers.segment_worker import AppendWorker, TrimWorker
 from gui.services import library_ops, playback, strategies
@@ -143,13 +144,14 @@ class RecordingView(QWidget):
         name_layout.addStretch()
         root.addWidget(self.name_row)
 
-        # Device (from the top device bar) + strategy
+        # Mic picker + strategy
         opts = QHBoxLayout()
         opts.addWidget(QLabel("Microphone:"))
-        self.mic_label = QLabel("")
-        self.mic_label.setStyleSheet(
-            f"color: {theme.colors()['text_bright']}; font-weight: bold;")
-        opts.addWidget(self.mic_label, 2)
+        self.mic_picker = MicPicker()
+        opts.addWidget(self.mic_picker)
+        self.mic_note = QLabel("")
+        self.mic_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+        opts.addWidget(self.mic_note, 2)
         opts.addSpacing(12)
         opts.addWidget(QLabel("Strategy:"))
         self.strategy_combo = QComboBox()
@@ -284,20 +286,18 @@ class RecordingView(QWidget):
         return group
 
     def refresh_mic_label(self):
-        """Mirror the top device bar. Once a take exists the session's mics are
-        locked so every segment of the take uses the same devices."""
+        """Once a take exists the session's mics are locked so every segment
+        of the take uses the same devices - the picker greys out until reset."""
         if self._session_mics is not None:
             primary, extras = self._session_mics
-            suffix = "  (locked for this take)"
+            self.mic_picker.setEnabled(False)
+            self.mic_note.setText("locked for this take")
+            names = [audio_devices.input_name(i) for i in (primary, *extras)]
+            self.mic_note.setToolTip("\n".join(names))
         else:
-            primary, extras = audio_devices.recording_mics()
-            suffix = "  ·  change in the top bar"
-        text = audio_devices.input_name(primary)
-        if extras:
-            text += f"  + {len(extras)} more"
-        self.mic_label.setText(text + suffix)
-        names = [audio_devices.input_name(i) for i in (primary, *extras)]
-        self.mic_label.setToolTip("\n".join(names))
+            self.mic_picker.setEnabled(True)
+            self.mic_note.setText("")
+            self.mic_note.setToolTip("")
 
     def _reset(self, take):
         self.stop_playback()
@@ -307,6 +307,7 @@ class RecordingView(QWidget):
         self._audio = None
         self._session_mics = None
         self._extra_takes = {}
+        self.mic_picker.refresh()   # indices shift when hardware changes
         self.refresh_mic_label()
         if take:
             self.history.bind(take)

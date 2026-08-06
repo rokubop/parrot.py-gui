@@ -93,16 +93,12 @@ class MainWindow(QMainWindow):
         self.notes_dock.visibilityChanged.connect(notes_action.setChecked)
         toolbar.addAction(notes_action)
 
-        # Status bar: Audacity-style device pickers (left) + the active
-        # keybindings for whatever view is showing (right). The keybinding hint
-        # is the single, always-in-the-same-place home for shortcuts - each page
-        # reports its own. Nothing may call showMessage() here: temporary
-        # messages hide left-side (non-permanent) widgets, i.e. the pickers.
+        # Status bar: the active keybindings for whatever view is showing.
+        # The keybinding hint is the single, always-in-the-same-place home for
+        # shortcuts - each page reports its own. Nothing may call showMessage()
+        # here: temporary messages hide left-side (non-permanent) widgets.
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        from gui.widgets.device_bar import DeviceBar
-        self.device_bar = DeviceBar()
-        self.status_bar.addWidget(self.device_bar)
         # A run survives leaving the training page, so something has to say so.
         # Without it a 4-6 hour job is invisible the moment you switch tabs, and
         # the only way back is + New model, which looks like starting over.
@@ -161,10 +157,6 @@ class MainWindow(QMainWindow):
             self.recording_view.done.connect(self._return_to_sounds)
             self._wire_keybindings(self.recording_view)
             self.stack.addWidget(self.recording_view)
-            # its mic readout mirrors the top device bar
-            view = self.recording_view
-            self.device_bar.input_changed.connect(lambda _i: view.refresh_mic_label())
-            self.device_bar.extras_changed.connect(lambda _e: view.refresh_mic_label())
         return self.recording_view
 
     def _get_edit_view(self):
