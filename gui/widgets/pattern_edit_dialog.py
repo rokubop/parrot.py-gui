@@ -1,9 +1,23 @@
 """Guided editor for a single Talon pattern.
 
+Laid out like the card it edits: threshold and timing down the left, throttle
+down the right, so the dialog reads as the card made editable. A legend column
+sits past a rule on the far right, one entry per file key, so the areas are
+explained without hunting for tooltips. The dialog opens sized to its content
+and grows as rules are added, capped to the screen; the scroll area is
+overflow safety, not the plan.
+
+A rule's op is its identity: it is picked once from the Add menu (which lists
+only the ops not already used) and then shown as a fixed label - the value
+spinner is the only thing that changes. Changing an op is remove + re-add,
+because ">power" never *becomes* ">probability"; the wheel and the keyboard
+can therefore only ever touch a value.
+
 Every field is constrained to what the integration can actually consume:
 sounds come from the deployed model's classes, threshold ops from the schema
-authority, throttle targets from the existing pattern names. Validation runs
-live on the draft; errors disable Save, warnings are shown but allowed.
+authority, throttle targets from the existing pattern names. The Add menus
+keep an Other entry for future/unknown keys (warned, not blocked). Validation
+runs live on the draft; errors disable Save, warnings are shown but allowed.
 
 Number fidelity: values that are whole numbers are written back as ints for
 power/formant fields (so ``">power": 6`` doesn't turn into ``6.0``), while
@@ -12,12 +26,13 @@ probability / ratio / seconds keep their float form.
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
-    QComboBox, QDoubleSpinBox, QCheckBox, QGroupBox, QGridLayout,
-    QScrollArea, QWidget, QFrame
+    QAbstractSpinBox, QDoubleSpinBox, QCheckBox, QGridLayout, QMenu,
+    QInputDialog, QScrollArea, QWidget, QFrame
 )
 
 from gui import theme
 from gui.services import patterns_schema
+from gui.widgets.pattern_card import BAD_COLOR, GRACE_COLOR, MONO
 
 _FLOAT_FIELDS = ("probability", "ratio")
 
@@ -30,49 +45,157 @@ def _coerce_number(op, value):
     return round(float(value), 6)
 
 
-class _RuleRows:
-    """A stack of [op combo][value spin][remove] rows inside a group box."""
+def _seconds(_target, value):
+    """Throttle values are seconds and stay floats, whole or not."""
+    return round(float(value), 6)
 
-    def __init__(self, group, ops, on_change, add_label="Add rule"):
+
+class _Spin(QDoubleSpinBox):
+    """3.4 shows as 3.4, not 3.4000 - the card and the file both write it bare."""
+
+    def textFromValue(self, value):
+        text = f"{value:.{self.decimals()}f}".rstrip("0").rstrip(".")
+        return text or "0"
+
+
+def _mono(widget, color):
+    widget.setStyleSheet(
+        f"color: {color}; font-family: {MONO}; font-size: 12px;")
+    return widget
+
+
+def _section(text, t, color=None):
+    """Same idiom as the card: the lowercase file key, thin rule under it."""
+    label = QLabel(text)
+    label.setStyleSheet(
+        f"color: {color or t['text_dim']}; font-size: 11px; "
+        f"border-bottom: 1px solid {t['border']}; padding-bottom: 3px;")
+    return label
+
+
+# One entry per file key, in the order a detection happens. Wording checked
+# against the integration template: detection runs 60 times a second,
+# detect_after is a hold before the first fire, graceperiod is how long the
+# softer rules apply after one.
+_LEGEND = (
+    ("sounds", None,
+     "The model sounds that can fire this pattern."),
+    ("threshold", None,
+     "Checked 60 times a second. Every rule must pass."),
+    ("detect_after", None,
+     "The sound must hold this long before the first fire."),
+    ("graceperiod", GRACE_COLOR,
+     "How long the softer rules last after a fire."),
+    ("grace_threshold", GRACE_COLOR,
+     "Softer rules while a sound is held, so it does not cut out."),
+    ("throttle", None,
+     "After a fire, silences a pattern for N seconds. "
+     "On itself: how soon it can fire again."),
+)
+
+
+def _legend_panel(t):
+    """A fixed column of key + one line each, behind a thin left rule."""
+    panel = QFrame()
+    panel.setObjectName("patternLegend")
+    panel.setFixedWidth(220)
+    panel.setStyleSheet(
+        f"QFrame#patternLegend {{ border: none; "
+        f"border-left: 1px solid {t['border']}; }}")
+    col = QVBoxLayout(panel)
+    col.setContentsMargins(16, 0, 0, 0)
+    col.setSpacing(2)
+    for i, (key, color, text) in enumerate(_LEGEND):
+        if i:
+            col.addSpacing(10)
+        col.addWidget(_mono(QLabel(key), color or t["text_dim"]))
+        line = QLabel(text)
+        line.setWordWrap(True)
+        line.setStyleSheet(
+            f"color: {t['text_dim']}; font-size: 11px; border: none;")
+        col.addWidget(line)
+    col.addStretch()
+    return panel
+
+
+class _RuleRows:
+    """A stack of [op][value][✕] rows under an Add menu of the unused ops."""
+
+    def __init__(self, column, ops, on_change, t, coerce=_coerce_number,
+                 add_label="Add rule", other_label="Other…"):
         self.ops = sorted(ops)
         self.on_change = on_change
+        self.coerce = coerce
+        self.t = t
         self.rows = []
         self.layout = QVBoxLayout()
-        group_layout = group.layout()
-        group_layout.addLayout(self.layout)
-        add_btn = QPushButton(add_label)
-        add_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        add_btn.clicked.connect(lambda: (self.add_row(), on_change()))
-        group_layout.addWidget(add_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.layout.setSpacing(3)
+        column.addLayout(self.layout)
+        self.add_btn = QPushButton(add_label)
+        self.add_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        menu = QMenu(self.add_btn)
+        menu.aboutToShow.connect(lambda: self._fill_menu(menu, other_label))
+        self.add_btn.setMenu(menu)
+        column.addWidget(self.add_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
-    def add_row(self, op=None, value=None):
+    def _used(self):
+        return {op for _w, op, _s in self.rows}
+
+    def _fill_menu(self, menu, other_label):
+        menu.clear()
+        used = self._used()
+        for op in self.ops:
+            if op not in used:
+                menu.addAction(op, lambda op=op: self._add_and_notify(op))
+        if menu.actions():
+            menu.addSeparator()
+        menu.addAction(other_label, self._add_other)
+
+    def _add_and_notify(self, op):
+        self.add_row(op)
+        self.on_change()
+
+    def _add_other(self):
+        op, ok = QInputDialog.getText(
+            self.add_btn, self.add_btn.text(), "key:")
+        op = op.strip()
+        if ok and op and op not in self._used():
+            self._add_and_notify(op)
+
+    def add_row(self, op, value=None):
         row_widget = QWidget()
         row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
-        op_combo = QComboBox()
-        op_combo.addItems(self.ops)
-        op_combo.setEditable(True)  # allow future/unknown ops (warned, not blocked)
-        if op:
-            idx = op_combo.findText(op)
-            if idx >= 0:
-                op_combo.setCurrentIndex(idx)
-            else:
-                op_combo.setEditText(op)
-        spin = QDoubleSpinBox()
+        row.setSpacing(6)
+        label = _mono(QLabel(op), self.t["text_dim"])
+        spin = _Spin()
         spin.setDecimals(4)
         spin.setRange(-100000, 100000)
+        # 3.4 steps to 3.5 and 12000 to 12100: step follows the magnitude.
+        spin.setStepType(QAbstractSpinBox.StepType.AdaptiveDecimalStepType)
         spin.setValue(float(value) if value is not None else 0.0)
+        spin.setMinimumWidth(90)
         remove = QPushButton("✕")
-        remove.setFixedWidth(30)
+        # Sized and flattened here: the global QPushButton padding (6px 16px)
+        # inside a fixed 24px would clip the glyph away to a plain grey box.
+        remove.setFixedSize(24, 24)
         remove.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        row.addWidget(op_combo, 2)
-        row.addWidget(spin, 1)
+        remove.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"padding: 0; color: {self.t['text_dim']}; font-size: 12px; }} "
+            f"QPushButton:hover {{ color: {BAD_COLOR}; }}")
+        remove.setToolTip(f"remove {op}")
+        row.addWidget(label, 1)
+        row.addWidget(spin)
         row.addWidget(remove)
         self.layout.addWidget(row_widget)
-        entry = (row_widget, op_combo, spin)
+        # Shown explicitly: a widget added after the dialog is visible stays
+        # hidden until the queued layout pass, and a hidden row is left out
+        # of the size hint _fit reads on this same call stack.
+        row_widget.show()
+        entry = (row_widget, op, spin)
         self.rows.append(entry)
         remove.clicked.connect(lambda: self.remove_row(entry))
-        op_combo.currentTextChanged.connect(lambda _t: self.on_change())
         spin.valueChanged.connect(lambda _v: self.on_change())
 
     def remove_row(self, entry):
@@ -84,10 +207,8 @@ class _RuleRows:
 
     def value(self):
         rules = {}
-        for _w, op_combo, spin in self.rows:
-            op = op_combo.currentText().strip()
-            if op:
-                rules[op] = _coerce_number(op, spin.value())
+        for _w, op, spin in self.rows:
+            rules[op] = self.coerce(op, spin.value())
         return rules
 
 
@@ -99,7 +220,7 @@ class PatternEditDialog(QDialog):
                  schema=None, observed=None):
         super().__init__(parent)
         self.setWindowTitle(f"Edit pattern - {name}" if name else "New pattern")
-        self.setMinimumSize(680, 640)
+        self.setMinimumSize(860, 540)
         self._original_name = name
         self._all_patterns = all_patterns
         self._model_sounds = model_sounds or []
@@ -111,13 +232,19 @@ class PatternEditDialog(QDialog):
         t = theme.colors()
 
         outer = QVBoxLayout(self)
+        # Overflow safety only - the two-column body is built to fit without it.
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         outer.addWidget(scroll, 1)
         body = QWidget()
-        layout = QVBoxLayout(body)
+        self._body = body
+        split = QHBoxLayout(body)
+        split.setSpacing(20)
+        layout = QVBoxLayout()
         layout.setSpacing(12)
+        split.addLayout(layout, 1)
+        split.addWidget(_legend_panel(t))
         scroll.setWidget(body)
 
         # ---- name
@@ -129,10 +256,10 @@ class PatternEditDialog(QDialog):
         layout.addLayout(name_row)
 
         # ---- sounds
-        sounds_group = QGroupBox("Sounds (from the deployed model)")
-        sounds_layout = QVBoxLayout(sounds_group)
+        layout.addWidget(_section("sounds", t))
         grid = QGridLayout()
         grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(4)
         self.sound_checks = {}
         current_sounds = pattern.get("sounds") or []
         known = list(self._model_sounds)
@@ -143,18 +270,28 @@ class PatternEditDialog(QDialog):
             cb = QCheckBox(sound)
             cb.setChecked(sound in current_sounds)
             if sound not in self._model_sounds:
-                cb.setStyleSheet("color: #e06c75;")
+                cb.setStyleSheet(f"color: {BAD_COLOR};")
                 cb.setToolTip("Not a sound the deployed model can produce")
             cb.stateChanged.connect(lambda _s: self._revalidate())
             self.sound_checks[sound] = cb
             grid.addWidget(cb, i // 4, i % 4)
-        sounds_layout.addLayout(grid)
-        layout.addWidget(sounds_group)
+        layout.addLayout(grid)
 
-        # ---- thresholds
+        # ---- two columns, same split as the card
+        columns = QHBoxLayout()
+        columns.setSpacing(24)
+        layout.addLayout(columns)
+        left = QVBoxLayout()
+        left.setSpacing(6)
+        right = QVBoxLayout()
+        right.setSpacing(6)
+        columns.addLayout(left, 1)
+        columns.addLayout(right, 1)
+        layout.addStretch()
+
+        # ---- thresholds (left)
         ops = self._schema["threshold_ops"]
-        thr_group = QGroupBox("Threshold - every rule must pass for a detection")
-        QVBoxLayout(thr_group)
+        left.addWidget(_section("threshold", t))
         if observed:
             from gui.services import session_stats
             info = session_stats.describe(observed)
@@ -163,61 +300,57 @@ class PatternEditDialog(QDialog):
                 info_label.setWordWrap(True)
                 info_label.setStyleSheet(
                     f"color: {t['text_dim']}; font-size: 12px; border: none;")
-                thr_group.layout().addWidget(info_label)
-        self.threshold_rows = _RuleRows(thr_group, ops, self._revalidate)
+                left.addWidget(info_label)
+        self.threshold_rows = _RuleRows(left, ops, self._revalidate, t)
         for op, value in (pattern.get("threshold") or {}).items():
             self.threshold_rows.add_row(op, value)
-        layout.addWidget(thr_group)
 
-        grace_group = QGroupBox("Grace threshold - softer rules right after a detection")
-        QVBoxLayout(grace_group)
-        self.grace_rows = _RuleRows(grace_group, ops, self._revalidate)
-        for op, value in (pattern.get("grace_threshold") or {}).items():
-            self.grace_rows.add_row(op, value)
-        layout.addWidget(grace_group)
-
-        # ---- timing
-        timing_group = QGroupBox("Timing")
-        timing = QGridLayout(timing_group)
-        self.grace_check = QCheckBox("Grace period (s):")
-        self.grace_spin = QDoubleSpinBox()
-        self.grace_spin.setDecimals(3)
-        self.grace_spin.setRange(0, 10)
-        self.grace_spin.setSingleStep(0.05)
-        if pattern.get("graceperiod") is not None:
-            self.grace_check.setChecked(True)
-            self.grace_spin.setValue(float(pattern["graceperiod"]))
-        self.detect_check = QCheckBox("Detect after (s):")
-        self.detect_spin = QDoubleSpinBox()
+        # ---- timing (left, in the card's row order)
+        timing = QGridLayout()
+        timing.setVerticalSpacing(3)
+        self.detect_check = _mono(QCheckBox("detect_after (s)"), t["text_dim"])
+        self.detect_spin = _Spin()
         self.detect_spin.setDecimals(3)
         self.detect_spin.setRange(0, 10)
         self.detect_spin.setSingleStep(0.05)
         if pattern.get("detect_after") is not None:
             self.detect_check.setChecked(True)
             self.detect_spin.setValue(float(pattern["detect_after"]))
+        self.grace_check = _mono(QCheckBox("graceperiod (s)"), GRACE_COLOR)
+        self.grace_spin = _Spin()
+        self.grace_spin.setDecimals(3)
+        self.grace_spin.setRange(0, 10)
+        self.grace_spin.setSingleStep(0.05)
+        if pattern.get("graceperiod") is not None:
+            self.grace_check.setChecked(True)
+            self.grace_spin.setValue(float(pattern["graceperiod"]))
         for i, (check, spin) in enumerate(
-                ((self.grace_check, self.grace_spin),
-                 (self.detect_check, self.detect_spin))):
+                ((self.detect_check, self.detect_spin),
+                 (self.grace_check, self.grace_spin))):
             timing.addWidget(check, i, 0)
             timing.addWidget(spin, i, 1)
             check.stateChanged.connect(lambda _s: self._revalidate())
             spin.valueChanged.connect(lambda _v: self._revalidate())
         timing.setColumnStretch(2, 1)
-        layout.addWidget(timing_group)
+        left.addLayout(timing)
 
-        # ---- throttles
-        throttle_group = QGroupBox(
-            "Throttle - after this fires, silence these patterns for N seconds")
-        QVBoxLayout(throttle_group)
+        left.addWidget(_section("grace_threshold", t, color=GRACE_COLOR))
+        self.grace_rows = _RuleRows(left, ops, self._revalidate, t)
+        for op, value in (pattern.get("grace_threshold") or {}).items():
+            self.grace_rows.add_row(op, value)
+        left.addStretch()
+
+        # ---- throttles (right)
+        right.addWidget(_section("throttle", t))
         pattern_names = [n for n in all_patterns.keys()]
         if name and name not in pattern_names:
             pattern_names.append(name)
         self.throttle_rows = _RuleRows(
-            throttle_group, pattern_names, self._revalidate, "Add throttle")
+            right, pattern_names, self._revalidate, t, coerce=_seconds,
+            add_label="Add throttle", other_label="Other pattern…")
         for target, seconds in (pattern.get("throttle") or {}).items():
             self.throttle_rows.add_row(target, seconds)
-        layout.addWidget(throttle_group)
-        layout.addStretch()
+        right.addStretch()
 
         # ---- validation + buttons
         self.issues_label = QLabel("")
@@ -237,6 +370,26 @@ class PatternEditDialog(QDialog):
 
         self._revalidate()
 
+    def _fit(self):
+        """Grow (never shrink) until the body fits unscrolled, screen-capped."""
+        # A row added after show is hidden until the queued layout pass runs,
+        # and hidden widgets are left out of the size hint - flush it now.
+        self._body.layout().activate()
+        hint = self._body.sizeHint()
+        outer = self.layout()
+        m = outer.contentsMargins()
+        fixed_h = (m.top() + m.bottom() + 2 * outer.spacing()
+                   + self.issues_label.sizeHint().height()
+                   + self.save_btn.sizeHint().height())
+        want_w = hint.width() + m.left() + m.right()
+        want_h = hint.height() + fixed_h + 8
+        screen = self.screen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            want_w = min(want_w, avail.width() - 60)
+            want_h = min(want_h, avail.height() - 60)
+        self.resize(max(want_w, self.width()), max(want_h, self.height()))
+
     # ---- draft assembly --------------------------------------------------
 
     def _draft(self):
@@ -251,11 +404,7 @@ class PatternEditDialog(QDialog):
             pattern["graceperiod"] = round(self.grace_spin.value(), 6)
         if self.detect_check.isChecked():
             pattern["detect_after"] = round(self.detect_spin.value(), 6)
-        throttle = {}
-        for _w, combo, spin in self.throttle_rows.rows:
-            target = combo.currentText().strip()
-            if target:
-                throttle[target] = round(spin.value(), 6)
+        throttle = self.throttle_rows.value()
         if throttle:
             pattern["throttle"] = throttle
         # Preserve unknown keys from the original pattern untouched
@@ -291,6 +440,7 @@ class PatternEditDialog(QDialog):
         lines = [str(i) for i in issues[:6]]
         self.issues_label.setText("\n".join(lines))
         self.save_btn.setEnabled(not errors)
+        self._fit()                    # rows added later must still fit
 
     def _on_save(self):
         name, pattern, issues = self._validate_draft()
