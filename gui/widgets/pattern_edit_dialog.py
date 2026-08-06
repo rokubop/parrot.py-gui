@@ -1,7 +1,8 @@
 """Guided editor for a single Talon pattern.
 
-Laid out like the card it edits: threshold and timing down the left, throttle
-down the right, so the dialog reads as the card made editable. A legend column
+Laid out like the card it edits: threshold (with detect_after) then the grace
+section (graceperiod with its rules) down the left, throttle down the right,
+so the dialog reads as the card made editable. A legend column
 sits past a rule on the far right, one entry per file key, so the areas are
 explained without hunting for tooltips. The dialog opens sized to its content
 and grows as rules are added, capped to the screen; the scroll area is
@@ -64,6 +65,15 @@ def _mono(widget, color):
     return widget
 
 
+def _check_row(check, spin):
+    row = QHBoxLayout()
+    row.setSpacing(6)
+    row.addWidget(check)
+    row.addWidget(spin)
+    row.addStretch()
+    return row
+
+
 def _section(text, t, color=None):
     """Same idiom as the card: the lowercase file key, thin rule under it."""
     label = QLabel(text)
@@ -73,24 +83,28 @@ def _section(text, t, color=None):
     return label
 
 
-# One entry per file key, in the order a detection happens. Wording checked
-# against the integration template: detection runs 60 times a second,
-# detect_after is a hold before the first fire, graceperiod is how long the
-# softer rules apply after one.
+# One entry per file key, led by "pattern" for the thing being edited.
+# grace_threshold comes before graceperiod because graceperiod is defined in
+# terms of it. Semantics per the integration template: rules are checked 60
+# times a second, detect_after is a hold before the first trigger.
 _LEGEND = (
+    ("pattern", None,
+     "What Talon recognizes. One or more sounds and their settings."),
     ("sounds", None,
-     "The model sounds that can fire this pattern."),
+     "Sounds from a parrot model."),
     ("threshold", None,
-     "Checked 60 times a second. Every rule must pass."),
+     "The conditions that trigger the pattern. "
+     "Checked 60 times a second."),
     ("detect_after", None,
-     "The sound must hold this long before the first fire."),
-    ("graceperiod", GRACE_COLOR,
-     "How long the softer rules last after a fire."),
+     "The sound must hold this long before the first trigger."),
     ("grace_threshold", GRACE_COLOR,
-     "Softer rules while a sound is held, so it does not cut out."),
+     "Secondary rules once the pattern has triggered. Lets a sound that "
+     "starts loud sustain as it goes quieter."),
+    ("graceperiod", GRACE_COLOR,
+     "How long grace_threshold stays in effect after the first trigger."),
     ("throttle", None,
-     "After a fire, silences a pattern for N seconds. "
-     "On itself: how soon it can fire again."),
+     "After a trigger, silences a pattern for N seconds. "
+     "On itself: how soon it can trigger again."),
 )
 
 
@@ -305,36 +319,16 @@ class PatternEditDialog(QDialog):
         for op, value in (pattern.get("threshold") or {}).items():
             self.threshold_rows.add_row(op, value)
 
-        # ---- timing (left, in the card's row order)
-        timing = QGridLayout()
-        timing.setVerticalSpacing(3)
-        self.detect_check = _mono(QCheckBox("detect_after (s)"), t["text_dim"])
-        self.detect_spin = _Spin()
-        self.detect_spin.setDecimals(3)
-        self.detect_spin.setRange(0, 10)
-        self.detect_spin.setSingleStep(0.05)
-        if pattern.get("detect_after") is not None:
-            self.detect_check.setChecked(True)
-            self.detect_spin.setValue(float(pattern["detect_after"]))
-        self.grace_check = _mono(QCheckBox("graceperiod (s)"), GRACE_COLOR)
-        self.grace_spin = _Spin()
-        self.grace_spin.setDecimals(3)
-        self.grace_spin.setRange(0, 10)
-        self.grace_spin.setSingleStep(0.05)
-        if pattern.get("graceperiod") is not None:
-            self.grace_check.setChecked(True)
-            self.grace_spin.setValue(float(pattern["graceperiod"]))
-        for i, (check, spin) in enumerate(
-                ((self.detect_check, self.detect_spin),
-                 (self.grace_check, self.grace_spin))):
-            timing.addWidget(check, i, 0)
-            timing.addWidget(spin, i, 1)
-            check.stateChanged.connect(lambda _s: self._revalidate())
-            spin.valueChanged.connect(lambda _v: self._revalidate())
-        timing.setColumnStretch(2, 1)
-        left.addLayout(timing)
+        # ---- detect_after times the first trigger, so it stays with
+        # threshold; graceperiod belongs to the grace section it times.
+        self.detect_check, self.detect_spin = self._seconds_row(
+            "detect_after (s)", t["text_dim"], pattern.get("detect_after"))
+        left.addLayout(_check_row(self.detect_check, self.detect_spin))
 
         left.addWidget(_section("grace_threshold", t, color=GRACE_COLOR))
+        self.grace_check, self.grace_spin = self._seconds_row(
+            "graceperiod (s)", GRACE_COLOR, pattern.get("graceperiod"))
+        left.addLayout(_check_row(self.grace_check, self.grace_spin))
         self.grace_rows = _RuleRows(left, ops, self._revalidate, t)
         for op, value in (pattern.get("grace_threshold") or {}).items():
             self.grace_rows.add_row(op, value)
@@ -369,6 +363,20 @@ class PatternEditDialog(QDialog):
         outer.addLayout(buttons)
 
         self._revalidate()
+
+    def _seconds_row(self, label, color, value):
+        """A checkbox that enables a small seconds spinner beside it."""
+        check = _mono(QCheckBox(label), color)
+        spin = _Spin()
+        spin.setDecimals(3)
+        spin.setRange(0, 10)
+        spin.setSingleStep(0.05)
+        if value is not None:
+            check.setChecked(True)
+            spin.setValue(float(value))
+        check.stateChanged.connect(lambda _s: self._revalidate())
+        spin.valueChanged.connect(lambda _v: self._revalidate())
+        return check, spin
 
     def _fit(self):
         """Grow (never shrink) until the body fits unscrolled, screen-capped."""
