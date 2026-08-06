@@ -126,7 +126,8 @@ class AudioWorker(QThread):
             with open(path, "w", encoding="utf-8") as f:
                 json.dump({"mic_index": self.mic_index,
                            "mic_name": mic_name,
-                           "sample_rate": RATE}, f)
+                           "sample_rate": RATE,
+                           "strategy": self.strategy}, f)
         except OSError:
             pass
 

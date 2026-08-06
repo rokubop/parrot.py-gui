@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from config.config import RATE
 from gui.widgets.audio_preview import AudioPreviewWidget
-from gui.services import library_ops, playback
+from gui.services import library_ops, playback, strategies
 from gui import theme
 
 
@@ -288,6 +288,11 @@ class SessionCard(QFrame):
         rate = info.get("sample_rate")
         if rate and rate != RATE:
             parts.append(f"{rate / 1000:g} kHz")
+        # Like the rate: the strategy is worth showing only when a take
+        # departs from the configured default.
+        strat = info.get("strategy")
+        if strat and strat != strategies.CURRENT_DETECTION_STRATEGY:
+            parts.append(strategies.label_for_strategy(strat))
         return "   ·   ".join(parts)
 
     def _read_threshold(self, path):

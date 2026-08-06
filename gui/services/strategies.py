@@ -66,6 +66,15 @@ def description_for_label(label):
     return ""
 
 
+def label_for_strategy(strategy):
+    """Preset label for a raw strategy string, or the string itself for one
+    outside the presets (e.g. recorded under an older curation)."""
+    for _key, lbl, strat, _desc in PRESETS:
+        if strat == strategy:
+            return lbl
+    return strategy
+
+
 def default_label():
     """The preset whose strategy matches the configured default, else the
     first preset."""

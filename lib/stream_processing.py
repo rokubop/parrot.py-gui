@@ -11,13 +11,13 @@ import os
 
 snr_cutoff = 30
 
-def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels, progress_callback = None, comparison_srt_file = None, override_file = None, print_statistics = False, two_pass = None):
+def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels, progress_callback = None, comparison_srt_file = None, override_file = None, print_statistics = False, two_pass = None, strategy = None):
     if two_pass is None:
         two_pass = TWO_PASS_DETECTION
     ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
     sample_width = 2# 16 bit = 2 bytes
 
-    detection_strategy = CURRENT_DETECTION_STRATEGY
+    detection_strategy = strategy if strategy else CURRENT_DETECTION_STRATEGY
 
     detection_labels = []
     override_labels = []

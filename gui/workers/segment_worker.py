@@ -65,16 +65,18 @@ def read_min_dbfs(wav_path):
 def redetect(wav_path, label):
     """Re-run detection on a wav, preserving a manual threshold override if the
     recording has one (-> MANUAL.srt) else producing the automatic .v<N>.srt.
+    Re-detection uses the strategy the take was recorded with (its sidecar).
     Returns the srt path written."""
     base, _label, seg = _paths(wav_path)
+    strategy = library_ops.take_strategy(wav_path)
     if os.path.isfile(_thresholds(seg, base)) and os.path.isfile(_manual_srt(seg, base)):
         srt = _manual_srt(seg, base)
         process_wav_file(wav_path, srt, _comparison(seg, base), None, [label],
-                         override_file=_thresholds(seg, base))
+                         override_file=_thresholds(seg, base), strategy=strategy)
     else:
         srt = _auto_srt(seg, base)
         process_wav_file(wav_path, srt, _comparison(seg, base),
-                         _thresholds(seg, base), [label])
+                         _thresholds(seg, base), [label], strategy=strategy)
     return srt
 
 
@@ -107,7 +109,8 @@ class ReSegmentWorker(QThread):
             # thresholds_file=None so post_processing doesn't overwrite the
             # override we just wrote; override_file feeds it back in.
             process_wav_file(self.wav_path, srt, _comparison(seg, base), None,
-                             [self.label], override_file=override_path)
+                             [self.label], override_file=override_path,
+                             strategy=library_ops.take_strategy(self.wav_path))
             self.finished_ok.emit(srt)
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -131,7 +134,8 @@ class ResetWorker(QThread):
                     os.remove(path)
             srt = _auto_srt(seg, base)
             process_wav_file(self.wav_path, srt, _comparison(seg, base),
-                             _thresholds(seg, base), [self.label])
+                             _thresholds(seg, base), [self.label],
+                             strategy=library_ops.take_strategy(self.wav_path))
             self.finished_ok.emit(srt)
         except Exception as exc:
             self.failed.emit(str(exc))

@@ -186,6 +186,14 @@ def read_mic_info(wav_path):
     return data if isinstance(data, dict) else None
 
 
+def take_strategy(wav_path):
+    """The detection strategy a take was recorded with, from its sidecar, or
+    None for takes that predate strategy capture. Callers pass it to
+    process_wav_file, whose None falls back to the configured default."""
+    info = read_mic_info(wav_path)
+    return info.get("strategy") if info else None
+
+
 def mics_for_labels(labels):
     """What these sounds were recorded with, as
     {"names": [...], "indices": [...], "named": n, "takes": n}.
