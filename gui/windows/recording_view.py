@@ -164,6 +164,17 @@ class RecordingView(QWidget):
         opts.addWidget(self.strategy_combo, 1)
         root.addLayout(opts)
 
+        # Teach beside the control: what the chosen strategy does, one line.
+        self.strategy_desc = QLabel(strategies.description_for_label(
+            self.strategy_combo.currentText()))
+        self.strategy_desc.setWordWrap(True)
+        self.strategy_desc.setStyleSheet(
+            f"color: {theme.colors()['text_dim']}; font-size: 12px;")
+        self.strategy_combo.currentTextChanged.connect(
+            lambda lbl: self.strategy_desc.setText(
+                strategies.description_for_label(lbl)))
+        root.addWidget(self.strategy_desc)
+
         # Center: live monitor (recording) OR interactive preview (review)
         center = QHBoxLayout()
         left = QVBoxLayout()
