@@ -574,5 +574,4 @@ def _version_text():
 def _license_html():
     t = theme.colors()
     return (f"<span style='color:{t['text_dim']};'>MIT licensed. "
-            f"Copyright (c) 2019 Kevin te Raa (chaosparrot); this is "
-            f"rokubop's fork.</span>")
+            f"Copyright (c) 2019 Kevin te Raa.</span>")
