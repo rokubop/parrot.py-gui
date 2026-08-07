@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import components, theme
+from gui.content.integrations import PATTERN_KEYS
 from gui.services import patterns_schema
 from gui.widgets.pattern_card import BAD_COLOR, GRACE_COLOR, MONO
 
@@ -73,29 +74,12 @@ def _section(text, t, color=None):
     return components.section_label(text, color)
 
 
-# One entry per file key, led by "pattern" for the thing being edited.
-# grace_threshold comes before graceperiod because graceperiod is defined in
-# terms of it. Semantics per the integration template: rules are checked 60
-# times a second, detect_after is a hold before the first trigger.
-_LEGEND = (
-    ("pattern", None,
-     "What Talon recognizes. One or more sounds and their settings."),
-    ("sounds", None,
-     "Sounds from a parrot model."),
-    ("threshold", None,
-     "The conditions that trigger the pattern. "
-     "Checked 60 times a second."),
-    ("detect_after", None,
-     "The sound must hold this long before the first trigger."),
-    ("grace_threshold", GRACE_COLOR,
-     "Secondary rules once the pattern has triggered. Lets a sound that "
-     "starts loud sustain as it goes quieter."),
-    ("graceperiod", GRACE_COLOR,
-     "How long grace_threshold stays in effect after the first trigger."),
-    ("throttle", None,
-     "After a trigger, silences a pattern for N seconds. "
-     "On itself: how soon it can trigger again."),
-)
+# Colour marks the two grace keys as a pair; the words come from
+# gui/content, in the short form this 220px column has room for.
+_LEGEND = tuple(
+    (name, GRACE_COLOR if name.startswith('grace') else None,
+     entry['short'])
+    for name, entry in PATTERN_KEYS)
 
 
 def _legend_panel(t):

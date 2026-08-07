@@ -1,6 +1,6 @@
 """About: every help topic in the app, drawn end to end.
 
-The page has no copy of its own. It walks `gui/help_content.TABS` and asks
+The page has no copy of its own. It walks `gui.content.TABS` and asks
 `help_dialog` to render each topic, which is the same widget the ``?  Help``
 buttons open - so a topic added to the registry appears here without this
 file being touched.
@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
-from gui import components, help_content, theme
+from gui import components, content, theme
 from gui.widgets import help_dialog
 from gui.widgets.help_dialog import WrappedBody
 
@@ -56,7 +56,7 @@ class AboutPage(QWidget):
         self.body_layout.setSpacing(0)
         self.scroll.setWidget(body)
 
-        for tab in help_content.TABS:
+        for tab in content.TABS:
             section = self._build_section(tab)
             name = tab["title"]
             self._sections.append((name, section))

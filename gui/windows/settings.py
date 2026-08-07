@@ -17,9 +17,10 @@ from config.config import (
     THRESHOLD_DETECTION, TWO_PASS_DETECTION,
     RECORDINGS_FOLDER, CLASSIFIER_FOLDER,
 )
-from gui import components, theme
+from gui import components, content, theme
 from gui.services import (user_config, strategies, library_ops, audio_devices,
                           ui_prefs, profiles)
+from gui.content import program as program_content
 
 
 class SettingsPage(QWidget):
@@ -74,13 +75,7 @@ class SettingsPage(QWidget):
         self.two_pass_combo.setCurrentIndex(0 if TWO_PASS_DETECTION else 1)
         form.addRow("Detection passes:", self.two_pass_combo)
 
-        two_pass_desc = QLabel(
-            "While you record, thresholds calibrate live and need roughly ten "
-            "sounds before they settle - so the first sounds of a take are "
-            "judged by weaker criteria. Two-pass re-judges the entire recording "
-            "with the settled thresholds whenever it is saved or re-detected, "
-            "so the start is segmented as accurately as the end. A manual "
-            "threshold set in a recording's edit view always wins over either.")
+        two_pass_desc = QLabel(content.short("detection"))
         two_pass_desc.setWordWrap(True)
         two_pass_desc.setStyleSheet(
             f"color: {theme.colors()['text_dim']}; ")
@@ -154,9 +149,9 @@ class SettingsPage(QWidget):
         # ---- Profiles ----
         profiles_group = QGroupBox("Profiles")
         profiles_layout = QHBoxLayout(profiles_group)
-        profiles_desc = QLabel("Separate complete setups: sounds, models, notes "
-                               "and settings kept apart. Once one exists, the "
-                               "switcher lives in the top right corner.")
+        profiles_desc = QLabel(
+            program_content.PROFILE_SHORT
+            + " Once one exists, the switcher is in the top right.")
         profiles_desc.setWordWrap(True)
         profiles_layout.addWidget(profiles_desc, stretch=1)
         manage_profiles_btn = QPushButton("Manage profiles...")
@@ -167,10 +162,7 @@ class SettingsPage(QWidget):
         # ---- Back up ----
         backup_group = QGroupBox("Back up")
         backup_layout = QVBoxLayout(backup_group)
-        backup_desc = QLabel(
-            "Everything you make is in one folder: sounds, models, patterns, "
-            "settings, notes. Copy that folder anywhere, or make it a git "
-            "repo, and you have all of it.")
+        backup_desc = QLabel(program_content.DATA_FOLDER_SHORT)
         backup_desc.setWordWrap(True)
         backup_layout.addWidget(backup_desc)
         backup_row = QHBoxLayout()

@@ -24,6 +24,7 @@ from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets import help_dialog
 from gui.workers.combine_worker import CombineWorker
 from lib.print_status import get_quantity_rating
+from gui import content
 
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -316,9 +317,7 @@ class ModelsPage(QWidget):
         self.model_list.setAllColumnsShowFocus(True)
         head = self.model_list.headerItem()
         head.setToolTip(2, "How many sounds this model can tell apart")
-        head.setToolTip(3, "How many neural networks this model owns.\n"
-                           "Every one of them is consulted on every sound, and "
-                           "their scores are averaged.")
+        head.setToolTip(3, content.short("nets"))
         head.setToolTip(4, "Which model Talon is running right now")
         header = self.model_list.header()
         # Left to itself the header stretches the *last* section as well as the

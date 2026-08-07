@@ -14,6 +14,7 @@ from gui.widgets import help_dialog
 from gui import components, theme
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating
+from gui import content
 
 
 class SoundLibraryPage(QWidget):
@@ -412,9 +413,7 @@ class SoundLibraryPage(QWidget):
 
     # ---- empty states --------------------------------------------------
 
-    # Detected sound needed before a label can train at all: get_quantity_rating
-    # leaves "Not enough" at 16.5s.
-    _MIN_TRAIN_SECONDS = 17
+    _MIN_TRAIN_SECONDS = content.MIN_TRAIN_SECONDS
 
     @staticmethod
     def _short(label, limit=18):

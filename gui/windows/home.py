@@ -14,6 +14,7 @@ from gui import components, theme
 from gui.services import library_ops
 from gui.widgets import help_dialog
 from gui.services.talon_discovery import find_matching_local_model
+from gui.content import program as program_content
 
 
 def _ago(timestamp):
@@ -250,9 +251,7 @@ class HomePage(QWidget):
         self.open_data_btn = QPushButton("Open data folder")
         self.open_data_btn.setFlat(True)
         self.open_data_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.open_data_btn.setToolTip(
-            "Everything you make, in one folder: sounds, models, patterns, "
-            "settings, notes")
+        self.open_data_btn.setToolTip(program_content.DATA_FOLDER_SHORT)
         self.open_data_btn.clicked.connect(self._on_open_data_folder)
         status_title_row.addWidget(self.open_data_btn)
         v.addLayout(status_title_row)

@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 
 from gui import theme
 from gui.services import profiles, library_ops
+from gui.content import program as program_content
 
 
 class _OpWorker(QThread):
@@ -329,9 +330,8 @@ class ProfilesDialog(QDialog):
         layout.setSpacing(16)
 
         note = QLabel(
-            "Each profile is a complete separate setup: sounds, models, notes, "
-            "settings. Use one to try the app as a new user or to keep setups "
-            "apart. Switching restarts the app, about a second.")
+            program_content.PROFILE_SHORT
+            + " Use one to try the app as a new user, or to keep setups apart.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(note)

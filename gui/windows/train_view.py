@@ -30,6 +30,8 @@ from gui.widgets.per_label_accuracy import PerLabelAccuracy
 from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
 from lib.print_status import get_quantity_rating
+from gui import content
+from gui.content import models as models_content
 
 # From the theme, not literals: these print as text on cards.
 def _warn():
@@ -543,11 +545,7 @@ class TrainView(QWidget):
         # Both default to what the CLI does, so ticking nothing changes nothing.
         self.balance_check = QCheckBox("Balance sounds")
         self.balance_check.setChecked(True)
-        self.balance_check.setToolTip(
-            "Repeats sounds you have little of and trims the ones you have "
-            "most of, so no sound dominates by volume alone.\nRepeating is "
-            "capped at 2x, so a very thin sound still goes in light.\nOff "
-            "means each sound goes in exactly as recorded.")
+        self.balance_check.setToolTip(content.short("balance"))
         self.balance_check.stateChanged.connect(self._on_balance_changed)
         balance_row = QHBoxLayout()
         balance_row.setSpacing(6)
@@ -570,12 +568,7 @@ class TrainView(QWidget):
                            ("Omit", "none")):
             self.silence_mode.addItem(text, mode)
         self.silence_mode.setCurrentIndex(1)
-        self.silence_mode.setToolTip(
-            "Assembled from the quiet parts of your recordings; you never "
-            "record it.\nInclude all is what every model in the wild trained "
-            "with, and it is usually\nthe biggest class by far. Balance it "
-            "gives it one sound's ration.\nLeave out drops the class, which is "
-            "what parrot did before it existed.")
+        self.silence_mode.setToolTip(models_content.SILENCE_SHORT)
         self.silence_mode.currentIndexChanged.connect(self._on_balance_changed)
         silence_row.addWidget(self.silence_mode, 1)
         silence_row.addWidget(help_dialog.help_button(self, "balance"))
@@ -1123,7 +1116,7 @@ class TrainView(QWidget):
                     f"{silence['loaded']:,} of {silence['size']:,} frames, "
                     f"{share}.")
         return (f"Every quiet frame goes in - {silence['loaded']:,} of them, "
-                f"{share}.\nSet Silence to “Balance it” for one sound's "
+                f"{share}.\nSet Silence to “Balanced” for one sound's "
                 f"ration instead.")
 
     @staticmethod

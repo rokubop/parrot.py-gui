@@ -1,6 +1,6 @@
 """Help rendering: the diagrams, and one renderer for a help topic.
 
-The words live in `gui/help_content.py`. This module turns a topic from there
+The words live in `gui/content/`. This module turns a topic from there
 into a widget, and that same widget is what the ``?  Help`` modal shows and
 what the About page stacks up - so a topic is written once and drawn the same
 way wherever it appears.
@@ -14,8 +14,8 @@ from PyQt6.QtWidgets import (
     QScrollArea, QWidget, QFrame, QSizePolicy
 )
 
-from gui import components, help_content, theme
-from gui.help_content import MS_PER_FRAME
+from gui import components, content, theme
+from gui.content import MS_PER_FRAME
 from lib.print_status import get_quantity_rating
 
 
@@ -507,7 +507,7 @@ def _balance_legend_widget():
     return balance_legend()
 
 
-# The names topics use for their pictures. A topic in help_content names one
+# The names topics use for their pictures. A topic in gui/content names one
 # of these; nothing outside this module knows a diagram is a widget.
 DIAGRAMS = {
     "pipeline": pipeline_diagram_widget,
@@ -555,9 +555,9 @@ def thin_data_warning(count, total):
         return (f"{count} {noun} too little data and will be the model's weak "
                 f"spot.")
     subject = "Both are" if total == 2 else "They are all"
-    return (f"{subject} under {help_content.MIN_TRAIN_SECONDS}s of detected "
+    return (f"{subject} under {content.MIN_TRAIN_SECONDS}s of detected "
             f"sound, so expect a lot of misfires. Around "
-            f"{help_content.GOOD_TRAIN_SECONDS}s each is where a model starts "
+            f"{content.GOOD_TRAIN_SECONDS}s each is where a model starts "
             f"being usable.")
 
 
@@ -619,9 +619,9 @@ def topic_content(key, parent=None, stretch=True):
     page stacks one per topic, so a topic looks the same in both and gains
     nothing by being defined twice.
     """
-    spec = help_content.get(key) if isinstance(key, str) else key
-    content = QWidget(parent)
-    inner = QVBoxLayout(content)
+    spec = content.get(key) if isinstance(key, str) else key
+    panel = QWidget(parent)
+    inner = QVBoxLayout(panel)
     inner.setContentsMargins(0, 0, 0, 0)
     inner.setSpacing(12)
 
@@ -649,7 +649,7 @@ def topic_content(key, parent=None, stretch=True):
         # A scroll area resizes this to its viewport; without a trailing spring
         # spare height is shared between the rows instead of sitting below.
         inner.addStretch(1)
-    return content
+    return panel
 
 
 def training_sections(parent=None, live=None):
@@ -660,21 +660,21 @@ def training_sections(parent=None, live=None):
     stock diagram.
     """
     live = live or {}
-    content = QWidget(parent)
-    v = QVBoxLayout(content)
+    panel = QWidget(parent)
+    v = QVBoxLayout(panel)
     v.setContentsMargins(0, 0, 0, 0)
     v.setSpacing(18)
-    for key in help_content.TRAINING_TOPICS:
-        spec = help_content.get(key)
-        heading = QLabel(spec["title"], content)
+    for key in content.TRAINING_TOPICS:
+        spec = content.get(key)
+        heading = QLabel(spec["title"], panel)
         heading.setStyleSheet(components.heading_style("card"))
         v.addWidget(heading)
         if key in live:
             v.addWidget(live[key])
             spec = dict(spec, diagram=None)
-        v.addWidget(topic_content(spec, content, stretch=False))
+        v.addWidget(topic_content(spec, panel, stretch=False))
     v.addStretch(1)
-    return content
+    return panel
 
 
 def scrolled(content, max_height=560):
@@ -702,7 +702,7 @@ def _fit_to_screen(dlg, content_widget, width=760):
 
 
 def show_help(parent, key):
-    title = help_content.title(key)
+    title = content.title(key)
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
     v = QVBoxLayout(dlg)
