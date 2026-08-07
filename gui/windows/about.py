@@ -121,21 +121,15 @@ def pipeline_diagram_widget():
     return PipelineDiagram()
 
 
-OVERVIEW_INTRO = (
-    "<p>Noises you make - a pop, a click, a hiss - become actions. Not "
-    "speech: sounds you pick for being quick to make and easy to tell "
-    "apart.</p>")
+TAGLINE = ("Train a model on the sounds you make - clicks, pops, vowels, "
+           "hisses - and use them to control your computer.")
 
-SPEED_ROWS = (
-    ("Never waits", f"Every {_MS_PER_FRAME} ms slice is judged on its own, "
-                    f"~60 times a second, so a pop fires while the pop is "
-                    f"still happening. A word can't be recognised until it's "
-                    f"finished."),
-    ("Less to weigh", "A handful of sounds you chose, not tens of thousands "
-                      "of words."),
-    ("The cost", "It only knows what you recorded, and always answers with "
-                 "one of them. Hence distractors and throttles, below."),
-)
+SPEED_TEXT = (
+    f"<p>Speech has to wait for you to stop talking before it can decide what "
+    f"you said. Parrot judges every {_MS_PER_FRAME} ms slice as it arrives, "
+    f"so a sound fires while you are still making it, and the next one can "
+    f"fire {_MS_PER_FRAME} ms later instead of waiting out another speech "
+    f"timeout.</p>")
 
 
 # ---- copy that exists only here ----------------------------------------
@@ -255,16 +249,16 @@ def _quantity_html():
 
 # ---- page structure -----------------------------------------------------
 
-def _block(title, rows=None, diagram=None, intro=None, note=None):
-    """One titled block. Drawn in this order: diagram (with its own caption),
-    intro, rows, note.
+def _block(title, rows=None, diagram=None, lede=None, intro=None, note=None):
+    """One titled block. Drawn in this order: lede, diagram (with its own
+    caption), intro, rows, note. `lede` is one line, set larger.
 
     Prose is kept out of `rows` deliberately. A full-width paragraph sharing
     the table with label/body rows stretches the label column halfway across
-    the page, so anything that is not a label goes in `intro` or `note`.
+    the page, so anything that is not a label goes in a prose slot.
     """
-    return dict(title=title, rows=rows, diagram=diagram, intro=intro,
-                note=note)
+    return dict(title=title, rows=rows, diagram=diagram, lede=lede,
+                intro=intro, note=note)
 
 
 # (section title, what the section is for, [blocks])
@@ -273,8 +267,9 @@ def _sections():
         ("Overview", None,
          (
              _block("How Parrot works", diagram=pipeline_diagram_widget,
-                    intro=OVERVIEW_INTRO),
-             _block("Why it's fast", SPEED_ROWS),
+                    lede=TAGLINE),
+             _block("Why Parrot is so much faster than voice commands",
+                    intro=SPEED_TEXT),
          )),
         ("Sounds",
          "Recording the sounds a model learns. Everything here is also on the "
@@ -397,6 +392,14 @@ class AboutPage(QWidget):
             layout.addSpacing(22)
             layout.addWidget(components.heading(block["title"], "card"))
             layout.addSpacing(8)
+            if block["lede"]:
+                lede = WrappedBody(block["lede"])
+                lede.setMaximumWidth(_BODY_WIDTH)
+                lede.setStyleSheet(
+                    f"color: {theme.colors()['text']}; "
+                    f"font-size: {theme.TYPE_SCALE['card']}px;")
+                layout.addWidget(lede)
+                layout.addSpacing(14)
             if block["diagram"] is not None:
                 widget = block["diagram"]()
                 caption_text = getattr(widget, "CAPTION", "")
