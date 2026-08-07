@@ -830,8 +830,8 @@ class TalonPage(QWidget):
                     "action": None,
                     # How it decided, so a wrong verdict is not a mystery.
                     "note": "Checked Talon's own Python for the parrot module."}
-        # An uninstall leaves ~/.talon behind, so say which one this is or the
-        # folder full of your patterns looks like a working install.
+        # An uninstall leaves ~/.talon behind, and a folder full of your
+        # patterns reads as a working install unless this says otherwise.
         left_over = bool(result and result.talon_home)
         return {"key": "talon", "label": "Talon beta", "done": False,
                 # Only a wall where there are ticks below it to contradict. On
@@ -986,18 +986,22 @@ class TalonPage(QWidget):
         action.setEnabled(editable)
         menu.addSeparator()
 
-        if result is not None and result.talon_user_dir:
+        # The user dir outlives the app, so it is not on its own permission to
+        # write into it. Everything under here creates a file Talon imports.
+        live = bool(result is not None and result.talon_user_dir
+                    and result.talon_installed
+                    and result.talon_beta is not False)
+        if live:
             info = self._companion_status()
             if info is not None:
                 label = ("Install the test bridge" if not info["installed"]
                          else "Update the test bridge" if info["outdated"]
                          else "Reinstall the test bridge")
                 menu.addAction(label, self._on_install_companion)
-        if result is not None and not result.integration_path \
-                and result.talon_user_dir:
+        if live and not result.integration_path:
             menu.addAction("Set up parrot integration…",
                            self._on_setup_integration)
-        if self._patterns_missing:
+        if live and self._patterns_missing:
             menu.addAction("Create patterns.json", self._on_create_patterns)
         menu.addSeparator()
         show = menu.addAction("Show file paths")

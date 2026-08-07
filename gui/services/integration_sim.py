@@ -51,9 +51,9 @@ def apply_to_bundle(bundle, state):
     if result is None:
         return bundle
 
-    # Every state below "not the beta" presupposes a working beta install, or
-    # the real machine's answer shows through and its screen is the only one
-    # you can ever reach.
+    # Every state below "not the beta" presupposes a working beta install.
+    # Without this the dev machine's own answer shows through and its screen is
+    # the only one reachable.
     if state not in ("no_talon", "uninstalled", "not_beta"):
         result.talon_beta = True
         result.talon_installed = True

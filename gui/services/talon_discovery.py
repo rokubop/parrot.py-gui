@@ -152,7 +152,7 @@ def has_parrot_api(talon_home: str) -> Optional[bool]:
     if python_home is None:
         return None
     # Escaped: a [] in a username is a glob character class, and the check
-    # would quietly find nothing. posix layout first, then Windows.
+    # would quietly find nothing.
     root = glob.escape(python_home)
     roots = (glob.glob(os.path.join(root, "lib", "python*", "site-packages"))
              + glob.glob(os.path.join(root, "Lib", "site-packages")))
