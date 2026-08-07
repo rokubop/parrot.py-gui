@@ -8,11 +8,11 @@ What is written here is the material that has nowhere else to live: how
 detection decides what is sound, what the data ratings mean, what a pattern's
 keys do, and where files are kept.
 """
-from PyQt6.QtCore import Qt, QPoint, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QUrl
+from PyQt6.QtGui import QColor, QDesktopServices, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout,
-    QWidget,
+    QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
+    QVBoxLayout, QWidget,
 )
 
 from config.config import (
@@ -34,6 +34,137 @@ _MS_PER_FRAME = int(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 # A measure, not the window: help nobody scrolls is help nobody reads, but a
 # 1400px line is unreadable too.
 _BODY_WIDTH = 860
+
+
+# ---- the shape of the whole thing --------------------------------------
+
+class PipelineDiagram(QWidget):
+    """Record, train, connect - and which tab each one happens on.
+
+    The three steps are the app's whole structure, and the Home screen
+    already numbers them, so the picture here uses the same order and the
+    same names rather than inventing a second vocabulary.
+    """
+
+    CAPTION = "The whole program, in three steps:"
+
+    STEPS = (
+        ("You record", "a sound, many times over", "Sounds"),
+        ("Parrot trains", "one model that knows them all", "Models"),
+        ("Talon listens", "and each sound does something", "Integrations"),
+    )
+
+    BOX_H = 52
+    SUB_ROW = 17
+    TAB_ROW = 18
+    GAP = 34            # room for the arrow between boxes
+    ARROW_HEAD = 7
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(150 * len(self.STEPS))
+        self.setFixedHeight(self.BOX_H + self.SUB_ROW + self.TAB_ROW + 6)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Fixed)
+
+    def _arrow(self, painter, x0, x1, y, color):
+        pad = 7
+        x0, x1 = x0 + pad, x1 - pad
+        head = self.ARROW_HEAD
+        painter.setPen(QPen(color, 1.4))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(x0, y), QPointF(x1 - head + 1, y))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        painter.drawPolygon(QPolygonF([
+            QPointF(x1, y),
+            QPointF(x1 - head, y - head * 0.62),
+            QPointF(x1 - head, y + head * 0.62)]))
+
+    def paintEvent(self, _event):
+        t = theme.colors()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        accent = QColor(t["accent"])
+        dim = QColor(t["text_dim"])
+        bright = QColor(t["text_bright"])
+        small = components.painter_font(self)
+
+        n = len(self.STEPS)
+        span = (self.width() - self.GAP * (n - 1)) / n
+        x = 0.0
+        for index, (title, sub, tab) in enumerate(self.STEPS):
+            rect = QRectF(x, 0, span, self.BOX_H)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(t["plot_bg"]))
+            p.drawRect(rect)
+            p.setPen(QPen(accent, 1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
+
+            p.setFont(self.font())
+            p.setPen(bright)
+            p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), title)
+
+            p.setFont(small)
+            p.setPen(dim)
+            p.drawText(QRectF(x, self.BOX_H + 1, span, self.SUB_ROW),
+                       int(Qt.AlignmentFlag.AlignCenter), sub)
+            p.setPen(accent)
+            p.drawText(QRectF(x, self.BOX_H + self.SUB_ROW, span,
+                              self.TAB_ROW),
+                       int(Qt.AlignmentFlag.AlignCenter), f"{tab} tab")
+
+            if index < n - 1:
+                self._arrow(p, x + span, x + span + self.GAP,
+                            self.BOX_H / 2, dim)
+            x += span + self.GAP
+        p.end()
+
+
+def pipeline_diagram_widget():
+    return PipelineDiagram()
+
+
+OVERVIEW_INTRO = (
+    "<p>Parrot listens for noises you make - a lip pop, a tongue click, a "
+    "hiss - and turns each one into an action on your computer. Not speech: "
+    "sounds, chosen by you because they are quick to make and easy to tell "
+    "apart.</p>")
+
+OVERVIEW_ROWS = (
+    ("Step 1", "Record each sound many times, in the Sounds tab. This is the "
+               "slow part, and the part that decides how good the result is."),
+    ("Step 2", "Train a model from those recordings, in the Models tab. The "
+               "model is one file that can name a sound it hears."),
+    ("Step 3", "Hand the model to Talon, in the Integrations tab, and say "
+               "what each sound should do. From then on it is listening."),
+)
+
+SPEED_ROWS = (
+    ("It never waits", f"Your microphone is cut into {_MS_PER_FRAME} ms "
+                       f"slices and each slice is judged on its own, around "
+                       f"60 times a second. A pop can fire while the pop is "
+                       f"still happening. Speech cannot answer until the word "
+                       f"is finished, because until then it is not yet a "
+                       f"word."),
+    ("It has less to think about", "Speech recognition has to work out which "
+                                   "of tens of thousands of words you said, "
+                                   "and often revises its guess once it hears "
+                                   "what comes next. Parrot picks between the "
+                                   "handful of sounds you trained. No "
+                                   "vocabulary, no grammar, nothing to "
+                                   "reconsider."),
+    ("The sounds help", "A pop and a hiss are unlike each other from their "
+                        "first slice. Words share beginnings, so telling "
+                        "them apart means waiting for the part that "
+                        "differs."),
+    ("What you give up", "It only knows what you recorded, and it always "
+                         "answers with one of those - there is no “that was "
+                         "nothing”. It also fires eagerly, which is why "
+                         "patterns have throttles. Both are covered below."),
+)
 
 
 # ---- copy that exists only here ----------------------------------------
@@ -153,45 +284,64 @@ def _quantity_html():
 
 # ---- page structure -----------------------------------------------------
 
-# (section title, what the tab is for, [blocks]).
-# A block is (title, rows or None, diagram factory or None, html or None).
+def _block(title, rows=None, diagram=None, intro=None, note=None):
+    """One titled block. Drawn in this order: diagram (with its own caption),
+    intro, rows, note.
+
+    Prose is kept out of `rows` deliberately. A full-width paragraph sharing
+    the table with label/body rows stretches the label column halfway across
+    the page, so anything that is not a label goes in `intro` or `note`.
+    """
+    return dict(title=title, rows=rows, diagram=diagram, intro=intro,
+                note=note)
+
+
+# (section title, what the section is for, [blocks])
 def _sections():
     return (
+        ("Overview",
+         "What this program is and why it is quick.",
+         (
+             _block("How Parrot works", OVERVIEW_ROWS,
+                    diagram=pipeline_diagram_widget, intro=OVERVIEW_INTRO),
+             _block("Why it beats talking", SPEED_ROWS),
+         )),
         ("Sounds",
          "Recording the sounds a model learns. Everything here is also on the "
          "Sounds tab, behind ?  Help.",
          (
-             ("Choosing sounds", help_dialog.SOUNDS_ROWS,
-              help_dialog.frames_diagram_widget, None),
-             ("Recording sounds", help_dialog.RECORD_ROWS, None, None),
-             ("Detection: what counts as sound", DETECTION_ROWS, None, None),
-             ("How much data you need", None, None, _quantity_html()),
-             ("Sound quality", QUALITY_ROWS, None, None),
+             _block("Choosing sounds", help_dialog.SOUNDS_ROWS,
+                    diagram=help_dialog.frames_diagram_widget),
+             _block("Recording sounds", help_dialog.RECORD_ROWS),
+             _block("Detection: what counts as sound", DETECTION_ROWS),
+             _block("How much data you need", intro=_quantity_html()),
+             _block("Sound quality", QUALITY_ROWS),
          )),
         ("Models",
          "Turning recordings into a model. Also on the Models tab and the "
          "training screen.",
          (
-             ("Training a model", help_dialog.TRAIN_ROWS, None, None),
-             ("How it picks a sound", None,
-              help_dialog.closed_set_diagram_widget,
-              "<p>It always answers with one of the sounds it knows. Nothing "
-              "is ever rejected, which is why a noise you want ignored still "
-              "has to be recorded.</p>"),
-             ("Neural networks", help_dialog.NET_ROWS,
-              help_dialog.nets_diagram_widget, None),
-             ("Balancing the data", help_dialog.BALANCE_ROWS, None, None),
+             _block("Training a model", help_dialog.TRAIN_ROWS),
+             _block("How it picks a sound",
+                    diagram=help_dialog.closed_set_diagram_widget,
+                    note="<p>It always answers with one of the sounds it "
+                         "knows. Nothing is ever rejected, which is why a "
+                         "noise you want ignored still has to be "
+                         "recorded.</p>"),
+             _block("Neural networks", help_dialog.NET_ROWS,
+                    diagram=help_dialog.nets_diagram_widget),
+             _block("Balancing the data", help_dialog.BALANCE_ROWS),
          )),
         ("Integrations",
          "Running a trained model live. Also on the Integrations tab.",
          (
-             ("Connecting to Talon", help_dialog.CONNECT_ROWS, None, None),
-             ("Patterns", PATTERN_ROWS, None, PATTERN_NOTE),
+             _block("Connecting to Talon", help_dialog.CONNECT_ROWS),
+             _block("Patterns", PATTERN_ROWS, note=PATTERN_NOTE),
          )),
         ("About",
          "The program itself.",
          (
-             ("Where your data lives", DATA_ROWS, None, None),
+             _block("Where your data lives", DATA_ROWS),
          )),
     )
 
@@ -272,29 +422,25 @@ class AboutPage(QWidget):
         layout.addSpacing(10)
         layout.addWidget(rule)
 
-        for block_title, rows, diagram, html in blocks:
+        for block in blocks:
             layout.addSpacing(22)
-            layout.addWidget(components.heading(block_title, "card"))
+            layout.addWidget(components.heading(block["title"], "card"))
             layout.addSpacing(8)
-            if diagram is not None:
-                widget = diagram()
+            if block["diagram"] is not None:
+                widget = block["diagram"]()
                 caption_text = getattr(widget, "CAPTION", "")
                 if caption_text:
                     layout.addWidget(components.dim_label(caption_text))
                     layout.addSpacing(4)
                 layout.addWidget(widget)
-                layout.addSpacing(12)
-            if rows:
-                body = WrappedBody(rows_html(rows))
-                body.setMaximumWidth(_BODY_WIDTH)
-                layout.addWidget(body)
-            if html:
-                # After the rows: it reads as the closing note on them, and a
-                # full-width paragraph inside the same table stretches the
-                # label column out of shape.
-                if rows:
+                layout.addSpacing(14)
+            for key in ("intro", "rows", "note"):
+                text = block[key]
+                if not text:
+                    continue
+                if key != "intro":
                     layout.addSpacing(8)
-                body = WrappedBody(html)
+                body = WrappedBody(rows_html(text) if key == "rows" else text)
                 body.setMaximumWidth(_BODY_WIDTH)
                 layout.addWidget(body)
         return section
