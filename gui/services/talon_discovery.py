@@ -98,6 +98,22 @@ def get_talon_user_dir() -> Optional[str]:
     return candidate if os.path.isdir(candidate) else None
 
 
+def _as_local_path(path: Optional[str]) -> Optional[str]:
+    """A path this process can actually open.
+
+    Under WSL the Talon we find is the Windows one, so its pyvenv.cfg records
+    `C:\\Users\\...`, which no os.path call here can see. Untouched everywhere
+    else, including a Linux Talon under WSL, whose paths have no drive letter.
+    """
+    if not path or sys.platform == "win32" or not _is_wsl():
+        return path
+    match = re.match(r"^([A-Za-z]):[\\/](.*)$", path)
+    if not match:
+        return path
+    return "/mnt/{}/{}".format(match.group(1).lower(),
+                               match.group(2).replace("\\", "/"))
+
+
 def recorded_talon_python(talon_home: str) -> Optional[str]:
     """Where pyvenv.cfg says Talon's bundled Python is, existing or not. The
     only pointer from ~/.talon back to the app itself, on every platform."""
@@ -107,7 +123,7 @@ def recorded_talon_python(talon_home: str) -> Optional[str]:
             for line in f:
                 key, _sep, value = line.partition("=")
                 if key.strip() == "home":
-                    return line.partition("=")[2].strip() or None
+                    return _as_local_path(value.strip()) or None
     except OSError:
         return None
     return None
@@ -135,13 +151,16 @@ def has_parrot_api(talon_home: str) -> Optional[bool]:
     python_home = find_talon_python(talon_home)
     if python_home is None:
         return None
-    roots = (glob.glob(os.path.join(python_home, "lib", "python*",
-                                    "site-packages"))
-             + glob.glob(os.path.join(python_home, "Lib", "site-packages")))
+    # Escaped: a [] in a username is a glob character class, and the check
+    # would quietly find nothing. posix layout first, then Windows.
+    root = glob.escape(python_home)
+    roots = (glob.glob(os.path.join(root, "lib", "python*", "site-packages"))
+             + glob.glob(os.path.join(root, "Lib", "site-packages")))
     roots = [r for r in roots if os.path.isdir(os.path.join(r, "talon"))]
     if not roots:
         return None
-    return any(glob.glob(os.path.join(r, PARROT_API)) for r in roots)
+    return any(glob.glob(os.path.join(glob.escape(r), PARROT_API))
+               for r in roots)
 
 
 def find_parrot_integration(talon_user_dir: str) -> Optional[str]:
