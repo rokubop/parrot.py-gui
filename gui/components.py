@@ -42,6 +42,27 @@ def dim_label(text="", wrap=False):
     return label
 
 
+def link(url, text=None):
+    """An anchor, coloured inline.
+
+    A stylesheet on a label makes Qt ignore the palette's Link role, so anchors
+    render the default pure blue (1.9:1 on the dark window). Only an inline
+    style wins - so copy holding a link is built per call, never a constant.
+    """
+    return (f"<a href='{url}' style='color: {theme.colors()['accent']};'>"
+            f"{text or url}</a>")
+
+
+def enable_links(label):
+    """A QLabel ignores clicks on <a> until told to accept them, so a link
+    added to existing copy silently does nothing."""
+    label.setTextFormat(Qt.TextFormat.RichText)
+    label.setTextInteractionFlags(
+        Qt.TextInteractionFlag.TextBrowserInteraction)
+    label.setOpenExternalLinks(True)
+    return label
+
+
 def painter_font(widget, rank="body"):
     """A font at a scale rank, for text drawn in a paintEvent.
 

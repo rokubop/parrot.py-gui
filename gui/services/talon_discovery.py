@@ -1,17 +1,31 @@
 import os
 import sys
 import re
+import glob
 import json
 import filecmp
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
+TALON_URL = "https://talonvoice.com/"
+TALON_BETA_URL = "https://talon.wiki/Help/beta_talon/"
+
+# Only the beta ships talon.experimental.parrot, and stable Talon fails on it
+# in its own log where nothing here can see it. So look for it on disk.
+#
+# Stable ships the parrot/ folder EMPTY, so the folder existing proves nothing;
+# the module file inside it is the check. Talon compiles its Python to .py4.
+PARROT_API = os.path.join("talon", "experimental", "parrot", "__init__.py*")
+
 
 @dataclass
 class TalonDiscoveryResult:
     talon_found: bool = False
     talon_home: Optional[str] = None
+    # None means couldn't tell, which is not False. Never tell someone their
+    # beta is not a beta because we failed to find their site-packages.
+    talon_beta: Optional[bool] = None
     talon_user_dir: Optional[str] = None
     integration_path: Optional[str] = None
     model_path_from_talon: Optional[str] = None
@@ -80,6 +94,36 @@ def get_talon_user_dir() -> Optional[str]:
         return None
     candidate = os.path.join(talon_home, "user")
     return candidate if os.path.isdir(candidate) else None
+
+
+def find_talon_python(talon_home: str) -> Optional[str]:
+    """Talon's own bundled Python, from pyvenv.cfg's `home`. The only pointer
+    from ~/.talon back to wherever the app was installed, on every platform."""
+    cfg = os.path.join(talon_home or "", ".venv", "pyvenv.cfg")
+    try:
+        with open(cfg, "r", encoding="utf-8") as f:
+            for line in f:
+                key, _sep, value = line.partition("=")
+                if key.strip() == "home":
+                    value = value.strip()
+                    return value if os.path.isdir(value) else None
+    except OSError:
+        return None
+    return None
+
+
+def has_parrot_api(talon_home: str) -> Optional[bool]:
+    """The beta check. None if Talon's site-packages was not found at all."""
+    python_home = find_talon_python(talon_home)
+    if python_home is None:
+        return None
+    roots = (glob.glob(os.path.join(python_home, "lib", "python*",
+                                    "site-packages"))
+             + glob.glob(os.path.join(python_home, "Lib", "site-packages")))
+    roots = [r for r in roots if os.path.isdir(os.path.join(r, "talon"))]
+    if not roots:
+        return None
+    return any(glob.glob(os.path.join(r, PARROT_API)) for r in roots)
 
 
 def find_parrot_integration(talon_user_dir: str) -> Optional[str]:
@@ -164,6 +208,7 @@ def discover_talon() -> TalonDiscoveryResult:
         return result
 
     result.talon_home = talon_home
+    result.talon_beta = has_parrot_api(talon_home)
 
     talon_user_dir = get_talon_user_dir()
     if talon_user_dir is None:

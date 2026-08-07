@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from gui import components, theme
+from gui.services.talon_discovery import TALON_URL, TALON_BETA_URL
 from lib.print_status import get_quantity_rating
 
 # A frame is one sliding window, not a whole sample. Same arithmetic as
@@ -129,19 +130,27 @@ TRAINING_BLOCKS = (
      "The model consults every net it owns and averages them. Each one is "
      "another full training run."),
 )
-CONNECT_ROWS = (
-    ("What", "Talon (talonvoice.com) runs your model live and maps each "
-             "sound to an action."),
-    ("Patterns", "Each trigger, and the sound that fires it, lives in "
-                 "patterns.json. Edit and deploy from the Integrations tab."),
-    ("Throttle", "Detection runs 60 times a second. A pattern's throttle on "
-                 "itself is how long before it fires again, so one utterance "
-                 "is one action. On another pattern, it silences that one "
-                 "instead."),
-    ("Setup", "The Integrations tab finds your Talon install and can "
-              "bootstrap the parrot integration from nothing."),
-    ("Where", "Integrations tab."),
-)
+def connect_rows():
+    """Per call, not a constant: the links carry the current theme's accent."""
+    return (
+        ("What", "Talon (" + components.link(TALON_URL, "talonvoice.com") +
+                 ") runs your model live and maps each sound to an action."),
+        # Second, because nothing below it works without the beta.
+        ("Requires", "The <b>Talon beta</b>. Parrot support is not in the "
+                     "stable build: it comes with a Patreon tier and the #beta "
+                     "channel on Slack. "
+                     + components.link(TALON_BETA_URL, "How to get the beta")
+                     + "."),
+        ("Patterns", "Each trigger, and the sound that fires it, lives in "
+                     "patterns.json. Edit and deploy from the Integrations tab."),
+        ("Throttle", "Detection runs 60 times a second. A pattern's throttle on "
+                     "itself is how long before it fires again, so one utterance "
+                     "is one action. On another pattern, it silences that one "
+                     "instead."),
+        ("Setup", "The Integrations tab finds your Talon install and can "
+                  "bootstrap the parrot integration from nothing."),
+        ("Where", "Integrations tab."),
+    )
 
 SOUNDS_ROWS = (
     ("How it works", "The audio is cut into 15 ms frames and each one is "
@@ -176,7 +185,7 @@ class WrappedBody(QLabel):
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.setWordWrap(True)
-        self.setTextFormat(Qt.TextFormat.RichText)
+        components.enable_links(self)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -573,7 +582,7 @@ def _balance_legend_widget():
 TOPICS = {
     "record": ("Recording sounds", RECORD_ROWS, None),
     "train": ("Training a model", TRAIN_ROWS, nets_diagram_widget),
-    "connect": ("Connecting to Talon", CONNECT_ROWS, None),
+    "connect": ("Connecting to Talon", connect_rows, None),
     "sounds": ("Choosing sounds", SOUNDS_ROWS, frames_diagram_widget),
     "nets": ("Neural networks", NET_ROWS, nets_diagram_widget),
     "balance": ("Balancing", BALANCE_ROWS, _balance_legend_widget),
@@ -658,6 +667,7 @@ def topic_content(key, parent=None):
     it can be embedded where the advice is actually needed instead of only
     behind a modal."""
     _title, rows, diagram = TOPICS[key]
+    rows = rows() if callable(rows) else rows
     content = QWidget(parent)
     inner = QVBoxLayout(content)
     inner.setContentsMargins(0, 0, 0, 0)

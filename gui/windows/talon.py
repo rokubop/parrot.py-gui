@@ -45,6 +45,13 @@ def _copy(patterns):
     return json.loads(json.dumps(patterns))
 
 
+def _beta_links():
+    return (components.link(talon_discovery.TALON_BETA_URL,
+                            "How to get the beta")
+            + " · "
+            + components.link(talon_discovery.TALON_URL, "talonvoice.com"))
+
+
 class DiscoveryWorker(QThread):
     """Full discovery bundle off the UI thread (rglob + joblib unpickle)."""
     loaded = pyqtSignal(object)
@@ -474,9 +481,20 @@ class TalonPage(QWidget):
             self.conn_facts.setText(
                 f"<span style='color:{bad};'>Discovery failed: {error}</span>")
             return
-        if result.talon_found:
-            self.status_rows["talon"].setText(
-                f"<span style='color:{ok};'>Found</span> - {result.talon_home}")
+        if result.talon_home:
+            build = ("beta" if result.talon_beta else
+                     "not beta" if result.talon_beta is False else
+                     "build unknown")
+            colour = bad if result.talon_beta is False else ok
+            talon_txt = (f"<span style='color:{colour};'>Found ({build})</span>"
+                         f" - {result.talon_home}")
+            if result.talon_beta is False:
+                talon_txt += (
+                    f"<br><span style='color:{t['text_dim']};'>no parrot module "
+                    f"under "
+                    f"{talon_discovery.find_talon_python(result.talon_home)}"
+                    f"</span>")
+            self.status_rows["talon"].setText(talon_txt)
         else:
             self.status_rows["talon"].setText(
                 f"<span style='color:{bad};'>Not found</span> - {result.error or ''}")
@@ -525,16 +543,22 @@ class TalonPage(QWidget):
         warn, bad = t["warn"], t["bad"]
         if result is None:
             return
-        if not result.talon_found:
+        if not result.talon_home:
             self.conn_facts.setText(
                 f"<span style='color:{warn};'>not found on this machine</span> "
                 f"<span style='color:{t['text_dim']};'>- recording and training "
                 f"work without it</span>")
+            # This return skips the setEnabled calls at the end.
+            self.change_model_btn.setEnabled(False)
+            self.test_btn.setEnabled(False)
             return
         match = (self._bundle or {}).get("local_match")
         sounds = (self._bundle or {}).get("model_sounds") or []
         bits = []
-        if not result.integration_path:
+        if result.talon_beta is False:
+            bits.append(f"<span style='color:{bad};'>not using the beta, so no "
+                        f"parrot support</span>")
+        elif not result.integration_path:
             bits.append(f"<span style='color:{warn};'>installed, no parrot "
                         f"integration yet</span>")
         elif match:
@@ -558,7 +582,12 @@ class TalonPage(QWidget):
             f"<span style='color:{t['text_dim']};'>"
             + " · ".join(bits) + "</span>")
         self.change_model_btn.setEnabled(bool(result.model_path_from_talon))
-        self.test_btn.setEnabled(bool(result.integration_path))
+        # The bridge wraps the parrot API, so there is nothing to watch without
+        # the beta however complete the rest of the setup looks.
+        can_test = bool(result.integration_path) and result.talon_beta is not False
+        self.test_btn.setEnabled(can_test)
+        if not can_test and result.talon_beta is False:
+            self.test_btn.setToolTip("Needs the Talon beta")
 
     # ---- companion / live tab ---------------------------------------------
 
@@ -768,6 +797,37 @@ class TalonPage(QWidget):
             else "Write the draft to Talon's patterns.json")
         self.draft_banner.setVisible(True)
 
+    def _talon_step(self, result):
+        """Talon, and specifically the beta. Stable Talon only says so with an
+        ImportError in its own log, which nobody clicking Set up will read."""
+        beta = result.talon_beta if result else None
+        if result and result.talon_home and beta is not False:
+            return {"key": "talon",
+                    # Only claim the beta where the module was actually found.
+                    "label": "Talon beta" if beta else "Talon installed",
+                    "done": True, "title": "", "body": "", "action": None}
+        if result and result.talon_home:
+            # Red where the other unfinished steps are not: this one is a
+            # wrong install rather than a step you have not reached, and every
+            # tick under it is worth nothing until it changes.
+            return {"key": "talon", "label": "Talon beta", "done": False,
+                    "blocked": True,
+                    "title": "Not using Talon beta",
+                    "body": "Parrot support is beta only, and this install has "
+                            "no <code>talon.experimental.parrot</code> for the "
+                            "integration to import. The beta comes with a "
+                            "Patreon tier and the #beta channel on Slack."
+                            f"<br><br>{_beta_links()}",
+                    "action": None,
+                    # How it decided, so a wrong verdict is not a mystery.
+                    "note": "Checked Talon's own Python for the parrot module."}
+        return {"key": "talon", "label": "Talon beta", "done": False,
+                "title": "Talon beta is not installed here",
+                "body": "Recording and training work without it. Parrot support "
+                        "is beta only: a Patreon tier, then the #beta channel "
+                        f"on Slack.<br><br>{_beta_links()}",
+                "action": None}
+
     def _setup_steps(self):
         """The integration, as the four files it is made of plus the patterns
         that make it do anything. Every row is a fact on disk, so the checklist
@@ -777,14 +837,9 @@ class TalonPage(QWidget):
         starters = len(talon_setup.scaffold_patterns(sounds))
         model = self._deployed_model_name()
 
+        beta = result.talon_beta if result else None
         return [
-            {"key": "talon", "label": "Talon installed",
-             "done": bool(result and result.talon_found),
-             "title": "Talon is not installed here",
-             "body": "Everything else in parrot.py works without it. Install "
-                     "Talon from talonvoice.com, then come back - this page "
-                     "finds it on its own.",
-             "action": None},
+            self._talon_step(result),
             {"key": "integration", "label": "Parrot integration",
              "done": bool(result and result.integration_path),
              "title": "Nothing connects Talon to parrot.py yet",
@@ -793,7 +848,9 @@ class TalonPage(QWidget):
                      "one of your trained models, and a patterns.json. This "
                      "makes all three.",
              "action": "Set up parrot integration…",
-             "detail": self._integration_tree_html()},
+             "detail": self._integration_tree_html(),
+             "note": None if beta else
+                     f"Needs the Talon beta. {_beta_links()}"},
             {"key": "model", "label": "Model deployed",
              "done": bool(result and result.model_path_from_talon),
              "title": "The integration has no model to run",

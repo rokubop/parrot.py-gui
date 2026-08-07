@@ -13,7 +13,7 @@ from config.config import CLASSIFIER_FOLDER
 from gui import components, theme
 from gui.services import library_ops
 from gui.widgets import help_dialog
-from gui.services.talon_discovery import find_matching_local_model
+from gui.services.talon_discovery import find_matching_local_model, TALON_BETA_URL
 
 
 def _ago(timestamp):
@@ -264,6 +264,7 @@ class HomePage(QWidget):
             self._make_panel("Active model")
         self.talon_panel, self.talon_panel_title, self.talon_panel_body = \
             self._make_panel("Talon")
+        components.enable_links(self.talon_panel_body)
         status_row.addWidget(self.model_panel, 1)
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
@@ -410,6 +411,8 @@ class HomePage(QWidget):
                   else f"Connected to Talon · running “{deployed_name}”.")
         elif talon.talon_found:
             s3 = "Talon found, but no deployed model matches a local one."
+        elif talon.talon_beta is False:
+            s3 = "Talon found, but not using the beta · parrot support needs it."
         elif talon.talon_home:
             s3 = "Talon found · parrot integration not set up yet."
         else:
@@ -511,19 +514,29 @@ class HomePage(QWidget):
         self._refresh()
 
     def _refresh_talon_panel(self, talon, deployed_name, t):
-        ok, warn, dim = t["accent"], "#e0b020", t["text_dim"]
+        ok, warn, dim, bad = t["accent"], "#e0b020", t["text_dim"], t["bad"]
         lines = []
-        if talon.talon_home:
-            lines.append(f"<span style='color:{ok};'>✓</span> Talon installed "
+        beta_link = components.link(TALON_BETA_URL, "how to get the beta")
+        if talon.talon_beta is False:
+            # "Talon installed" is true and useless here, so this leads.
+            lines.append(f"<span style='color:{bad};'>✗ Not using Talon "
+                         f"beta</span> <span style='color:{dim};'>- parrot "
+                         f"support is beta only; {beta_link}.</span>")
+        elif talon.talon_home:
+            build = " beta" if talon.talon_beta else ""
+            lines.append(f"<span style='color:{ok};'>✓</span> Talon{build} "
+                         f"installed "
                          f"<span style='color:{dim};'>({talon.talon_home})</span>")
         else:
             lines.append(f"<span style='color:{warn};'>✗ Talon not found</span> "
-                         f"<span style='color:{dim};'>- install Talon, or set it up "
-                         f"later; recording and training work without it.</span>")
+                         f"<span style='color:{dim};'>- parrot needs the Talon "
+                         f"beta ({beta_link}); recording and training work "
+                         f"without it.</span>")
         if talon.integration_path:
             lines.append(f"<span style='color:{ok};'>✓</span> Parrot integration "
                          f"found")
-        elif talon.talon_home:
+        elif talon.talon_home and talon.talon_beta is not False:
+            # Don't offer a bootstrap that cannot load without the beta.
             lines.append(f"<span style='color:{warn};'>○ No parrot integration "
                          f"yet</span> <span style='color:{dim};'>- the "
                          f"Integrations tab can bootstrap one.</span>")

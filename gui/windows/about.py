@@ -4,7 +4,8 @@ never drift."""
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QLabel, QFrame
 
-from gui import theme
+from gui import components, theme
+from gui.services.talon_discovery import TALON_BETA_URL
 from config.config import (
     RATE, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, CURRENT_DETECTION_STRATEGY,
     THRESHOLD_DETECTION,
@@ -163,6 +164,9 @@ class AboutPage(QWidget):
         <b>Models</b> tab.</p>
 
         {h("Talon patterns (patterns.json)")}
+        <p style='color:{dim};'>Talon runs your model through its parrot API,
+        which only the <b>beta</b> build has -
+        {components.link(TALON_BETA_URL, "how to get the beta")}.</p>
         <p>When a model is deployed to Talon, <code>patterns.json</code> maps
         model sounds to <b>patterns</b> - the named triggers your .talon files
         bind actions to. Each pattern has:</p>
