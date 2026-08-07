@@ -39,19 +39,13 @@ _BODY_WIDTH = 860
 # ---- the shape of the whole thing --------------------------------------
 
 class PipelineDiagram(QWidget):
-    """Record, train, connect - and which tab each one happens on.
-
-    The three steps are the app's whole structure, and the Home screen
-    already numbers them, so the picture here uses the same order and the
-    same names rather than inventing a second vocabulary.
-    """
-
-    CAPTION = "The whole program, in three steps:"
+    """Record, train, connect, and the tab each happens on. Same order and
+    names as Home's numbered steps, deliberately."""
 
     STEPS = (
-        ("You record", "a sound, many times over", "Sounds"),
-        ("Parrot trains", "one model that knows them all", "Models"),
-        ("Talon listens", "and each sound does something", "Integrations"),
+        ("You record", "many takes of each sound", "Sounds"),
+        ("Parrot trains", "one model, all your sounds", "Models"),
+        ("Talon listens", "each sound does something", "Integrations"),
     )
 
     BOX_H = 52
@@ -128,42 +122,19 @@ def pipeline_diagram_widget():
 
 
 OVERVIEW_INTRO = (
-    "<p>Parrot listens for noises you make - a lip pop, a tongue click, a "
-    "hiss - and turns each one into an action on your computer. Not speech: "
-    "sounds, chosen by you because they are quick to make and easy to tell "
+    "<p>Noises you make - a pop, a click, a hiss - become actions. Not "
+    "speech: sounds you pick for being quick to make and easy to tell "
     "apart.</p>")
 
-OVERVIEW_ROWS = (
-    ("Step 1", "Record each sound many times, in the Sounds tab. This is the "
-               "slow part, and the part that decides how good the result is."),
-    ("Step 2", "Train a model from those recordings, in the Models tab. The "
-               "model is one file that can name a sound it hears."),
-    ("Step 3", "Hand the model to Talon, in the Integrations tab, and say "
-               "what each sound should do. From then on it is listening."),
-)
-
 SPEED_ROWS = (
-    ("It never waits", f"Your microphone is cut into {_MS_PER_FRAME} ms "
-                       f"slices and each slice is judged on its own, around "
-                       f"60 times a second. A pop can fire while the pop is "
-                       f"still happening. Speech cannot answer until the word "
-                       f"is finished, because until then it is not yet a "
-                       f"word."),
-    ("It has less to think about", "Speech recognition has to work out which "
-                                   "of tens of thousands of words you said, "
-                                   "and often revises its guess once it hears "
-                                   "what comes next. Parrot picks between the "
-                                   "handful of sounds you trained. No "
-                                   "vocabulary, no grammar, nothing to "
-                                   "reconsider."),
-    ("The sounds help", "A pop and a hiss are unlike each other from their "
-                        "first slice. Words share beginnings, so telling "
-                        "them apart means waiting for the part that "
-                        "differs."),
-    ("What you give up", "It only knows what you recorded, and it always "
-                         "answers with one of those - there is no “that was "
-                         "nothing”. It also fires eagerly, which is why "
-                         "patterns have throttles. Both are covered below."),
+    ("Never waits", f"Every {_MS_PER_FRAME} ms slice is judged on its own, "
+                    f"~60 times a second, so a pop fires while the pop is "
+                    f"still happening. A word can't be recognised until it's "
+                    f"finished."),
+    ("Less to weigh", "A handful of sounds you chose, not tens of thousands "
+                      "of words."),
+    ("The cost", "It only knows what you recorded, and always answers with "
+                 "one of them. Hence distractors and throttles, below."),
 )
 
 
@@ -299,12 +270,11 @@ def _block(title, rows=None, diagram=None, intro=None, note=None):
 # (section title, what the section is for, [blocks])
 def _sections():
     return (
-        ("Overview",
-         "What this program is and why it is quick.",
+        ("Overview", None,
          (
-             _block("How Parrot works", OVERVIEW_ROWS,
-                    diagram=pipeline_diagram_widget, intro=OVERVIEW_INTRO),
-             _block("Why it beats talking", SPEED_ROWS),
+             _block("How Parrot works", diagram=pipeline_diagram_widget,
+                    intro=OVERVIEW_INTRO),
+             _block("Why it's fast", SPEED_ROWS),
          )),
         ("Sounds",
          "Recording the sounds a model learns. Everything here is also on the "
@@ -411,9 +381,10 @@ class AboutPage(QWidget):
 
         title = components.heading(name, "title")
         layout.addWidget(title)
-        caption = components.dim_label(blurb, wrap=True)
-        caption.setMaximumWidth(_BODY_WIDTH)
-        layout.addWidget(caption)
+        if blurb:
+            caption = components.dim_label(blurb, wrap=True)
+            caption.setMaximumWidth(_BODY_WIDTH)
+            layout.addWidget(caption)
         rule = QFrame()
         rule.setFrameShape(QFrame.Shape.HLine)
         rule.setFixedHeight(1)
