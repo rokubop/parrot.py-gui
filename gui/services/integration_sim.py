@@ -15,6 +15,7 @@ from gui.services import profiles
 STATES = (
     ("off", "Real state"),
     ("no_talon", "Talon not installed"),
+    ("uninstalled", "Talon deleted, its folder left behind"),
     ("not_beta", "Talon, but not using the beta"),
     ("no_integration", "Talon, no parrot integration"),
     ("no_patterns_file", "Integration, no patterns.json"),
@@ -50,15 +51,22 @@ def apply_to_bundle(bundle, state):
     if result is None:
         return bundle
 
-    # Every state below "not the beta" presupposes a beta, or the real machine's
-    # answer shows through and its screen is the only one you can ever reach.
-    if state not in ("no_talon", "not_beta"):
+    # Every state below "not the beta" presupposes a working beta install, or
+    # the real machine's answer shows through and its screen is the only one
+    # you can ever reach.
+    if state not in ("no_talon", "uninstalled", "not_beta"):
         result.talon_beta = True
+        result.talon_installed = True
 
-    if state == "no_talon":
+    if state == "uninstalled":
+        # Home dir, integration and patterns all outlive the app.
+        result.talon_installed = False
+        result.talon_beta = None
+    elif state == "no_talon":
         result.talon_found = False
         result.talon_home = None
         result.talon_user_dir = None
+        result.talon_installed = False
         result.talon_beta = None
         result.integration_path = None
         result.pattern_path_from_talon = None
@@ -70,6 +78,7 @@ def apply_to_bundle(bundle, state):
         # Stable Talon never gets an integration, so same screen, one reason.
         if state == "not_beta":
             result.talon_beta = False
+            result.talon_installed = True
         result.integration_path = None
         result.pattern_path_from_talon = None
         result.model_path_from_talon = None

@@ -409,6 +409,10 @@ class HomePage(QWidget):
             s3 = (f"Connected to Talon · {count} patterns using "
                   f"“{deployed_name}”." if count
                   else f"Connected to Talon · running “{deployed_name}”.")
+        elif talon.talon_home and not talon.talon_installed:
+            # Ahead of talon_found: the integration files outlive the app too,
+            # so every line below this one would still claim a working setup.
+            s3 = "Talon is not installed · its folder is still here."
         elif talon.talon_found:
             s3 = "Talon found, but no deployed model matches a local one."
         elif talon.talon_beta is False:
@@ -517,7 +521,12 @@ class HomePage(QWidget):
         ok, warn, dim, bad = t["accent"], "#e0b020", t["text_dim"], t["bad"]
         lines = []
         beta_link = components.link(TALON_BETA_URL, "how to get the beta")
-        if talon.talon_beta is False:
+        if talon.talon_home and not talon.talon_installed:
+            lines.append(f"<span style='color:{bad};'>✗ Talon is not "
+                         f"installed</span> <span style='color:{dim};'>- "
+                         f"{talon.talon_home} is left over from an earlier "
+                         f"install.</span>")
+        elif talon.talon_beta is False:
             # "Talon installed" is true and useless here, so this leads.
             lines.append(f"<span style='color:{bad};'>✗ Not using Talon "
                          f"beta</span> <span style='color:{dim};'>- parrot "
@@ -535,7 +544,8 @@ class HomePage(QWidget):
         if talon.integration_path:
             lines.append(f"<span style='color:{ok};'>✓</span> Parrot integration "
                          f"found")
-        elif talon.talon_home and talon.talon_beta is not False:
+        elif (talon.talon_installed and talon.talon_home
+              and talon.talon_beta is not False):
             # Don't offer a bootstrap that cannot load without the beta.
             lines.append(f"<span style='color:{warn};'>○ No parrot integration "
                          f"yet</span> <span style='color:{dim};'>- the "

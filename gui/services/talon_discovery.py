@@ -23,6 +23,8 @@ PARROT_API = os.path.join("talon", "experimental", "parrot", "__init__.py*")
 class TalonDiscoveryResult:
     talon_found: bool = False
     talon_home: Optional[str] = None
+    # The home dir is left behind by an uninstall, so it does not answer this.
+    talon_installed: bool = False
     # None means couldn't tell, which is not False. Never tell someone their
     # beta is not a beta because we failed to find their site-packages.
     talon_beta: Optional[bool] = None
@@ -96,20 +98,36 @@ def get_talon_user_dir() -> Optional[str]:
     return candidate if os.path.isdir(candidate) else None
 
 
-def find_talon_python(talon_home: str) -> Optional[str]:
-    """Talon's own bundled Python, from pyvenv.cfg's `home`. The only pointer
-    from ~/.talon back to wherever the app was installed, on every platform."""
+def recorded_talon_python(talon_home: str) -> Optional[str]:
+    """Where pyvenv.cfg says Talon's bundled Python is, existing or not. The
+    only pointer from ~/.talon back to the app itself, on every platform."""
     cfg = os.path.join(talon_home or "", ".venv", "pyvenv.cfg")
     try:
         with open(cfg, "r", encoding="utf-8") as f:
             for line in f:
                 key, _sep, value = line.partition("=")
                 if key.strip() == "home":
-                    value = value.strip()
-                    return value if os.path.isdir(value) else None
+                    return line.partition("=")[2].strip() or None
     except OSError:
         return None
     return None
+
+
+def find_talon_python(talon_home: str) -> Optional[str]:
+    """The recorded interpreter, if it is still on disk."""
+    recorded = recorded_talon_python(talon_home)
+    return recorded if recorded and os.path.isdir(recorded) else None
+
+
+def app_is_installed(talon_home: str) -> bool:
+    """~/.talon outlives the app - uninstalling leaves the user folder, logs
+    and venv behind - so the home dir is not the install.
+
+    False only on evidence: a pyvenv.cfg naming an interpreter that is gone.
+    No cfg to read is no evidence, so True.
+    """
+    recorded = recorded_talon_python(talon_home)
+    return os.path.isdir(recorded) if recorded else True
 
 
 def has_parrot_api(talon_home: str) -> Optional[bool]:
@@ -208,6 +226,7 @@ def discover_talon() -> TalonDiscoveryResult:
         return result
 
     result.talon_home = talon_home
+    result.talon_installed = app_is_installed(talon_home)
     result.talon_beta = has_parrot_api(talon_home)
 
     talon_user_dir = get_talon_user_dir()

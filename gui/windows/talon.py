@@ -481,19 +481,25 @@ class TalonPage(QWidget):
             self.conn_facts.setText(
                 f"<span style='color:{bad};'>Discovery failed: {error}</span>")
             return
-        if result.talon_home:
+        if result.talon_home and not result.talon_installed:
+            self.status_rows["talon"].setText(
+                f"<span style='color:{bad};'>Not installed</span> - "
+                f"{result.talon_home} is left over<br>"
+                f"<span style='color:{t['text_dim']};'>its Python is gone from "
+                f"{talon_discovery.recorded_talon_python(result.talon_home)}"
+                f"</span>")
+        elif result.talon_home:
             build = ("beta" if result.talon_beta else
                      "not beta" if result.talon_beta is False else
                      "build unknown")
             colour = bad if result.talon_beta is False else ok
             talon_txt = (f"<span style='color:{colour};'>Found ({build})</span>"
                          f" - {result.talon_home}")
-            if result.talon_beta is False:
+            python = talon_discovery.find_talon_python(result.talon_home)
+            if result.talon_beta is False and python:
                 talon_txt += (
                     f"<br><span style='color:{t['text_dim']};'>no parrot module "
-                    f"under "
-                    f"{talon_discovery.find_talon_python(result.talon_home)}"
-                    f"</span>")
+                    f"under {python}</span>")
             self.status_rows["talon"].setText(talon_txt)
         else:
             self.status_rows["talon"].setText(
@@ -543,11 +549,13 @@ class TalonPage(QWidget):
         warn, bad = t["warn"], t["bad"]
         if result is None:
             return
-        if not result.talon_home:
+        if not result.talon_home or not result.talon_installed:
+            gone = (" - its folder is still here" if result.talon_home
+                    else " - recording and training work without it")
             self.conn_facts.setText(
-                f"<span style='color:{warn};'>not found on this machine</span> "
-                f"<span style='color:{t['text_dim']};'>- recording and training "
-                f"work without it</span>")
+                f"<span style='color:{warn};'>not installed on this "
+                f"machine</span>"
+                f"<span style='color:{t['text_dim']};'>{gone}</span>")
             # This return skips the setEnabled calls at the end.
             self.change_model_btn.setEnabled(False)
             self.test_btn.setEnabled(False)
@@ -801,12 +809,13 @@ class TalonPage(QWidget):
         """Talon, and specifically the beta. Stable Talon only says so with an
         ImportError in its own log, which nobody clicking Set up will read."""
         beta = result.talon_beta if result else None
-        if result and result.talon_home and beta is not False:
+        here = bool(result and result.talon_home and result.talon_installed)
+        if here and beta is not False:
             return {"key": "talon",
                     # Only claim the beta where the module was actually found.
                     "label": "Talon beta" if beta else "Talon installed",
                     "done": True, "title": "", "body": "", "action": None}
-        if result and result.talon_home:
+        if here:
             # Red where the other unfinished steps are not: this one is a
             # wrong install rather than a step you have not reached, and every
             # tick under it is worth nothing until it changes.
@@ -821,12 +830,20 @@ class TalonPage(QWidget):
                     "action": None,
                     # How it decided, so a wrong verdict is not a mystery.
                     "note": "Checked Talon's own Python for the parrot module."}
+        # An uninstall leaves ~/.talon behind, so say which one this is or the
+        # folder full of your patterns looks like a working install.
+        left_over = bool(result and result.talon_home)
         return {"key": "talon", "label": "Talon beta", "done": False,
-                "title": "Talon beta is not installed here",
+                # Only a wall where there are ticks below it to contradict. On
+                # a machine that never had Talon this is just step one.
+                "blocked": left_over,
+                "title": "Talon is not installed here",
                 "body": "Recording and training work without it. Parrot support "
                         "is beta only: a Patreon tier, then the #beta channel "
                         f"on Slack.<br><br>{_beta_links()}",
-                "action": None}
+                "action": None,
+                "note": (f"{result.talon_home} is still here from an earlier "
+                         f"install." if left_over else None)}
 
     def _setup_steps(self):
         """The integration, as the four files it is made of plus the patterns
