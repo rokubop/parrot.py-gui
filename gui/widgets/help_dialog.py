@@ -707,8 +707,8 @@ def show_help(parent, key):
     dlg.setWindowTitle(title)
     v = QVBoxLayout(dlg)
     v.setContentsMargins(20, 16, 20, 16)
-    content = topic_content(key)
-    v.addWidget(scrolled(content, max_height=16777215))
+    panel = topic_content(key)
+    v.addWidget(scrolled(panel, max_height=16777215))
 
     close = QPushButton("Close")
     close.clicked.connect(dlg.accept)
@@ -716,7 +716,7 @@ def show_help(parent, key):
     row.addStretch()
     row.addWidget(close)
     v.addLayout(row)
-    _fit_to_screen(dlg, content)
+    _fit_to_screen(dlg, panel)
     dlg.exec()
 
 
