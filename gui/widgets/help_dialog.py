@@ -26,9 +26,6 @@ GOOD_TRAIN_SECONDS = 40
 # Row bodies read as their own sentence, so they start capitalised. Literal
 # names (sound labels, filenames) keep their own casing.
 RECORD_ROWS = (
-    ("Setup", "A quiet room, and the mic you'll actually use day to day "
-              "(pick it in Settings). Avoid dynamic mics: takes vary too "
-              "much between sessions."),
     ("Good sounds", "Tongue clicks, lip pops, palate clicks, “sh” / “ss” "
                     "hisses, short vowels - distinct from each other and from "
                     "normal speech. “Choosing sounds”, on the New sound "
