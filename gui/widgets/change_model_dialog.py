@@ -1,24 +1,14 @@
 """Pick the model Talon runs, with the model in front of you.
 
-This used to be a dropdown of names and then a confirm box: a dozen models with
-nothing to tell them apart but what they were called. Same list, with what the
-Models tab knows about the highlighted one beside it - what it scored, when it
-was trained, how big it is, which sounds it knows and what each one scored.
+Shows what the Models tab knows about the highlighted model, plus two things
+only this screen can answer: which model Talon is running right now, and
+whether the patterns being edited listen for sounds this model has never
+heard. The caller confirms separately in the one case this cannot show: a
+deployed model with no copy in the library, where the swap is the end of it.
 
-Two things the Models tab does not say, because only this screen is asking:
-which model Talon is running right now, and whether the patterns being edited
-listen for sounds the highlighted model has never heard. A model that does not
-know `cluck` is not a worse model, it is the wrong one for these patterns, and
-that is only answerable here.
-
-One decision, not two. The path being written and the warnings sit above the
-button, so nothing behind it repeats them. The caller confirms separately in the
-one case this cannot show: a deployed model with no copy in the library, where
-the swap is the end of it.
-
-The heavy read (accuracy, per-sound scores, mics) is a torch load per net, so it
-runs off the UI thread and fills in; the cheap facts are on screen immediately.
-AppState caches it, so coming back to a model is instant.
+The heavy read (accuracy, per-sound scores, mics) is a torch load per net, so
+it runs off the UI thread and fills in; the cheap facts are on screen
+immediately. AppState caches it, so coming back to a model is instant.
 """
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (

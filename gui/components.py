@@ -75,8 +75,8 @@ def card_style(object_name, surface="panel", children="> QLabel"):
     breaks :checked on descendant buttons.
 
     `children` must declare itself transparent or the global QWidget rule paints
-    an opaque box behind each one (memory/qt-traps.md). Direct children only by
-    default; pass a descendant selector when the card nests them deeper.
+    an opaque box behind each one. Direct children only by default; pass a
+    descendant selector when the card nests them deeper.
     """
     t = theme.colors()
     return (f"QFrame#{object_name} {{ background-color: {t[surface]}; "
@@ -110,8 +110,7 @@ def primary_button_style():
             f"border-radius: {t['radius']}; padding: 6px 18px; }} "
             f"QPushButton#primaryAction:hover {{ "
             f"background-color: {t['accent']}; }} "
-            # Disabled matches the app-wide rule: sunken fill, disabled_text.
-            # text_dim on the live $button fill measured 3.29.
+            # Matches the app-wide disabled rule: sunken fill, disabled_text.
             f"QPushButton#primaryAction:disabled {{ "
             f"background-color: {t['disabled_bg']}; "
             f"color: {t['disabled_text']}; }}")

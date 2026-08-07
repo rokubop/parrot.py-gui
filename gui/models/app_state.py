@@ -53,7 +53,6 @@ class AppState(QObject):
         wav_files = sorted([f for f in os.listdir(source_dir) if f.endswith(".wav")])
         for wav_file in wav_files:
             wav_path = os.path.join(source_dir, wav_file)
-            # Find matching SRT file
             base = wav_file.replace(".wav", "")
             srt_path = None
             if os.path.isdir(segments_dir):
@@ -69,13 +68,9 @@ class AppState(QObject):
         return recordings
 
     def get_label_duration_ms(self, label):
-        """Total recorded ms for a label. Cached until recordings change.
-
-        This walks every .srt the label owns, which measured 3.7 ms per label -
-        cheap once, and not cheap at all given who asks: the training page reads
-        every selected label three times over on each tick of its checklist, and
-        Home, Sounds and Models all ask for the same numbers on every refresh. A
-        single checkbox click was costing thousands of these.
+        """Total recorded ms for a label. Cached until recordings change:
+        this walks every .srt the label owns, and pages ask for the same
+        numbers many times per refresh.
         """
         if label in self._duration_cache:
             return self._duration_cache[label]
@@ -136,7 +131,6 @@ class AppState(QObject):
             meta["trained_at"], meta["trained_at_source"] = \
                 self._trained_at(model_name)
 
-        # Find matching BEST weight files (fast - just file listing)
         best_files = sorted(glob.glob(pkl_path + "_*-BEST-weights.pth.tar"))
         meta["net_count"] = len(best_files)
 
@@ -146,18 +140,15 @@ class AppState(QObject):
                                  "epoch": None, "label_accuracy": None,
                                  "combined_accuracy": None, "label_frames": None})
 
-        # Count non-BEST weight file sizes
         all_weight_files = glob.glob(pkl_path + "_*-weights.pth.tar")
         for wf in all_weight_files:
             if wf not in best_files:
                 meta["total_size_bytes"] += os.path.getsize(wf)
 
-        # Heavy loading: accuracy from torch, labels from whichever is cheaper
         if load_weights:
-            # Accuracy/labels from pth.tar. A checkpoint is ~3.8 MB against the
-            # pkl's ~38 MB (the pkl holds every net again, in double), so read
-            # labels here and fall back to joblib only for a model that has no
-            # checkpoints - one combined from other pkls.
+            # A checkpoint is ~3.8 MB against the pkl's ~38 MB, so read labels
+            # here; joblib is the fallback for a model with no checkpoints
+            # (one combined from other pkls).
             for net_info in meta["nets"]:
                 try:
                     import torch
@@ -208,15 +199,11 @@ class AppState(QObject):
     def _trained_at(self, model_name):
         """(unix time, source) - most trustworthy source first.
 
-        1. "checkpoint" - stamped inside the weights at training time. Survives
-           being copied, restored and renamed, because it travels in the file.
-           Only models trained since that field existed have it.
-        2. "replay" - the replay CSV's filename timestamp. A real training
-           start time; survives a copy, but not a rename, because the CSV is
-           not renamed along with the model.
-        3. "mtime" - the pkl's file date. This is a guess, not a record: it is
-           the time the file was last written, which a copy or a restore resets
-           to the time of the copy. Callers must present it as uncertain.
+        1. "checkpoint" - stamped inside the weights; survives copy and rename.
+        2. "replay" - the replay CSV's filename timestamp; survives a copy but
+           not a rename (the CSV is not renamed with the model).
+        3. "mtime" - the pkl's file date; a copy or restore resets it, so
+           callers must present it as uncertain.
 
         Only 3 is available without reading a checkpoint, so the list shows it
         first and improves it once the off-thread read lands.
@@ -233,17 +220,9 @@ class AppState(QObject):
         return None, None
 
     def model_sort_key(self, model_name):
-        """Newest first, but only as far as the date can be trusted.
-
-        A file date is precise to the microsecond and means nothing at that
-        resolution: a copied data dir stamps every pkl within the same second,
-        so sorting on it straight orders the library by whatever sequence the
-        copy happened to run in. Round those to the day and let the name decide.
-        Dates from a real training record keep their full precision.
-
-        Lives here rather than in a page because two of them list models and
-        both need the same order; the second copy of this rule had already
-        drifted into sorting by copy order.
+        """Newest first, but mtime is only trusted to the day: a copied data
+        dir stamps every pkl within the same second, so full precision would
+        sort by copy order. Dates from a real training record keep theirs.
         """
         when, source = self._trained_at(model_name)
         when = when or 0
@@ -252,11 +231,9 @@ class AppState(QObject):
         return (-when, model_name)
 
     def get_model_facts(self, model_name):
-        """What one BEST checkpoint can tell us: its labels and when it was
-        trained. The checkpoint is ~3.8 MB against the pkl's ~38 MB, so a list
-        showing this for every model reads one small file each rather than
-        unpickling every net. Cached; [] labels means unreadable, so callers
-        don't retry forever.
+        """Labels and training time from one BEST checkpoint - much cheaper
+        than unpickling the pkl. Cached; [] labels means unreadable, so
+        callers don't retry forever.
         """
         if model_name in self._label_cache:
             when, source = self._trained_at(model_name)
@@ -333,12 +310,10 @@ class AppState(QObject):
         if not model_names:
             return None
 
-        # Try matching Talon's model file to a local one
         matched = self.get_talon_model_name()
         if matched:
             return matched
 
-        # Fallback: most recently modified pkl
         best_name = None
         best_mtime = 0
         for name in model_names:
@@ -380,12 +355,9 @@ class AppState(QObject):
         self._replay_times = None
 
     def _training_run_times(self):
-        """model name -> unix time of its most recent training run.
-
-        Every run writes data/replays/model_training_<name>.pkl<starttime>.csv,
-        with the timestamp in the *filename*. That is the one record of when a
-        model was trained that survives being copied to another machine or
-        restored from a backup, both of which reset the pkl's mtime.
+        """model name -> unix time of its most recent training run, from the
+        replay CSV filenames. The filename timestamp is the one training-time
+        record that survives a copy or a restore, which reset the pkl's mtime.
         """
         if self._replay_times is not None:
             return self._replay_times
@@ -411,9 +383,7 @@ class AppState(QObject):
         self.models_changed.emit()
 
     # ---- mutations (thin wrappers over library_ops + signal emit) -------
-    # Each returns whatever the op returns (e.g. the new name) and emits the
-    # relevant change signal so every view rebuilds. Errors propagate as
-    # LibraryOpError for the caller to display.
+    # Errors propagate as LibraryOpError for the caller to display.
 
     def create_sound(self, name):
         label = library_ops.create_sound(name)

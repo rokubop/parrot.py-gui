@@ -1,28 +1,21 @@
-"""Parrot.py bridge — companion module for Talon.
+"""Parrot.py bridge - companion module for Talon.
 
-Installed into the Talon user directory by the Parrot.py app (Integrations →
-Test integration). It observes parrot detection frames and publishes them as
-UDP JSON datagrams to the app on localhost.
+Installed into the Talon user directory by the Parrot.py app (Integrations >
+Test integration). Observes parrot detection frames and publishes them as UDP
+JSON datagrams to the app on localhost.
 
-Idle unless the app is testing. The app touches a file in the temp dir every
-couple of seconds while its test screen is open; this module polls it and only
-then wraps pattern_match. Close the app, or leave that screen, and within ~6
-seconds it unwraps and Talon is exactly as it was. Installed does not mean
-running.
+Idle unless the app is testing: the app touches a temp file every couple of
+seconds while its test screen is open; this module polls it and only then
+wraps pattern_match, unwrapping again within ~6 seconds of the app going quiet.
 
-It is a pure observer whenever it is hooked up at all:
+Pure observer: the original pattern_match still does all detection, every send
+is fire-and-forget UDP, and every failure path is swallowed - voice control
+must never suffer.
 
-- the original ``parrot_delegate.pattern_match`` still does ALL detection —
-  this module wraps it, calls it, and publishes what happened;
-- every send is fire-and-forget UDP: if the app isn't running, datagrams
-  vanish for free and Talon never blocks or breaks;
-- every failure path is swallowed — voice control must never suffer.
+Note: talon-parrot-tester also replaces pattern_match while its overlay is
+open. Use one observer at a time.
 
-Note: talon-parrot-tester replaces pattern_match with its own detection while
-its overlay is open. Use one observer at a time; this bridge unhooks itself
-when the app stops asking, and via ``parrotpy_bridge_disable``.
-
-Wire format (one JSON object per datagram, all little/lossy on purpose):
+Wire format (one JSON object per datagram):
   {"v": 1, "t": "hello", "version": "...", "wrapped": true, "patterns": 14,
    "modes": ["command"]}
   {"v": 1, "t": "frame", "ts": ..., "power": ..., "f0": ..., "f1": ...,
@@ -181,6 +174,6 @@ try:
     cron.interval(HEARTBEAT, _tick)
 
 except ImportError:
-    # Imported outside Talon (e.g. by the GUI's install/version check) — the
+    # Imported outside Talon (e.g. by the GUI's install/version check) - the
     # module must parse cleanly but do nothing.
     pass

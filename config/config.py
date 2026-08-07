@@ -1,9 +1,8 @@
 from lib.default_config import *
 import os
 
-# The user override file lives inside the data root so each profile carries
-# its own settings. Loaded with exec rather than `from data.code.config
-# import *` because the root is only known at runtime.
+# The user override lives in the data root so each profile carries its own
+# settings; exec because the root is only known at runtime.
 _USER_CONFIG_FILE = os.path.join(DATA_DIR, "code", "config.py")
 if not os.path.exists(_USER_CONFIG_FILE):
     os.makedirs(os.path.dirname(_USER_CONFIG_FILE), exist_ok=True)

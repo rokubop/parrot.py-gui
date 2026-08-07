@@ -1,17 +1,11 @@
 """Check boxes and radio buttons that can be seen.
 
-Fusion derives its indicator from the palette, and on this palette that came
-out at **1.5:1** against the window - an unchecked box was a hollow outline you
-had to already know was there. Measured, not guessed: the box border rendered
-#3c434f on #23272e. The non-text contrast rule wants 3:1 for the boundary of a
-control, and a checkbox is the example the rule is written around.
-
-Restyling the indicator in QSS is the obvious fix and is the wrong one: setting
-any `::indicator` property makes Qt take the stylesheet path for the whole
-control, and a stylesheet indicator draws no tick unless it is handed an image
-file. That is how this app once ended up with a plain green square. So the box
-is painted here instead - one primitive, over Fusion, with the palette Fusion
-would have derived it from ignored.
+Fusion derives its indicator from the palette, which here rendered #3c434f on
+#23272e - 1.5:1, well under the 3:1 non-text contrast rule. Restyling the
+indicator in QSS is the wrong fix: setting any `::indicator` property makes
+Qt take the stylesheet path for the whole control, and a stylesheet indicator
+draws no tick unless handed an image file. So the box is painted here - one
+primitive, over Fusion.
 
 Colours come from `theme.colors()` at paint time, so a live theme switch is
 picked up without reinstalling anything.
@@ -24,7 +18,7 @@ picked up without reinstalling anything.
   disabled    disabled_bg    border               disabled_text
 
 Covers item views too: a checkable row in a tree draws through the same
-primitive, which is where most of this app's checkboxes actually live.
+primitive.
 """
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen

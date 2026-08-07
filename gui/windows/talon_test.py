@@ -392,19 +392,14 @@ class TalonTestView(QWidget):
         self.table.setColumnCount(len(self._base_headers))
         self.table.setHorizontalHeaderLabels(self._base_headers)
         self.table.setItemDelegateForColumn(11, RatioBarDelegate(self.table))
-        # Numbers sized to their contents, and the leftover width goes to the
-        # bar - it is the column that gets more useful the wider it is, and
-        # stretching the pattern names instead pushed every number off to one
-        # side of a very empty row.
+        # Numbers sized to their contents; leftover width goes to the bar,
+        # the column that gets more useful the wider it is.
         components.style_table(self.table, stretch=11)
         self.stack.addWidget(self.table)
 
-        # min · avg · max on one line per pattern rather than the tester's
-        # stacked triplet: this table is read down a column to compare
-        # patterns, and three-line rows make fourteen patterns a scroll.
-        # The empty last column is a filler - without something to absorb the
-        # slack, Qt stretches a real column and the name ends up half a screen
-        # from its numbers.
+        # min · avg · max on one line per pattern, so the table reads down a
+        # column. The empty last column absorbs the slack; otherwise Qt
+        # stretches a real column.
         self.stats_table = QTableWidget(0, 8)
         self.stats_table.setHorizontalHeaderLabels(
             ["Pattern", "Frames", "Power", "Probability", "F0", "F1", "F2", ""])

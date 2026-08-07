@@ -92,7 +92,7 @@ def parse_integration_file(integration_path: str) -> dict:
     """Parse parrot_integration.py to extract model_path, pattern_path, and parrot_home.
 
     Looks for lines like:
-        PARROT_HOME = TALON_HOME / 'user/roku/talon-parrot-model-roku'
+        PARROT_HOME = TALON_HOME / 'user/my-parrot-model'
         pattern_path = str(PARROT_HOME / 'patterns.json')
         model_path = str(PARROT_HOME / 'model.pkl')
     """
@@ -108,7 +108,6 @@ def parse_integration_file(integration_path: str) -> dict:
     if talon_home is None:
         return result
 
-    # Find PARROT_HOME = TALON_HOME / '...'
     parrot_home_match = re.search(
         r'^\s*PARROT_HOME\s*=\s*TALON_HOME\s*/\s*[\'"]([^\'"]+)[\'"]',
         content, re.MULTILINE
@@ -119,7 +118,6 @@ def parse_integration_file(integration_path: str) -> dict:
         parrot_home_dir = str(Path(talon_home) / parrot_subpath)
         result["parrot_home"] = parrot_home_dir
 
-    # Find pattern_path = str(PARROT_HOME / '...')
     pattern_match = re.search(
         r'^\s*pattern_path\s*=\s*str\(PARROT_HOME\s*/\s*[\'"]([^\'"]+)[\'"]\)',
         content, re.MULTILINE
@@ -127,7 +125,6 @@ def parse_integration_file(integration_path: str) -> dict:
     if pattern_match and parrot_home_dir:
         result["pattern_path"] = str(Path(parrot_home_dir) / pattern_match.group(1))
 
-    # Find model_path = str(PARROT_HOME / '...')
     model_match = re.search(
         r'^\s*model_path\s*=\s*str\(PARROT_HOME\s*/\s*[\'"]([^\'"]+)[\'"]\)',
         content, re.MULTILINE
@@ -175,13 +172,11 @@ def discover_talon() -> TalonDiscoveryResult:
 
     result.talon_user_dir = talon_user_dir
 
-    # Find parrot_integration.py
     integration_path = find_parrot_integration(talon_user_dir)
     if integration_path:
         result.integration_path = integration_path
         result.talon_found = True
 
-        # Parse it for paths
         parsed = parse_integration_file(integration_path)
         result.model_path_from_talon = parsed["model_path"]
         result.intended_pattern_path = parsed["pattern_path"]

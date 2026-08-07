@@ -23,9 +23,8 @@ MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 MIN_TRAIN_SECONDS = 17
 GOOD_TRAIN_SECONDS = 40
 
-# Row bodies read as their own sentence, not as a continuation of the label -
-# so they start capitalised. Literal names ( sound labels, filenames ) keep
-# their own casing wherever they fall.
+# Row bodies read as their own sentence, so they start capitalised. Literal
+# names (sound labels, filenames) keep their own casing.
 RECORD_ROWS = (
     ("Setup", "A quiet room, and the mic you'll actually use day to day "
               "(pick it in Settings). Avoid dynamic mics: takes vary too "
@@ -46,12 +45,9 @@ RECORD_ROWS = (
             "between sessions."),
     ("Where", "Sounds tab: “+ New sound”, then “+ Add recording”."),
 )
-# Nets get their own topic because the number is not what it looks like. It sits
-# next to a spinner on a training screen, which frames it as "a setting for this
-# run", and it is really the shape of the model you end up with: every net loads
-# into Talon and runs on every frame forever ( TorchEnsembleClassifier builds a
-# TinyAudioNetEnsemble from every BEST checkpoint, and predict_single_proba calls
-# it once per frame ). So the big picture comes first and the training cost last.
+# Nets get their own topic because the number reads as a per-run setting and
+# is really the shape of the model: every net loads into Talon and runs on
+# every frame forever. Big picture first, training cost last.
 NET_ROWS = (
     # No opening row restating the caption: the diagram renders above the rows,
     # so it has already said what a network does.
@@ -119,12 +115,9 @@ TRAIN_ROWS = (
               "you have; old models are kept."),
 )
 
-# What the training page teaches, as three things you can look at rather than
-# read. A block is a question, a picture that answers it, and one line - the
-# rule being that anything needing a paragraph is not on the page at all, since
-# a paragraph on a setup screen does not get read. Everything cut from here that
-# is about *which* noises to pick already lives in "Choosing sounds", on the
-# dialog where a sound gets created.
+# What the training page teaches. A block is a question, a picture that
+# answers it, and one line - anything needing a paragraph is not on the page
+# at all, since a paragraph on a setup screen does not get read.
 TRAINING_BLOCKS = (
     ("How it picks a sound", "labels",
      "It always answers with one of the sounds it knows. Nothing is ever "
@@ -175,13 +168,9 @@ SOUNDS_ROWS = (
 class WrappedBody(QLabel):
     """Word-wrapped rich text that keeps the height its copy actually needs.
 
-    A word-wrapped QLabel reports a one-line sizeHint, so a layout that is not
-    asked for heightForWidth clips it. The remedy there is
-    to pin the width and set the minimum height from heightForWidth, which works
-    for a label whose width is fixed. This is the same fix for one whose width is
-    not: re-ask at whatever width it was just given. It stays correct through a
-    window resize and through a change of text, which the pinned version has to
-    be reminded about by hand.
+    A word-wrapped QLabel reports a one-line sizeHint, so layouts clip it.
+    Re-asking heightForWidth at whatever width it was just given stays correct
+    through resizes and text changes, unlike a pinned width.
     """
 
     def __init__(self, text="", parent=None):
@@ -197,23 +186,20 @@ class WrappedBody(QLabel):
 
 
 class FramesDiagram(QWidget):
-    """One “pop” drawn as a waveform, cut into the 15 ms frames the model really
-    works on, with the label each frame comes out as. The point: your sound is
-    never judged whole - it is judged 15 ms at a time, and the frames that no
-    longer sound like it come out as background instead."""
+    """One “pop” cut into the 15 ms frames the model really works on, with the
+    label each frame comes out as: a sound is never judged whole, and frames
+    that no longer sound like it come out as background."""
 
     CAPTION = "One “pop”, as detection sees it:"
 
-    # How many frames to draw - purely an illustration length (10 x 15 ms =
-    # 150 ms, about a lip pop). Deliberately not 16, which reads as if it were
-    # tied to the 16 kHz rate or to the 15 ms frame; it isn't.
+    # Illustration length only (10 x 15 ms = 150 ms, about a lip pop).
+    # Deliberately not 16, which reads as if tied to the 16 kHz rate; it isn't.
     FRAMES = 10
     FRAME_MS = 15        # RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT samples
 
-    # Envelope of the drawn pop, tuned as a set so the strip comes out
-    # silence x2 / pop x4 / silence x4. The last pop frame lands at ~3x the room
-    # floor - nearly silent, still detected - and the very next frame is the
-    # floor itself. That contrast is the whole point of the picture.
+    # Envelope tuned as a set so the strip comes out silence x2 / pop x4 /
+    # silence x4, with the last pop frame nearly silent yet still detected -
+    # that contrast is the whole point of the picture.
     SOUND_START = 0.21   # quiet lead-in before the pop
     SOUND_END = 0.60     # after this the room is genuinely silent again
     ATTACK = 0.015
@@ -233,10 +219,8 @@ class FramesDiagram(QWidget):
 
     @classmethod
     def _sample(cls, t):
-        """A plausible pop at time t in [0, 1]: quiet room, near-instant attack,
-        a steep collapse that fades to just above the room floor, then real
-        silence. Deterministic - it's an illustration, so it draws identically
-        every time."""
+        """A plausible pop at time t in [0, 1]. Deterministic, so the
+        illustration draws identically every time."""
         carrier = (0.80 * math.sin(t * 168.0)
                    + 0.20 * math.sin(t * 431.0 + 1.1)
                    + 0.09 * math.sin(t * 1187.0 + 0.4))
@@ -329,20 +313,17 @@ def frames_diagram_widget():
 
 
 class NetsDiagram(QWidget):
-    """Why net count is worth a thought: each net is trained from its own random
-    start on its own shuffle of the data, so they disagree. One net can be the
-    unlucky one - and with a net count of 1, the unlucky one is the model you
-    ship. Averaging the scores dilutes it.
+    """Why net count is worth a thought: each net trains from its own random
+    start on its own shuffle, so they disagree, and averaging dilutes the
+    unlucky one.
 
-    Not a vote, and the drawing has to stay honest about that. The nets output
+    Not a vote, and the drawing has to stay honest about that: the nets output
     confidences and TinyAudioNetEnsemble takes their arithmetic mean, so a
-    confident net outweighs two hesitant ones and a majority can lose. Calling
-    it voting is what makes people ask whether the count should be odd."""
+    confident net outweighs two hesitant ones. Calling it voting is what makes
+    people ask whether the count should be odd."""
 
-    # One frame of one sound, as scored by three independently trained nets.
-    # Deterministic, and picked so net 2 is confidently wrong: that is the case
-    # the picture exists to explain. The averaged row is computed, never typed,
-    # so the illustration cannot drift from the arithmetic it is claiming.
+    # Deterministic, picked so net 2 is confidently wrong - the case the
+    # picture exists to explain. The averaged row is computed, never typed.
     CAPTION = (f"Example of 3 neural networks each scoring one frame "
                f"({MS_PER_FRAME} ms) on what it thinks the sound is.")
 
@@ -370,8 +351,7 @@ class NetsDiagram(QWidget):
 
     @classmethod
     def averaged(cls):
-        """What the ensemble actually does - TinyAudioNetEnsemble sums the nets
-        and divides by how many there are."""
+        """What the ensemble actually does: sum the nets, divide by the count."""
         return tuple(sum(v[i] for v in cls.VOTES) / len(cls.VOTES)
                      for i in range(len(cls.LABELS)))
 
@@ -381,9 +361,8 @@ class NetsDiagram(QWidget):
         return panels
 
     def _draw_arrow(self, painter, x0, x1, y, color):
-        """Into the averaged panel, so it reads as a consequence of the three to
-        its left rather than a fourth net. A wider gap alone did not say it:
-        four boxes in a row are four boxes in a row."""
+        """Into the averaged panel, so it reads as a consequence of the three
+        to its left rather than a fourth net."""
         pad = 6
         x0, x1 = x0 + pad, x1 - pad
         head = self.ARROW_HEAD
@@ -470,13 +449,12 @@ def nets_diagram_widget():
 class ClosedSetDiagram(QWidget):
     """Why a noise you do not want still needs recording.
 
-    The model is a *closed set*: a softmax spreads one frame's 100% across the
-    sounds it was trained on, and there is no share left over for "none of
-    these". Stating that on its own teaches nobody anything, so this draws the
-    consequence instead - the same table bump, into two models that differ only
-    by whether it was ever recorded. Without it the bump has to come out as one
-    of the real sounds and fires it. With it, there is somewhere harmless for the
-    bump to land, and that spare class has a name: a distractor.
+    The model is a closed set: softmax spreads a frame's 100% across the
+    trained sounds, with no share left for "none of these". This draws the
+    consequence - the same table bump into two models that differ only by
+    whether it was ever recorded. Unrecorded, the bump must come out as a real
+    sound and fires it; recorded, it has somewhere harmless to land, and that
+    spare class is a distractor.
     """
 
     SOURCE = "a table bump"
@@ -597,10 +575,6 @@ TOPICS = {
     "train": ("Training a model", TRAIN_ROWS, nets_diagram_widget),
     "connect": ("Connecting to Talon", CONNECT_ROWS, None),
     "sounds": ("Choosing sounds", SOUNDS_ROWS, frames_diagram_widget),
-    # topic_content already puts the diagram above the rows, which is what this
-    # topic wants: the picture says "they vote" faster than the rows can.
-    # The title expands the jargon before a sentence has to. Someone who does
-    # not know the word gets it from the window title for free.
     "nets": ("Neural networks", NET_ROWS, nets_diagram_widget),
     "balance": ("Balancing", BALANCE_ROWS, _balance_legend_widget),
 }
@@ -608,10 +582,8 @@ TOPICS = {
 TRAINING_DIAGRAMS = {
     "labels": closed_set_diagram_widget,
     "nets": nets_diagram_widget,
-    # The training page used to hand in a live chart of the ticked sounds, so
-    # this block had no diagram of its own and rendered as nothing in the modal.
-    # The chart is now a column inside the page's own table, which cannot be
-    # borrowed, so the modal gets the legend that explains the same bars.
+    # The modal cannot borrow the training page's live table column, so it
+    # gets the legend that explains the same bars.
     "balance": _balance_legend_widget,
 }
 
@@ -622,10 +594,8 @@ def quantity_summary(pairs, max_named=3):
     `pairs` is [(label, detected_ms), ...].
 
     Never render a bare count next to a rating name: "2 sounds: 2 Not enough"
-    reads as "2 sounds is not enough", and it is worst in the case that matters
-    most - every sound in the same band, so there is no second category to
-    disambiguate. Few sounds are named individually; many are counted with an
-    explicit "rated".
+    reads as "2 sounds is not enough". Few sounds are named individually; many
+    are counted with an explicit "rated".
     """
     if not pairs:
         return ""
@@ -693,8 +663,7 @@ def topic_content(key, parent=None):
     inner.setContentsMargins(0, 0, 0, 0)
     inner.setSpacing(12)
     if diagram is not None:
-        # The caption belongs to the drawing, not to this slot - it was hard
-        # coded here and captioned the second diagram as if it were the first.
+        # The caption belongs to the drawing, not to this slot.
         widget = diagram()
         text = getattr(widget, "CAPTION", "")
         if text:
@@ -702,9 +671,8 @@ def topic_content(key, parent=None):
             caption.setStyleSheet(f"color: {theme.colors()['text_dim']};")
             inner.addWidget(caption)
         inner.addWidget(widget)
-    # 700 was a comfortable measure for four short rows and a tall column for
-    # anything longer. Wider trades a little reading comfort for a topic that
-    # fits on the screen at all, which matters more for help nobody scrolls.
+    # Wider than a comfortable measure, so a long topic fits on screen -
+    # which matters more for help nobody scrolls.
     body = WrappedBody(rows_html(rows))
     body.setMaximumWidth(860)
     inner.addWidget(body)
@@ -717,15 +685,10 @@ def topic_content(key, parent=None):
 def training_sections(parent=None, live=None):
     """The three training blocks in one column.
 
-    This is the Sounds treatment applied to training: the New sound dialog puts
-    the advice where the choice is made rather than behind a button, because
-    which noise you pick decides how well the model can ever do. Which sounds go
-    in a model, and how many nets, are the same kind of choice.
-
-    `live` maps a block key to a widget built by the caller, so the training page
-    can drop in a picture of the sounds actually selected where the modal shows
-    nothing. A block with no diagram and no live widget is skipped rather than
-    drawn as a title over an empty space.
+    `live` maps a block key to a widget built by the caller, so the training
+    page can drop in a picture of the sounds actually selected. A block with
+    no diagram and no live widget is skipped rather than drawn as a title over
+    an empty space.
     """
     t = theme.colors()
     live = live or {}
@@ -763,13 +726,8 @@ def scrolled(content, max_height=560):
 
 
 def _fit_to_screen(dlg, content_widget, width=760):
-    """Open at the size the content wants, capped by the screen.
-
-    The default was a 560 px scroll area, which put a scrollbar on topics that
-    would have fitted on any real display - and help you have to scroll is help
-    you skim. The cap is a fraction of the actual screen rather than a constant,
-    so this cannot open taller than the monitor it lands on.
-    """
+    """Open at the size the content wants, capped by a fraction of the actual
+    screen - help you have to scroll is help you skim."""
     screen = dlg.screen() or QApplication.primaryScreen()
     available = screen.availableGeometry() if screen else None
     max_h = int(available.height() * 0.85) if available else 720

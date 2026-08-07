@@ -9,11 +9,9 @@ ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 def _preload():
     """Everything slow, in the order Windows needs it.
 
-    On Windows, torch's DLLs (c10.dll) fail to initialize if Qt's are loaded
-    first (WinError 1114 - conflicting bundled runtimes). Everything that
-    touches models (training, inspect, accuracy/live tests) imports torch
-    lazily, so it MUST be resident before the first PyQt6 import. Costs ~1 s
-    of startup on Windows only; no effect where the conflict doesn't exist.
+    On Windows, torch's DLLs fail to initialize if Qt's are loaded first
+    (WinError 1114), and torch is imported lazily everywhere else, so it
+    must be resident before the first PyQt6 import.
     """
     if os.name == "nt":
         try:

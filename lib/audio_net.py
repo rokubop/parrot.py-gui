@@ -66,7 +66,7 @@ class TinyAudioNetEnsemble(nn.Module):
 class AudioNetTrainer:
     dataset_labels = []
     dataset_size = 0
-
+    
     criterion = nn.NLLLoss()
     batch_size = 512
     validation_split = .2
@@ -75,16 +75,11 @@ class AudioNetTrainer:
     device = torch.device("cuda" if use_cuda else "cpu")
     dataset = False
     input_size = 120
-
+    
     def __init__(self, dataset, net_count = 1, audio_settings = None,
                  run_settings = None, source_mics = None):
-        # These six used to be class attributes that __init__ only ever appended
-        # to, so every trainer in a process shared one list. The CLI never
-        # noticed - one process trains one model and exits. The GUI does: a
-        # second run in the same session appended to the same lists, and
-        # train()'s range(net_count) then picked up the *previous* run's
-        # already-trained nets, sized to the previous run's label count. That is
-        # what "Train another" did.
+        # Instance state, not class attributes: shared class-level lists made a
+        # second training run in the same process reuse the first run's nets.
         self.nets = []
         self.optimizers = []
         self.random_seeds = []
@@ -99,15 +94,10 @@ class AudioNetTrainer:
         self.dataset = dataset
         self.dataset_size = len(dataset)
         self.audio_settings = audio_settings
-        # The choices made on the way in, which shape the data before the
-        # trainer ever sees it: they are consumed by load_pytorch_data and would
-        # otherwise leave no trace in the model at all. Empty for a run that did
-        # not say, which is every model trained before this existed.
+        # Recorded into the checkpoint so a model can say how it was made.
+        # run_settings: the data-shaping choices load_pytorch_data consumed.
+        # source_mics: which mics the recordings came from, scanned by the caller.
         self.run_settings = run_settings or {}
-        # Which microphones the recordings behind this run came from. Scanned by
-        # the caller, because reading it lives with the recordings library and
-        # lib/ does not import gui/. Empty when nobody said, which is every model
-        # trained before this and every CLI run.
         self.source_mics = source_mics or {}
         self.dataset_size = len(dataset)
         
@@ -139,23 +129,22 @@ class AudioNetTrainer:
             best_accuracy.append(0)
         starttime = int(time.time())
         combined_model = TinyAudioNetEnsemble(self.nets).to(self.device)
-
+        
         input_size = 120
-
-        # Post-balance, per label. The recordings folder only knows today.
+        
+        # Per-label frame counts after balancing.
         label_frames = {label: 0 for label in self.dataset_labels}
         for sample in self.dataset.samples:
             label_frames[self.dataset_labels[sample[1]]] += 1
 
         # create_empty() makes recordings/models/code only.
         os.makedirs(REPLAYS_FOLDER, exist_ok=True)
-        with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:
+        with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:	
             headers = ['epoch', 'loss', 'avg_validation_accuracy']
             headers.extend(self.dataset_labels)
             writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
             writer.writeheader()
             for epoch in range(self.max_epochs):
-                # Check for external stop request
                 if stop_check is not None and stop_check():
                     print("External stop requested - Stopped training loop")
                     print( "------------------------------------------------------")
@@ -168,60 +157,52 @@ class AudioNetTrainer:
                 for j in range(self.net_count):
                     running_loss.append(0.0)
                     self.nets[j].train(True)
-
+                    
                     i = 0
                     with torch.set_grad_enabled(True):
                         st_batch= time.time()
                         for local_batch, local_labels in self.train_loaders[j]:
-                            # A trailing batch of one kills the run: the net opens
-                            # with BatchNorm1d, which cannot compute a variance
-                            # from a single sample while training ( "Expected more
-                            # than 1 value per channel" ). It happens whenever the
-                            # training split is 1 more than a multiple of the batch
-                            # size, so it strikes at random depending on how much
-                            # was recorded. Skipped rather than drop_last=True,
-                            # which would silently discard every batch - and so
-                            # train on nothing - for a dataset smaller than one
-                            # batch. Validation is unaffected: it runs in eval
-                            # mode, where BatchNorm uses its running statistics.
+                            # BatchNorm1d cannot compute a variance from a single
+                            # sample, so a trailing batch of 1 kills the run.
+                            # Skipped rather than drop_last=True, which would train
+                            # on nothing for a dataset smaller than one batch.
                             if local_batch.size(0) < 2:
                                 continue
 
                             # Transfer to GPU
                             local_batch, local_labels = local_batch.to(self.device), local_labels.to(self.device)
-
+                            
                             # Zero the gradients for this batch
-                            i += 1
+                            i += 1                        
                             net = self.nets[j]
                             optimizer = self.optimizers[j]
                             optimizer.zero_grad()
-
+                        
                             # Calculating loss
                             output = net(local_batch)
                             loss = self.criterion(output, local_labels)
                             loss.backward()
-
+                                    
                             # Prevent exploding weights
                             torch.nn.utils.clip_grad_norm_(net.parameters(),4)
                             optimizer.step()
-
+                        
                             running_loss[j] += loss.item()
                             epoch_loss += output.shape[0] * loss.item()
-
+                            
                             if( i % 10 == 0 ):
                                 correct_in_minibatch = ( local_labels == output.max(dim = 1)[1] ).sum()
-                                # Divide by the batch actually seen, not the
-                                # nominal size: the last batch of an epoch is
-                                # usually short, which understated its accuracy.
+                                # Divide by the batch actually seen; the last
+                                # batch of an epoch is usually short.
                                 print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/local_labels.size(0)))
                                 running_loss[j] = 0.0
-
+                    
                 epoch_loss = epoch_loss / ( self.dataset_size * (1 - self.validation_split) )
                 print('Training loss: {:.4f}'.format(epoch_loss))
                 print( "Validating..." )
                 for j in range(self.net_count):
                     self.nets[j].train(False)
-
+                
                 # Validation
                 self.dataset.set_training(False)
                 epoch_validation_loss = []
@@ -234,34 +215,34 @@ class AudioNetTrainer:
                 for j in range(self.net_count):
                     epoch_validation_loss.append(0.0)
                     correct.append(0)
-
+                
                     with torch.set_grad_enabled(False):
                         accuracy_batch = {'total': {}, 'correct': {}, 'percent': {}}
                         for dataset_label in self.dataset_labels:
                             accuracy_batch['total'][dataset_label] = 0
                             accuracy_batch['correct'][dataset_label] = 0
                             accuracy_batch['percent'][dataset_label] = 0
-
+                    
                         for local_batch, local_labels in self.validation_loaders[j]:
                             # Transfer to GPU
                             local_batch, local_labels = local_batch.to(self.device), local_labels.to(self.device)
-
+                            
                             # Zero the gradients for this batch
                             optimizer = self.optimizers[j]
                             net = self.nets[j]
                             optimizer.zero_grad()
-
+                            
                             # Calculating loss
                             output = net(local_batch)
                             correct[j] += ( local_labels == output.max(dim = 1)[1] ).sum().item()
                             loss = self.criterion(output, local_labels)
                             epoch_validation_loss[j] += output.shape[0] * loss.item()
-
+                            
                             # Calculate combined accuracy on last validation pass
                             if (j + 1 == self.net_count):
                                 combined_output = combined_model(local_batch)
                                 combined_correct += ( local_labels == combined_output.max(dim = 1)[1] ).sum().item()
-
+                            
                             # Calculate the percentages
                             for index, label in enumerate(local_labels):
                                 local_label_string = self.dataset_labels[label]
@@ -269,7 +250,7 @@ class AudioNetTrainer:
                                 if( output[index].argmax() == label ):
                                     accuracy_batch['correct'][local_label_string] += 1
                                 accuracy_batch['percent'][local_label_string] = accuracy_batch['correct'][local_label_string] / accuracy_batch['total'][local_label_string]
-
+                
                         label_accuracy.append(accuracy_batch['percent'])
 
                 # Reported per sound: the mean across nets, not the last one.
@@ -278,23 +259,23 @@ class AudioNetTrainer:
                     scores = [p[dataset_label] for p in label_accuracy]
                     mean_label_accuracy[dataset_label] = (
                         sum(scores) / len(scores) if scores else 0)
-
+                
                 for j in range(self.net_count):
                     epoch_loss.append(epoch_validation_loss[j] / ( self.dataset_size * self.validation_split ) )
                     accuracy.append( correct[j] / ( self.dataset_size * self.validation_split ) )
                     print('[Net: %d] Validation loss: %.4f accuracy %.3f' % (j + 1, epoch_loss[j], accuracy[j]))
 
-                # This epoch's nets scored together. Not the pkl being written,
-                # which combines each net's BEST weights.
+                # This epoch's nets together; the written pkl combines each
+                # net's BEST weights.
                 combined_accuracy = combined_correct / ( self.dataset_size * self.validation_split )
                 print('[Combined] Sum validation loss: %.4f average accuracy %.3f' % (np.sum(epoch_loss), combined_accuracy))
-
+                
                 csv_row = { 'epoch': epoch, 'loss': np.sum(epoch_loss), 'avg_validation_accuracy': np.average(accuracy) }
                 for dataset_label in self.dataset_labels:
                     csv_row[dataset_label] = mean_label_accuracy[dataset_label]
                 writer.writerow( csv_row )
                 csvfile.flush()
-
+                                
                 new_best = False
                 for j in range(self.net_count):
                     current_filename = filename + '_' + str(j+1)
@@ -302,12 +283,10 @@ class AudioNetTrainer:
                         best_accuracy[j] = accuracy[j]
                         current_filename = filename + '_' + str(j+1) + '-BEST'
                         new_best = True
-
-                    # trained_at rides inside the checkpoint because every
-                    # external record of when a model was made is losable: a
-                    # file mtime resets when the data dir is copied or restored,
-                    # and the replay CSV is not renamed along with the model.
-                    torch.save({'state_dict': self.nets[j].state_dict(),
+                        
+                    # trained_at rides inside the checkpoint; file mtimes do not
+                    # survive the data dir being copied or restored.
+                    torch.save({'state_dict': self.nets[j].state_dict(), 
                         'input_size': self.input_size,
                         'labels': self.dataset_labels,
                         'accuracy': accuracy[j],
@@ -320,26 +299,21 @@ class AudioNetTrainer:
                         'epoch': epoch,
                         'random_seed': self.random_seeds[j],
                         'trained_at': starttime,
-                        # Every option the training screen offers, so a model
-                        # can say how it was made rather than be guessed at
-                        # from the shape of label_frames.
                         'run_settings': self.run_settings,
                         'audio_settings': self.audio_settings,
                         'source_mics': self.source_mics,
                         }, os.path.join(CLASSIFIER_FOLDER, current_filename) + '-weights.pth.tar')
-
+                
                 # Persist a new combined model with the best weights if new best weights are given
                 if (new_best == True):
                     print( "------------------------------------------------------")
                     print( "Persisting new combined best in " + filename )
-                    print( "------------------------------------------------------")
+                    print( "------------------------------------------------------")                    
                     connect_model( filename, combined_classifier_map, "ensemble_torch", True, self.audio_settings )
-
-                # Notify progress callback if provided (GUI)
+                
                 if progress_callback is not None:
                     progress_callback(epoch, np.sum(epoch_loss), np.average(accuracy), mean_label_accuracy, new_best)
 
-                # Check for stop via KeyPoller (CLI) or external stop_check (GUI)
                 if stop_check is not None and stop_check():
                     print("External stop requested - Stopped training loop")
                     print( "------------------------------------------------------")

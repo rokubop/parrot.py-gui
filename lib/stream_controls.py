@@ -23,7 +23,7 @@ def keypress_state_change(key_poller):
             requested_state = "paused" if ipc_manager.getParrotState() not in ["paused", "switching"] else "running"
         elif ( character == ESCAPEKEY ):
             requested_state = "stopped"
-
+    
     return requested_state
 
 def set_loop_state( state ):
@@ -39,7 +39,7 @@ def detect_state_transition(current_state, listening_state, currenttime, key_pol
         requested_state = keypress_state_change(key_poller)
     if (current_state not in ["disconnected", "paused"] and requested_state == False and currenttime - listening_state['last_audio_update'] > DISCONNECTION_DETECTION_THRESHOLD):
         requested_state = "disconnected"
-    return requested_state
+    return requested_state 
 
 # Detects a transitioning state and acts accordingly
 def transition_state(listening_state, modeSwitcher, current_state, requested_state = False):
@@ -50,23 +50,23 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
             listening_state['stream'].stop()
         if( listening_state['audioQueue'] != None ):
             listening_state['audioQueue'].queue.clear()
-
+        
         modeSwitcher.switchMode(ipc_manager.getMode(), requested_state == "switch_and_run")
         if ( listening_state['classifier_name'] != ipc_manager.getClassifier() ):
             print( "Switching classifier to " + ipc_manager.getClassifier() )
             print( "Listening stopped" )
             print( "-----------------" )
-            listening_state['classifier_name'] = ipc_manager.getClassifier()
+            listening_state['classifier_name'] = ipc_manager.getClassifier()            
             listening_state['stream'].stop()
             set_loop_state(current_state)
-
+            
             # Reset the stream
             listening_state['restart_listen_loop'] = True
         return LOOP_STATE_SWITCHED
-
+    
     # Running can transition to paused and disconnected
     if (current_state == "running" ):
-        if (requested_state == False):
+        if (requested_state == False):    
             return LOOP_STATE_CONTINUE
         elif( requested_state == "paused"):
             print( "Listening paused!" )
@@ -79,7 +79,7 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
                 listening_state['audioQueue'].queue.clear()
             print( "Found a stall in audio updates" )
             print( "Assuming a mic disconnection, beginning to poll mic connection" )
-
+            
     # A disconnected state can be in recovering mode, or in a paused state where it does not poll for connections
     if (current_state == "disconnected"):
         global poll_counter
@@ -95,7 +95,7 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
                 print( "Did not receive errors during reconnection to mic, restarting stream" )
                 stream.stop()
                 stream.close()
-
+                    
                 # Reset the stream
                 listening_state['restart_listen_loop'] = True
                 set_loop_state("running")
@@ -110,7 +110,7 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
             poll_counter = 0
         elif (requested_state == "stopped"):
             print( "" )
-
+            
     # A paused state can resume listening or transition to a disconnected state
     if (current_state == "paused"):
         if (requested_state == "running" ):
@@ -118,12 +118,12 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
             if (listening_state['stream']):
                 try:
                     listening_state['stream'].start()
-                    set_loop_state(requested_state)
-                    return LOOP_STATE_CONTINUE
+                    set_loop_state(requested_state)                    
+                    return LOOP_STATE_CONTINUE                    
                 except Exception as e:
                     print( "An error occured during the resuming of the listening")
                     return LOOP_STATE_CONTINUE
-
+    
     # Any state can be stopped to terminate Parrot
     if (requested_state == "stopped"):
         listening_state['currently_recording'] = False
@@ -138,14 +138,14 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
 def manage_loop_state(current_state, listening_state, modeSwitcher=None, currenttime=0, STATE_POLLING_THRESHOLD = 0.1, key_poller = None):
     requested_state = detect_state_transition(current_state, listening_state, currenttime, key_poller)
     loop_state = transition_state(listening_state, modeSwitcher, current_state, requested_state)
-
+    
     # After switching modes or classifiers, do not set the loop state, this is handled by the mode switcher instead
     if (loop_state == LOOP_STATE_SWITCHED ):
         loop_state = transition_state(listening_state, modeSwitcher, "paused", ipc_manager.getParrotState())
-
+    
     if (loop_state == LOOP_STATE_BLOCK ):
         set_loop_state(requested_state)
         time.sleep( STATE_POLLING_THRESHOLD )
         return manage_loop_state(ipc_manager.getParrotState(), listening_state, modeSwitcher, currenttime, STATE_POLLING_THRESHOLD, key_poller)
-
+        
     return loop_state == LOOP_STATE_CONTINUE and listening_state['restart_listen_loop'] == False

@@ -63,8 +63,8 @@ class _StepCard(QFrame):
         v.setContentsMargins(18, 18, 18, 16)
         v.setSpacing(6)
 
-        # Number and title on one line: "1 Record sounds" is one heading, and
-        # a circle alone on its own row pushed the status line down a step.
+        # Number and title share a row; a bubble row of its own pushed the
+        # status line down a step.
         self.bubble = QLabel(str(number))
         self.bubble.setObjectName("stepBubble")
         self.bubble.setFixedSize(36, 36)
@@ -82,8 +82,7 @@ class _StepCard(QFrame):
         self.help_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         bubble_row.addWidget(self.help_btn, 0, Qt.AlignmentFlag.AlignTop)
         v.addLayout(bubble_row)
-        # No blurb: the title says what the step is and the status line below
-        # says where you actually stand. Anything longer belongs behind ? Help.
+        # No blurb; longer copy belongs behind ? Help.
         self.status = QLabel("")
         self.status.setWordWrap(True)
         v.addWidget(self.status)
@@ -179,9 +178,6 @@ class HomePage(QWidget):
 
         self.hero_title = QLabel("Parrot.py")
         v.addWidget(self.hero_title)
-        # What the app *is*, stated once and always - not a first-run greeting.
-        # Descriptive rather than a pitch: noise -> action is the whole idea,
-        # and the three cards below already spell out the pipeline.
         self.hero_sub = QLabel(
             "Turn noises into instant actions on your computer.")
         self.hero_sub.setWordWrap(True)
@@ -191,9 +187,7 @@ class HomePage(QWidget):
         steps_row = QHBoxLayout(self.steps_widget)
         steps_row.setContentsMargins(0, 0, 0, 0)
         steps_row.setSpacing(12)
-        # Title says the step, button says where it happens. The two used to
-        # say the same thing on card 2 ("Train a model" / "Train a model"),
-        # which read as if the button did the training.
+        # Title says the step, button says where it happens.
         self.step_record = _StepCard(1, "Record sounds", "Open sounds")
         self.step_train = _StepCard(2, "Train a model", "Open models")
         self.step_connect = _StepCard(3, "Integrations", "Open integrations")
@@ -219,11 +213,8 @@ class HomePage(QWidget):
         guide_row.addStretch()
         v.addLayout(guide_row)
 
-        # For exactly one moment: a fresh empty install owned by someone whose
-        # real setup lives elsewhere. Once anything is recorded or trained the
-        # card is gone for good - the capability itself stays reachable via
-        # Manage profiles > Import, so late linkers lose nothing. Nothing is
-        # auto-scanned until they ask.
+        # Only on a fresh empty install; gone for good once anything is
+        # recorded or trained. Import stays reachable via Manage profiles.
         from gui.services import profiles as profiles_service
         self.import_panel, self.import_title, self.import_body = self._make_panel(
             "Already used Parrot.py before?")
@@ -277,9 +268,8 @@ class HomePage(QWidget):
         status_row.addWidget(self.talon_panel, 1)
         v.addWidget(self.status_row_widget)
 
-        # Non-zero factor: leftover height belongs at the bottom of the page,
-        # not distributed into the step cards (which would stretch them tall
-        # and strand their buttons far below the status line).
+        # Non-zero factor: leftover height goes to the bottom of the page, not
+        # into the step cards.
         v.addStretch(1)
         self._apply_theme_styles()
 
@@ -414,8 +404,7 @@ class HomePage(QWidget):
         step3_done = deployed_name is not None
         if step3_done:
             count = len(talon.patterns.get("patterns", talon.patterns) or {})
-            # Leads with who it is connected to, because the card is no longer
-            # called Talon and this line is now the only place saying so.
+            # The card isn't titled Talon, so this line is the only place naming it.
             s3 = (f"Connected to Talon · {count} patterns using "
                   f"“{deployed_name}”." if count
                   else f"Connected to Talon · running “{deployed_name}”.")
@@ -430,8 +419,6 @@ class HomePage(QWidget):
             (step1_done, step2_done, step3_done)) if not done), None)
         self.step_record.set_state(step1_done, current == 0, s1)
         self.step_train.set_state(step2_done, current == 1, s2)
-        # One destination either way; connected, it keeps the bright styling,
-        # because editing patterns is the app's ongoing main action.
         self._talon_connected = step3_done
         self.step_connect.set_state(
             step3_done, current == 2, s3, action_primary=step3_done)

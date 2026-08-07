@@ -44,10 +44,6 @@ class ProfileError(Exception):
 def debug_enabled():
     """On in a source checkout, off in an installed build.
 
-    Tying it to the env var alone meant setting it on every launch, and
-    "always on because we haven't shipped" only stays true until we ship - a
-    debug menu reaching a real user is then one forgotten flag away.
-
     The signal is the one DATA_ROOT already uses: a ./data dir beside the code
     means a checkout. PARROT_DEBUG wins either way, so `PARROT_DEBUG=0` shows
     a checkout exactly what a shipped build looks like.

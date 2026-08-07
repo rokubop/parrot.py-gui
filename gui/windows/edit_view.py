@@ -1,20 +1,8 @@
 """Edit a recording: redo detection (the blue overlay) and trim the waveform.
 
-Non-destructive until Save: on entry we snapshot the recording's last-saved
-state (``UndoHistory.begin_baseline``). Edits do touch the files (so the preview
-is always truthful) but Back offers Save / Discard / Cancel, and Discard reverts
-to that baseline. The title shows a ``*`` whenever there are unsaved edits.
-
-Two kinds of edit, both reflected immediately in the waveform + detection:
-
-* Re-detect - set a threshold / duration type and click Apply (writes a manual
-  override / ``.MANUAL.srt``); "Auto-detect" finds the threshold automatically
-  and shows it on the slider.
-* Delete a selected time range from the source WAV, which rewrites the file and
-  re-detects. Every edit is undoable (Ctrl+Z / Undo button).
-
-Includes lightweight playback (whole clip or the current selection) so you can
-audition before and after an edit.
+Edits touch the files immediately (so the preview is truthful) but are
+non-destructive until Save: entry snapshots the last-saved state
+(``UndoHistory.begin_baseline``), and Back's Discard reverts to it.
 """
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, pyqtSignal
 from PyQt6.QtGui import QShortcut, QKeySequence
@@ -139,7 +127,6 @@ class EditRecordingView(QWidget):
         self.preview.seeked.connect(self._on_seek)
         root.addWidget(self.preview, 1)
 
-        # Playback row
         play_row = QHBoxLayout()
         self.play_btn = QPushButton("▶ Play")
         self.play_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -184,9 +171,8 @@ class EditRecordingView(QWidget):
             sc.setContext(Qt.ShortcutContext.WindowShortcut)
             sc.activated.connect(slot)
 
-        # Detection (threshold) group - dragging the threshold re-detects live.
-        # Re-detection is expensive (it reprocesses the whole clip), so the
-        # threshold is applied on demand via the button, not live on every drag.
+        # Re-detection reprocesses the whole clip, so the threshold applies via
+        # the button, not live on every drag.
         det_group = QGroupBox("Detection (the blue overlay)")
         det = QHBoxLayout(det_group)
         det.addWidget(QLabel("Threshold:"))
@@ -221,7 +207,6 @@ class EditRecordingView(QWidget):
         det.addWidget(self.reset_btn)
         root.addWidget(det_group)
 
-        # Trim group
         trim_group = QGroupBox("Edit audio")
         trim = QHBoxLayout(trim_group)
         self.delete_btn = QPushButton("Delete selected range")
@@ -263,10 +248,9 @@ class EditRecordingView(QWidget):
             w.setEnabled(not busy)
 
     def _finish_worker(self):
-        """Tear a finished detection thread down safely. The worker emits its
-        result as the LAST line of run(), so without waiting for the thread to
-        actually return, dropping the reference here could delete a still-running
-        QThread (a hard crash) - wait() returns near-instantly and prevents it."""
+        """Tear a finished detection thread down safely. The result signal fires
+        before run() returns, so wait() before dropping the reference or a
+        still-running QThread gets deleted (a hard crash)."""
         w = self.worker
         self.worker = None
         if w is not None:
@@ -458,10 +442,8 @@ class EditRecordingView(QWidget):
             return
         sel = self.preview.current_selection()
         if sel and sel[1] - sel[0] > 0:
-            # A selection plays as a range…
             self._play_from, self._stop_at = sel
         else:
-            # …otherwise play from where the playhead was clicked, to the end.
             self._stop_at = None
             self._play_from = max(0.0, min(self._play_from, self._duration))
         start = int(self._play_from * self._sr)
@@ -481,10 +463,9 @@ class EditRecordingView(QWidget):
         self.play_btn.setText("▶ Play")
 
     def _heard_position(self):
-        """Where playback has actually reached, in seconds. The clock starts
-        when play() is called but the audio only leaves the device a buffer
-        later, so without subtracting that the playhead sits ahead of what
-        you're hearing - and points past the blip you were auditioning."""
+        """Where playback has actually reached, in seconds. Audio leaves the
+        device a buffer after play(), so subtract that latency or the playhead
+        runs ahead of what you're hearing."""
         return self._play_from + max(0.0, self._clock.elapsed() / 1000.0 - self._latency)
 
     def _tick(self):
@@ -513,7 +494,7 @@ class EditRecordingView(QWidget):
                 return
             if choice == QMessageBox.StandardButton.Save:
                 self.history.commit_baseline()
-            else:  # Discard - restore the recording to its last-saved state.
+            else:  # Discard
                 self.history.revert_to_baseline()
                 self.app_state.recordings_changed.emit()
         self.history.clear()   # undo history is per-editing-session

@@ -1,17 +1,13 @@
 """Per-sound accuracy for the epoch that just finished.
 
-The trainer has always computed this and the worker has always emitted it (the
-dict in `TrainingWorker.epoch_complete`); the training view threw it away and
-showed a single averaged number. An average cannot tell you that one sound sits
-at 40% while the rest are at 97%, which is the most actionable thing on screen
-during a run that lasts hours: it says which sound to record more of, and it
-says it in the first few minutes rather than after the whole run.
+An averaged number cannot say that one sound sits at 40% while the rest are
+at 97%, which is the most actionable thing on screen during a run that lasts
+hours: it says which sound to record more of, in the first few minutes.
 
-These are the mean across the nets, not the ensemble's own score: the ensemble
-averages probabilities, so its per-sound accuracy is not the mean of theirs.
-Close enough to read as "which sound is failing", which is what this is for.
-A single sound still wobbles between epochs more than the averaged accuracy
-does; the gap that matters here is between sounds, not between epochs.
+These are the mean across the nets, not the ensemble's own score (the
+ensemble averages probabilities, so its per-sound accuracy is not the mean of
+theirs) - close enough to read as "which sound is failing". A single sound
+wobbles between epochs; the gap that matters is between sounds.
 """
 from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QPainter, QColor, QFontMetrics

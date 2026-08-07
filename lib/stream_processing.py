@@ -1,5 +1,6 @@
 from .typing import DetectionLabel, DetectionFrame, DetectionEvent, DetectionState
 from config.config import BACKGROUND_LABEL, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, RATE, CURRENT_VERSION, CURRENT_DETECTION_STRATEGY, THRESHOLD_DETECTION, TWO_PASS_DETECTION
+from lib.frame_stats import stat_arrays, drop_cache
 from typing import List
 import wave
 import math
@@ -16,31 +17,31 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
         two_pass = TWO_PASS_DETECTION
     ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
     sample_width = 2# 16 bit = 2 bytes
-
+    
     detection_strategy = strategy if strategy else CURRENT_DETECTION_STRATEGY
-
+    
     detection_labels = []
     override_labels = []
     for label in labels:
         detection_labels.append(DetectionLabel(label, 0, 0, "", 0, 0, 0, 0, 0))
     detection_state = DetectionState(detection_strategy, "recording", ms_per_frame, 0, True, 0, 0, 0, 0, detection_labels, None, [])
-
+    
     # Add manual overrides if the override file exists
     if override_file is not None and os.path.exists(override_file):
         override_dict = generate_override_dict(override_file)
-
+    
         for override_label in labels:
             duration_type = ""
             duration_type_key = (override_label + "_duration_type").lower()
             if duration_type_key in override_dict and override_dict[duration_type_key].lower() in ["discrete", "continuous"]:
                 duration_type = override_dict[duration_type_key].lower()
-
+                
             min_dBFS = -96
             min_dBFS_key = (override_label + "_min_dbfs").lower()
             if min_dBFS_key in override_dict and override_dict[min_dBFS_key] < 0:
                 min_dBFS = override_dict[min_dBFS_key]
-
-            override_labels.append(DetectionLabel(override_label, 0, 0, duration_type, 0, min_dBFS, 0, 0, 0))
+            
+            override_labels.append(DetectionLabel(override_label, 0, 0, duration_type, 0, min_dBFS, 0, 0, 0))    
     detection_state.override_labels = override_labels
 
     if progress_callback is not None:
@@ -52,9 +53,7 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
     detection_frames, number_channels = detect_wav_frames(input_file, detection_state, progress_callback, 0, first_pass_end)
 
     # Second pass - settle the thresholds over the whole recording and re-judge
-    # every frame with them, so the start of the recording is detected with the
-    # same criteria as the end ( the online pass needs ~10 finished sounds
-    # before its upper bound threshold kicks in at all )
+    # every frame, so the start is detected with the same criteria as the end.
     if two_pass and len(detection_frames) > 0:
         settle_detection_state(detection_frames, detection_state)
         detection_frames, number_channels = detect_wav_frames(input_file, detection_state, progress_callback, first_pass_end, 0.75)
@@ -77,22 +76,22 @@ def detect_wav_frames(input_file, detection_state, progress_callback = None, pro
     false_occurrence = []
     current_occurrence = []
     detection_frames = []
-    index = 0
+    index = 0    
     wf = wave.open(input_file, 'rb')
     number_channels = wf.getnchannels()
     total_frames = wf.getnframes()
     frame_rate = wf.getframerate()
     frames_to_read = round( frame_rate * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT )
-
+    
     while( wf.tell() < total_frames ):
         index = index + 1
         raw_wav = wf.readframes(frames_to_read * number_channels)
         detection_state.ms_recorded += detection_state.ms_per_frame
-
+        
         # If our wav file is shorter than the amount of bytes ( assuming 16 bit ) times the frames, we discard it and assume we arrived at the end of the file
         if (len(raw_wav) != 2 * frames_to_read * number_channels ):
-            break;
-
+            break;        
+        
         # Do online downsampling if the files frame rate is higher than our 16k Hz rate
         # To make sure all the calculations stay accurate
         raw_wav = resample_audio(raw_wav, frame_rate, number_channels)
@@ -100,14 +99,14 @@ def detect_wav_frames(input_file, detection_state, progress_callback = None, pro
         audioFrames.append(raw_wav)
         audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence = \
             process_audio_frame(index, audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence)
-
+        
         progress = wf.tell() / total_frames
         if progress_callback is not None and progress < 1:
             progress_callback(progress_start + progress * (progress_end - progress_start), detection_state)
 
     wf.close()
     return detection_frames, number_channels
-
+    
 def settle_detection_state(detection_frames: List[DetectionFrame], detection_state: DetectionState):
     """Prepare the second detection pass - settle the thresholds over the WHOLE
     recording, freeze them, and reset the counters so every frame can be
@@ -124,8 +123,7 @@ def settle_detection_state(detection_frames: List[DetectionFrame], detection_sta
     detection_state.current_dBFS_threshold = 0
     detection_state.frozen = True
     # The cached stat arrays belong to the first pass' frames
-    if hasattr(detection_state, "_stat_buf"):
-        del detection_state._stat_buf
+    drop_cache(detection_state)
 
 def process_audio_frame(index, audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence):
     current_detection_frame = determine_detection_frame(index, detection_state, audioFrames, detection_frames)    
@@ -543,44 +541,10 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
     detection_state.state = "recording"
     return frames
 
-def _stat_arrays(detection_state, detection_frames):
-    """Return (dBFS, spectral_flux) numpy arrays over all frames, maintained
-    incrementally on detection_state. A frame's dBFS/spectral_flux never change
-    after creation and frames are only appended or truncated from the end, so the
-    cached prefix always stays valid. This turns the per-call O(n) Python
-    re-iteration (which made the whole recording O(n^2)) into a one-time O(1)
-    append per frame, while producing values identical to the list comprehensions
-    it replaces."""
-    n = len(detection_frames)
-    buf = getattr(detection_state, "_stat_buf", None)
-    if buf is None:
-        buf = {"dBFS": np.empty(max(64, n), dtype=np.float64),
-               "sf": np.empty(max(64, n), dtype=np.float64), "len": 0}
-        detection_state._stat_buf = buf
-
-    valid = buf["len"]
-    if n < valid:
-        # Frames were truncated from the end (pause/clear); prefix is still valid.
-        buf["len"] = n
-    elif n > valid:
-        if n > buf["dBFS"].size:
-            cap = max(buf["dBFS"].size * 2, n)
-            for key in ("dBFS", "sf"):
-                grown = np.empty(cap, dtype=np.float64)
-                grown[:valid] = buf[key][:valid]
-                buf[key] = grown
-        for idx in range(valid, n):
-            frame = detection_frames[idx]
-            buf["dBFS"][idx] = frame.dBFS
-            buf["sf"][idx] = frame.spectral_flux
-        buf["len"] = n
-    return buf["dBFS"][:n], buf["sf"][:n]
-
-
 def determine_detection_state(detection_frames: List[DetectionFrame], detection_state: DetectionState) -> DetectionState:
-    dBFS_arr, spectral_flux_arr = _stat_arrays(detection_state, detection_frames)
+    dBFS_arr, spectral_flux_arr = stat_arrays(detection_state, detection_frames)
     threshold_confidence = 1 if THRESHOLD_DETECTION == "strict" else 0.5
-
+    
     # Calculate the onset thresholds using spectral flux
     spectral_flux_max = np.percentile(spectral_flux_arr, 95)
     spectral_flux_min = np.percentile(spectral_flux_arr, 5)
@@ -590,7 +554,7 @@ def determine_detection_state(detection_frames: List[DetectionFrame], detection_
     std_dBFS = np.std(dBFS_arr)
     detection_state.expected_snr = std_dBFS * 2
     detection_state.expected_noise_floor = np.percentile(dBFS_arr, 10)
-
+    
     # Determine an error margin of about 4% of the rough dBFS range
     dBFS_max = np.percentile(dBFS_arr, 95)
     dBFS_min = np.percentile(dBFS_arr, 5)

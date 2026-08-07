@@ -5,19 +5,16 @@ PYTHON_VERSION="3.13"
 VENV_DIR=".venv"
 
 # Prebuilt relocatable CPython (python-build-standalone, maintained by Astral).
-#
-# Deliberately PINNED rather than resolved to "latest" via the GitHub API:
-#   - the API is rate-limited to 60 req/hr per IP, so a shipped app behind a
-#     shared NAT could fail to bootstrap at all
-#   - two users installing a week apart would otherwise get different
-#     interpreters, which makes support harder
-# Bump these together with run.bat when you want a newer Python.
+# Deliberately PINNED rather than resolved to "latest" via the GitHub API: the
+# API is rate-limited to 60 req/hr per IP (a shared NAT could fail to bootstrap
+# at all), and a pin means every install gets the same interpreter. Bump these
+# together with run.bat.
 PBS_REPO="astral-sh/python-build-standalone"
 PBS_TAG="20260718"
 PBS_PY="3.13.14"
 
 # -------------------------------------------------------
-# Git Bash / MINGW detection — redirect to run.bat
+# Git Bash / MINGW detection - redirect to run.bat
 # -------------------------------------------------------
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     echo ""
@@ -29,7 +26,6 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     echo "    From Git Bash:            cmd //c run.bat"
     echo ""
 
-    # Check if run.bat exists and offer to launch it
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if [[ -f "$SCRIPT_DIR/run.bat" ]]; then
         read -rp "  Launch run.bat now? [Y/n]: " choice
@@ -77,8 +73,7 @@ fi
 
 # Detect OS family within posix. macOS must never take the apt/dpkg path:
 # /usr/bin/apt on macOS is Apple's stub launcher for the *Java* annotation
-# processing tool, so `sudo apt install ...` fails with "Unable to locate a
-# Java Runtime" rather than anything package-related.
+# tool, so `sudo apt install` fails with "Unable to locate a Java Runtime".
 if [[ "$OSTYPE" == darwin* ]]; then
     OS_FAMILY="macos"
 elif [[ -n "$WSL_DISTRO_NAME" ]]; then
@@ -88,9 +83,8 @@ else
 fi
 
 # Where the self-contained interpreter is cached. User-level rather than
-# project-local for two reasons: it survives fresh clones, and a future .app /
-# installed bundle is read-only (and code-signed), so it cannot store a Python
-# inside itself. Override with PARROT_PYTHON_DIR.
+# project-local: it survives fresh clones, and an installed bundle is read-only
+# so it cannot store a Python inside itself. Override with PARROT_PYTHON_DIR.
 resolve_python_dir() {
     if [[ -n "$PARROT_PYTHON_DIR" ]]; then
         echo "$PARROT_PYTHON_DIR"
@@ -205,7 +199,7 @@ load_pyenv() {
 }
 
 find_python() {
-    # Our own cached self-contained interpreter wins — it's the one we manage
+    # Our own cached self-contained interpreter wins - it's the one we manage
     if [[ -x "$PYTHON_DIR/bin/python${PYTHON_VERSION}" ]]; then
         echo "$PYTHON_DIR/bin/python${PYTHON_VERSION}"
         return 0
@@ -229,7 +223,7 @@ find_python() {
         done
     fi
 
-    # Check Homebrew prefixes directly — brew may not be on PATH yet in this shell
+    # Check Homebrew prefixes directly - brew may not be on PATH yet in this shell
     if [[ "$OS_FAMILY" == "macos" ]]; then
         for prefix in "$(brew_prefix)" /opt/homebrew /usr/local; do
             [[ -z "$prefix" ]] && continue
@@ -241,11 +235,10 @@ find_python() {
         done
     fi
 
-    # Check standard system commands (avoid pyenv shims — they can error)
+    # Check standard system commands (avoid pyenv shims - they can error)
     for cmd in "python${PYTHON_VERSION}" "python3" "python"; do
         local cmd_path
         cmd_path=$(command -v "$cmd" 2>/dev/null) || continue
-        # Skip pyenv shims
         [[ "$cmd_path" == *".pyenv/shims"* ]] && continue
         local version
         version=$("$cmd_path" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
@@ -261,12 +254,10 @@ find_python() {
 install_python_pyenv() {
     load_pyenv
 
-    # Install pyenv if still not available
     if ! command -v pyenv &>/dev/null; then
         info "Installing pyenv..."
         echo ""
 
-        # Check for build dependencies
         if [[ "$OS_FAMILY" == "macos" ]]; then
             load_brew
             if ! command -v brew &>/dev/null; then
@@ -329,7 +320,6 @@ install_python_pyenv() {
         ok "  Added pyenv to $shell_rc"
     fi
 
-    # Install Python version
     if ! pyenv versions --bare 2>/dev/null | grep -q "^${PYTHON_VERSION}"; then
         info "Installing Python $PYTHON_VERSION via pyenv (this may take a few minutes)..."
         pyenv install "$PYTHON_VERSION"
@@ -349,10 +339,9 @@ pbs_url() {
     fi
 }
 
-# Download a self-contained, relocatable CPython into PYTHON_DIR.
-# No sudo, no system changes, nothing outside PYTHON_DIR — which is what makes
-# an unattended GUI bootstrap possible (a progress window cannot answer a
-# sudo password prompt).
+# Download a self-contained, relocatable CPython into PYTHON_DIR. No sudo and
+# nothing outside PYTHON_DIR: a GUI progress window cannot answer a sudo
+# password prompt.
 install_python_standalone() {
     local plat url tmp
     plat=$(pbs_platform)
@@ -407,7 +396,6 @@ if [[ -z "$PYTHON_CMD" ]]; then
     warn "  Python $PYTHON_VERSION is required but was not found."
     echo ""
 
-    # Check network before offering install
     check_network
 
     echo "  How would you like to install Python $PYTHON_VERSION?"
@@ -497,10 +485,9 @@ fi
 # -------------------------------------------------------
 # Step 4: Hand venv creation + dependency install to bootstrap.py
 #
-# bootstrap.py owns this step so the logic lives in one place instead of being
-# duplicated in run.sh and run.bat. It shows a progress window (stdlib tkinter,
-# so it works before PyQt6 exists) and falls back to plain text when there's no
-# display. Pass --console to force text mode.
+# bootstrap.py owns this so the logic lives once instead of here and in
+# run.bat. Its progress window is stdlib tkinter (works before PyQt6 exists);
+# it falls back to plain text when there's no display, or with --console.
 # -------------------------------------------------------
 if ! "$PYTHON_CMD" bootstrap.py --check; then
     # No prompt: they launched the app, and setup is what launching costs the
@@ -560,7 +547,7 @@ ok "  Venv: $VENV_DIR"
 # Step 5: Launch
 # -------------------------------------------------------
 
-# Check display server on Linux. macOS has no DISPLAY/WAYLAND_DISPLAY — Qt uses
+# Check display server on Linux. macOS has no DISPLAY/WAYLAND_DISPLAY - Qt uses
 # the native Cocoa backend, so this check must not run there.
 if [[ "$PLATFORM" == "posix" && "$OS_FAMILY" != "macos" ]]; then
     if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" ]]; then

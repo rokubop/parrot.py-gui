@@ -240,8 +240,7 @@ class TalonPage(QWidget):
         return card
 
     def _build_details(self):
-        """The paths. Off by default: they answer a question nobody asks twice,
-        and they were the first thing this page used to say."""
+        """The paths. Off by default: they answer a question nobody asks twice."""
         t = theme.colors()
         self.details_group = QGroupBox("Files")
         self.details_group.setVisible(False)
@@ -268,9 +267,8 @@ class TalonPage(QWidget):
         return self.details_group
 
     def _build_draft_banner(self):
-        """Edits have always gone to a working copy; the only sign used to be
-        a group-box title. Talon is still running the deployed set, and the two
-        ways out of that are the two buttons here."""
+        """Edits go to a working copy; Talon still runs the deployed set, and
+        the two ways out of that are the two buttons here."""
         t = theme.colors()
         banner = QFrame()
         banner.setObjectName("draftBanner")
@@ -370,7 +368,7 @@ class TalonPage(QWidget):
             button.setChecked(key == self._view)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.setObjectName(f"view{key.title()}")
-            # Scoped per qt-traps: an unscoped sheet on the wrap kills :checked.
+            # Scoped: an unscoped sheet on the wrap kills :checked.
             button.setStyleSheet(
                 f"QPushButton#view{key.title()} {{ padding: 4px 12px; "
                 f"border: 1px solid {t['control_border']}; "
@@ -413,11 +411,8 @@ class TalonPage(QWidget):
         return table
 
     def _build_hidden_controls(self):
-        """Controls the ⋯ menu drives. They are widgets rather than plain
-        methods because the variant picker has state (which variant), and
-        because every one of them used to be a button on the page - keeping
-        them as widgets kept the diff to where they are shown, not what they
-        do."""
+        """Controls the ⋯ menu drives; widgets rather than plain methods
+        because the variant picker has state (which variant)."""
         self.variant_combo = QComboBox(self)
         self.variant_combo.setVisible(False)
 
@@ -525,7 +520,6 @@ class TalonPage(QWidget):
         self._refresh_from_working()
 
     def _refresh_connection(self):
-        """The one line that used to be five paths and a green tail."""
         t = theme.colors()
         result = (self._bundle or {}).get("result")
         warn, bad = t["warn"], t["bad"]
@@ -555,7 +549,7 @@ class TalonPage(QWidget):
         if result.integration_path:
             count = len(self.working)
             bits.append(f"{count} pattern{'' if count == 1 else 's'}")
-            # Not only inside the test screen: finding out after clicking.
+            # Surfaced here too, not only after clicking Test integration.
             info = self._companion_status()
             if info is not None and not info["installed"]:
                 bits.append(f"<span style='color:{warn};'>test bridge not "
@@ -578,9 +572,7 @@ class TalonPage(QWidget):
         return integration_sim.apply_to_bridge(real, self._sim["bridge"])
 
     def _parts(self):
-        """What this integration is made of, and which pieces exist. Four
-        files, one of which is optional - the old page listed their paths and
-        never said which were missing."""
+        """What this integration is made of, and which pieces exist."""
         result = (self._bundle or {}).get("result")
         if result is None:
             return []
@@ -744,8 +736,8 @@ class TalonPage(QWidget):
         editable = self._patterns_path is not None
         self.new_btn.setEnabled(editable)
         self._refresh_draft_banner(issues)
-        # qt-traps: filling rows moves the current cell and raises the same
-        # signal the user does, overwriting the selection restored below.
+        # Filling rows moves the current cell and raises the same signal the
+        # user does, overwriting the selection restored below.
         self.table.blockSignals(True)
         self._populate_table(self.working, issues)
         self.table.blockSignals(False)
@@ -900,8 +892,7 @@ class TalonPage(QWidget):
     # ---- the ⋯ menu -------------------------------------------------------
 
     def _build_more_menu(self):
-        """Everything that used to be a button row. Ordered by how often it is
-        wanted, with the two destructive-adjacent ones (bridge, folder) last."""
+        """Ordered by how often it is wanted, destructive-adjacent ones last."""
         menu = self._more_menu
         menu.clear()
         result = (self._bundle or {}).get("result")
@@ -1029,10 +1020,9 @@ class TalonPage(QWidget):
     def _on_change_model(self):
         """Swap the model Talon runs, without rebuilding the integration.
 
-        The picker carries the path it writes and what each model knows, so it
-        is the decision - no confirm behind it. The one thing it cannot show is
-        what the swap destroys: a deployed model with no copy in the library
-        exists only at that path, and this is the last chance to say so.
+        The picker is the decision - no confirm behind it - except a deployed
+        model with no library copy exists only at that path, so overwriting
+        that one asks.
         """
         result = (self._bundle or {}).get("result")
         if result is None or not result.model_path_from_talon or self._simulating():

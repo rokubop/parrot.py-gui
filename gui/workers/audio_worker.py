@@ -36,7 +36,6 @@ class AudioWorker(QThread):
         self.srt_path = ""
 
     def run(self):
-        # Ensure directories exist
         label_dir = os.path.join(RECORDINGS_FOLDER, self.label)
         source_dir = os.path.join(label_dir, "source")
         segments_dir = os.path.join(label_dir, "segments")
@@ -95,7 +94,6 @@ class AudioWorker(QThread):
                 if self._pause_requested:
                     self.recorder.pause()
                     while self._pause_requested and not self._stop_requested:
-                        # Drain queue while paused
                         while not audio_queue.empty():
                             audio_queue.get()
                         time.sleep(0.05)

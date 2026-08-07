@@ -18,8 +18,6 @@ class TrainingPlotWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         t = theme.colors()
-        # Every other plot in the app takes this; this one was left on
-        # pyqtgraph's default black.
         self.plot_widget = pg.PlotWidget(background=t["plot_bg"])
         plot = self.plot_widget.plotItem
         plot.setLabel('bottom', 'Epoch')

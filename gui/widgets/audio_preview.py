@@ -554,11 +554,9 @@ class AudioPreviewWidget(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         if event.double():
-            # Double-click resets: clear any selection and fit the whole clip.
             self._clear_selection()
             self.fit_full()
             return
-        # A plain click deselects and positions the playhead.
         self._clear_selection()
         x = self._vb.mapSceneToView(event.scenePos()).x()
         self.seeked.emit(max(0.0, min(x, self._duration)))

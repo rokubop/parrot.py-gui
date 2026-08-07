@@ -1,10 +1,6 @@
-"""About / concepts page.
-
-Explains the ideas a user needs to read the rest of the app: what a sound and
-a recording are, how detection/segmentation works, what the data-quantity
-rating means, and what models are. Pure read-only content; thresholds are
-pulled from the same source the rest of the app uses so the numbers never drift.
-"""
+"""About / concepts page: sounds, recordings, detection, data quantity, models.
+Read-only; thresholds come from the same source the app uses so the numbers
+never drift."""
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QLabel, QFrame
 

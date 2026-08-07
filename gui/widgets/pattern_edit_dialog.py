@@ -1,28 +1,23 @@
 """Guided editor for a single Talon pattern.
 
-Laid out like the card it edits: threshold (with detect_after) then the grace
-section (graceperiod with its rules) down the left, throttle down the right,
-so the dialog reads as the card made editable. A legend column
-sits past a rule on the far right, one entry per file key, so the areas are
-explained without hunting for tooltips. The dialog opens sized to its content
-and grows as rules are added, capped to the screen; the scroll area is
-overflow safety, not the plan.
+Laid out like the card it edits: threshold and grace down the left, throttle
+down the right, a legend column (one entry per file key) on the far right.
+The dialog opens sized to its content and grows as rules are added, capped to
+the screen; the scroll area is overflow safety, not the plan.
 
-A rule's op is its identity: it is picked once from the Add menu (which lists
-only the ops not already used) and then shown as a fixed label - the value
-spinner is the only thing that changes. Changing an op is remove + re-add,
-because ">power" never *becomes* ">probability"; the wheel and the keyboard
-can therefore only ever touch a value.
+A rule's op is its identity: picked once from the Add menu, then shown as a
+fixed label. Changing an op is remove + re-add, so the wheel and the keyboard
+can only ever touch a value.
 
-Every field is constrained to what the integration can actually consume:
-sounds come from the deployed model's classes, threshold ops from the schema
-authority, throttle targets from the existing pattern names. The Add menus
-keep an Other entry for future/unknown keys (warned, not blocked). Validation
-runs live on the draft; errors disable Save, warnings are shown but allowed.
+Every field is constrained to what the integration can consume: sounds from
+the deployed model, ops from the schema, throttle targets from the existing
+pattern names. The Add menus keep an Other entry for unknown keys (warned,
+not blocked). Validation runs live on the draft; errors disable Save,
+warnings are shown but allowed.
 
-Number fidelity: values that are whole numbers are written back as ints for
-power/formant fields (so ``">power": 6`` doesn't turn into ``6.0``), while
-probability / ratio / seconds keep their float form.
+Whole numbers are written back as ints for power/formant fields (so
+``">power": 6`` doesn't turn into ``6.0``); probability / ratio / seconds
+keep their float form.
 """
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -75,7 +70,6 @@ def _check_row(check, spin):
 
 
 def _section(text, t, color=None):
-    """Same idiom as the card, and now literally the same widget."""
     return components.section_label(text, color)
 
 

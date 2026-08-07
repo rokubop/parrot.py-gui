@@ -3,10 +3,6 @@
 Copied into ``<talon_user>/talon-parrotpy-bridge/`` where Talon auto-loads it.
 Installing is an explicit user action from the Integrations tab, never
 automatic: dropping a .py into the user dir takes effect live.
-
-Folder named for Roku's other Talon folders (talon-parrot-rig,
-talon-parrot-tester). Not "talon-parrotpy-tester", which is one letter from the
-tester repo it sits next to.
 """
 import os
 import re

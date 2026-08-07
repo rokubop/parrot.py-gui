@@ -52,10 +52,9 @@ class WaveformWidget(QWidget):
         self.plot_item = self.plot_widget.plot(pen=pg.mkPen(color='c', width=1))
         self._sample_rate = 48000
 
-        # Live view behaves like a DAW recorder: a *fixed* vertical scale and a
-        # fixed-width time window that scrolls to keep the record head at the
-        # right edge. Auto-ranging both axes every frame (the old behavior) made
-        # the waveform jump and constantly rescale, which was disorienting.
+        # Live view behaves like a DAW recorder: fixed vertical scale, fixed-
+        # width time window scrolling to keep the record head at the right
+        # edge. Auto-ranging every frame makes the waveform jump and rescale.
         self._vb = self.plot_widget.getViewBox()
         self._vb.disableAutoRange()
         self.plot_widget.setMouseEnabled(x=False, y=False)
@@ -140,11 +139,10 @@ class WaveformWidget(QWidget):
         sr = self._sample_rate
         window_samples = int(self.LIVE_WINDOW_SECONDS * sr)
 
-        # Decimate with a CONSTANT, window-based factor and align the start to
-        # that grid, so the exact samples drawn don't shift frame-to-frame. A
-        # buffer-based factor (the old way) re-picked different samples as the
-        # buffer grew, making the whole waveform subtly wiggle while the first
-        # window filled in.
+        # Decimate with a constant, window-based factor and align the start to
+        # that grid, so the exact samples drawn don't shift frame-to-frame - a
+        # buffer-based factor re-picks samples as the buffer grows and the
+        # waveform subtly wiggles.
         factor = max(1, window_samples // self.LIVE_DISPLAY_POINTS)
         start = max(0, buf.size - window_samples)
         start -= start % factor

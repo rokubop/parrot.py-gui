@@ -8,9 +8,9 @@ set VENV_ACTIVATE=%VENV_DIR%\Scripts\activate.bat
 set MARKER=%VENV_DIR%\.deps_installed
 
 :: Prebuilt relocatable CPython (python-build-standalone, maintained by Astral).
-:: Deliberately PINNED, not resolved to "latest" via the GitHub API — the API is
-:: rate-limited per IP, and two users installing a week apart should not get
-:: different interpreters. Keep these in sync with run.sh.
+:: Deliberately PINNED, not resolved to "latest" via the GitHub API: the API is
+:: rate-limited per IP (a shared NAT could fail to bootstrap), and a pin means
+:: every install gets the same interpreter. Keep these in sync with run.sh.
 set PBS_REPO=astral-sh/python-build-standalone
 set PBS_TAG=20260718
 set PBS_PY=3.13.14
@@ -35,7 +35,6 @@ echo.
 echo   Python %PYTHON_VERSION% is required but was not found.
 echo.
 
-:: Check network before offering install
 call :check_network
 
 echo   How would you like to install Python %PYTHON_VERSION%?
@@ -167,14 +166,13 @@ echo.
 :: Refresh PATH from registry so we pick up the new install without restarting the terminal
 call :refresh_path
 
-:: Try finding Python again
 call :find_python
 if defined PYTHON_CMD (
     echo   Found: !PYTHON_CMD!
     goto :found
 )
 
-:: Still not found via PATH — check common install locations directly
+:: Still not found via PATH - check common install locations directly
 call :find_python_direct
 if defined PYTHON_CMD (
     echo   Found: !PYTHON_CMD!
@@ -226,9 +224,9 @@ if exist "%VENV_DIR%\bin" (
 )
 
 :: --- Hand venv creation + dependency install to bootstrap.py ---
-:: bootstrap.py owns this step so the logic lives in one place instead of being
-:: duplicated here and in run.sh. It shows a progress window (stdlib tkinter, so
-:: it works before PyQt6 exists) and falls back to text when there's no display.
+:: bootstrap.py owns this so the logic lives once instead of here and in
+:: run.sh. Its progress window is stdlib tkinter (works before PyQt6 exists);
+:: it falls back to text when there's no display.
 "%PYTHON_CMD%" bootstrap.py --check
 if not errorlevel 1 (
     echo   Dependencies: up to date
@@ -308,7 +306,7 @@ exit /b 0
 :find_python
 set PYTHON_CMD=
 
-:: Our own cached self-contained interpreter wins — it's the one we manage
+:: Our own cached self-contained interpreter wins - it's the one we manage
 if exist "%PYTHON_DIR%\python.exe" (
     set "PYTHON_CMD=%PYTHON_DIR%\python.exe"
     exit /b 0
@@ -328,7 +326,6 @@ for %%C in (python3.13 python3 python) do (
 exit /b 1
 
 :find_python_direct
-:: Check common Windows install locations for Python 3.13
 set PYTHON_CMD=
 :: winget / official installer default locations
 for %%D in (
@@ -349,7 +346,6 @@ for %%D in (
 exit /b 1
 
 :check_network
-:: Verify network connectivity before attempting downloads
 curl -s --max-time 5 https://pypi.org >nul 2>&1
 if errorlevel 1 (
     ping -n 1 -w 3000 8.8.8.8 >nul 2>&1

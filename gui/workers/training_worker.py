@@ -1,27 +1,15 @@
 """Runs a training job and reports what it is doing.
 
-The trainer talks by printing. `load_pytorch_data` names every label and the
-sampling strategy it picked; `AudioDataset` names every label again as it
-indexes; the training loop prints loss and accuracy every ten minibatches, and
-per net accuracy at each validation. All of it went to a terminal nobody was
-looking at, while the GUI showed one sentence for the first several minutes and
-then a single line per epoch.
+The trainer talks by printing, so this captures stdout for the length of the
+run: every line is re-emitted verbatim for the page's CLI view, and the lines
+that carry structure are matched into typed signals. Capturing rather than
+threading a callback through lib/ keeps `learn_data.py` and the rest of the
+CLI untouched - the same words reach both.
 
-So this captures stdout for the duration of the run and does two things with it:
-re-emits every line verbatim, which is what the page's CLI view shows, and
-matches the handful of lines that carry structure into typed signals. Capturing
-rather than threading a callback through lib/ keeps `learn_data.py` and the rest
-of the CLI untouched - the same words reach both, and there is no second format
-to keep in sync.
-
-Two things to know about the capture:
-
-- `sys.stdout` is process global, so this swaps it for the length of the run and
-  restores it in a finally. Anything else printing meanwhile lands in the log,
-  which during a training run is the right place for it anyway.
-- The batch line arrives roughly four times a second at this library's size, not
-  the flood it looks like: 861 minibatches per net per epoch, printed one line in
-  ten, over an epoch measured in minutes.
+- `sys.stdout` is process global: swapped for the run, restored in a finally.
+  Anything else printing meanwhile lands in the log.
+- The batch line arrives roughly four times a second, not the flood it looks
+  like: one line in ten of ~861 minibatches per net per epoch.
 """
 import re
 import sys
@@ -191,12 +179,8 @@ class TrainingWorker(QThread):
     # ---- the run ---------------------------------------------------------
 
     def _train(self):
-        """Mirror lib/learn_data.py's Audio Net branch exactly.
-
-        This used to call a `load_data` that does not exist in
-        lib.machinelearning, so every GUI training run died at the import. The
-        real entry point is load_pytorch_data + an AudioDataset wrapper, and the
-        settings dict comes from the same helper the CLI uses so a GUI-trained
+        """Mirror lib/learn_data.py's Audio Net branch exactly: the same entry
+        points and the same settings helper the CLI uses, so a GUI-trained
         model is byte-comparable with a CLI-trained one.
         """
         # torch-importing modules stay function-local: pytorch is optional for

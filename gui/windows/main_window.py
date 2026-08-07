@@ -24,7 +24,6 @@ class MainWindow(QMainWindow):
 
         self.app_state = AppState(self)
 
-        # Central stacked widget
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
@@ -55,10 +54,8 @@ class MainWindow(QMainWindow):
         # 16px against 13px text. The default 24 makes the two icons shout over
         # the six nav tabs, which carry no icon at all.
         toolbar.setIconSize(QSize(16, 16))
-        # A toolbar defaults to icon-only, and falls back to the text when a
-        # button has no icon - which is why the six nav tabs read fine while
-        # they had none. Giving the profile chip and Notes an icon silently
-        # dropped both labels.
+        # A toolbar defaults to icon-only with text fallback; giving the profile
+        # chip and Notes an icon silently dropped both labels without this.
         toolbar.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
@@ -66,9 +63,8 @@ class MainWindow(QMainWindow):
         self._nav_group.setExclusive(True)
 
         self.nav_actions = {}
-        # "Integrations" rather than "Talon": Talon is the one that exists, but
-        # the tab is the place where this app meets another, and naming it after
-        # the only current occupant made a second one look like a redesign.
+        # "Integrations", not "Talon": the tab is where this app meets others,
+        # even though Talon is the only one today.
         for text in ("Home", "Sounds", "Models", "Integrations",
                      "Settings", "About"):
             action = QAction(text, self)
@@ -108,15 +104,12 @@ class MainWindow(QMainWindow):
         self.notes_dock.visibilityChanged.connect(notes_action.setChecked)
         toolbar.addAction(notes_action)
 
-        # Status bar: the active keybindings for whatever view is showing.
-        # The keybinding hint is the single, always-in-the-same-place home for
-        # shortcuts - each page reports its own. Nothing may call showMessage()
-        # here: temporary messages hide left-side (non-permanent) widgets.
+        # Status bar: each page's keybindings. Nothing may call showMessage()
+        # here - temporary messages hide the non-permanent widgets.
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        # A run survives leaving the training page, so something has to say so.
-        # Without it a 4-6 hour job is invisible the moment you switch tabs, and
-        # the only way back is + New model, which looks like starting over.
+        # A run survives leaving the training page; without this a multi-hour
+        # job is invisible the moment you switch tabs.
         self.training_chip = QPushButton("")
         self.training_chip.setFlat(True)
         self.training_chip.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -235,11 +228,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(view)
 
     def _on_training_state(self, text):
-        """Live run, or "" for none. Click returns to it.
-
-        Worded rather than badged: a glyph here would be the only one in the
-        status bar, and which glyphs actually resolve depends on the machine.
-        """
+        """Live run, or "" for none. Click returns to it. Worded, not a glyph:
+        which glyphs resolve depends on the machine."""
         self.training_chip.setText(f"Training {text}" if text else "")
         self.training_chip.setVisible(bool(text))
 
@@ -301,14 +291,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, QApplication.instance().quit)
 
     def at_risk(self):
-        """Everything a relaunch or a quit would throw away, in words.
-
-        A training run was the only thing this used to know about, so switching
-        profiles could silently drop an edited patterns draft or a half-edited
-        recording. Anything that relaunches asks the same question now, and the
-        answer names what is actually at stake rather than saying "unsaved
-        work".
-        """
+        """Everything a relaunch or a quit would throw away, in words."""
         losses = []
         if self.training_chip.isVisible():
             losses.append(f"{self.training_chip.text()} is still running")
@@ -325,17 +308,9 @@ class MainWindow(QMainWindow):
     def confirm_closing(self, title, verb, restart_reason=None):
         """True if the user accepts the app going away.
 
-        `restart_reason` completes "Parrot.py needs to restart to ___", and
-        passing one is what makes this always ask. One rule, both ways round
-        it: **a restart always asks**, and quitting asks only when something is
-        at stake. An app disappearing and coming back is jarring however
-        deliberate the click was, and there is no undo for it; the X, by
-        contrast, is someone saying "go away" and being asked to confirm
-        nothing.
-
-        The lead says why, not what was lost, because most of the time nothing
-        is - the loss list is the exception and reads as one. The go button is
-        only styled destructive when there is actually something to destroy.
+        `restart_reason` completes "Parrot.py needs to restart to ___" and
+        makes this always ask: a restart always asks, quitting asks only when
+        something is at stake.
         """
         losses = self.at_risk()
         if not losses and restart_reason is None:
@@ -371,12 +346,9 @@ class MainWindow(QMainWindow):
     def _build_zoom_shortcuts(self):
         """Ctrl +/- steps the interface size; Ctrl+0 goes back to 100%.
 
-        Qt reads the scale factor once, when the QApplication is built, so this
-        cannot repaint in place - it is a relaunch. Hence the delay: the keys
-        move a pending value and show it, and the restart happens ~1.5 s after
-        you stop pressing. Three presses cost one restart, and stepping back to
-        where you started cancels it entirely rather than restarting into the
-        size you already had.
+        Qt reads the scale factor once, at QApplication build, so applying is a
+        relaunch. The keys move a pending value; the restart fires ~1.5 s after
+        the last press, and stepping back to the current size cancels it.
         """
         self._zoom_pending = None
         self._zoom_timer = QTimer(self)
@@ -414,9 +386,7 @@ class MainWindow(QMainWindow):
             self._zoom_timer.stop()
             self._show_zoom_toast(f"Interface size {pending:.0%}")
             return
-        # Not "restarting…": a confirm comes first, and the pause before it is
-        # there so a run of presses asks once. Ctrl - back to where you were
-        # and nothing is asked at all.
+        # Not "restarting…": a confirm comes first.
         self._show_zoom_toast(f"Interface size {pending:.0%}  ·  restart to apply")
         self._zoom_timer.start()
 

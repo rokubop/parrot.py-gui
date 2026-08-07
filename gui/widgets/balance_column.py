@@ -1,18 +1,13 @@
-"""The balance bar, drawn inside the sound table instead of beside it.
+"""The balance bar, drawn inside the sound table as a column.
 
-The training page used to carry the checklist on the left and a separate bar
-chart on the right, which is the same twenty labels drawn twice with the reader
-doing the join. One column, painted per row, says it once.
+Solid is what the trainer loads. Past the recorded length it is hatched: the
+same audio again, counted twice rather than learned twice. Short of the
+recorded length it is a hollow tail: recorded, not used. The dashed line is
+the target every label is being pulled toward.
 
-Solid is what the trainer loads. Past the recorded length it is hatched, because
-that part is the same audio again rather than anything new - the distinction
-matters, since a sound at +100% has not learned twice as much, it has been
-counted twice. Short of the recorded length it is a hollow tail: recorded, not
-used. The dashed line is the target every label is being pulled toward.
-
-A delegate rather than one widget per row: the table repaints on every tick of
-the checklist, and twenty child widgets re-laid-out per tick is how a list starts
-feeling heavy.
+A delegate rather than one widget per row: the table repaints on every tick
+of the checklist, and twenty child widgets re-laid-out per tick is how a list
+starts feeling heavy.
 """
 from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QColor, QPen, QPainter
@@ -29,13 +24,9 @@ WARN = "#e0b020"
 
 
 def _stripe(painter, rect, color, background):
-    """Diagonal stripes drawn by hand.
-
-    Qt's BDiagPattern is a 1px hatch on an 8px grid, which at bar height is a
-    faint texture rather than a pattern - it read as "slightly different green"
-    instead of "this part is repeated". These are 2px on a 4px pitch, clipped to
-    the block, which survives being 13 pixels tall.
-    """
+    """Diagonal stripes drawn by hand: Qt's BDiagPattern is a 1px hatch on an
+    8px grid, a faint texture at 13px bar height. These are 2px on a 4px
+    pitch, clipped to the block."""
     painter.save()
     painter.setClipRect(rect)
     painter.fillRect(rect, background)
@@ -51,13 +42,7 @@ def _stripe(painter, rect, color, background):
 
 
 class BalanceBarDelegate(QStyledItemDelegate):
-    """Paints one label's before/after against the shared target line.
-
-    Carries the whole story on its own: the column that used to spell out
-    "Oversampled +100%" beside it is gone. Twenty rows of that text turned a
-    glanceable list into a wall of vocabulary, and the words are in the legend
-    once, where they can be read once.
-    """
+    """Paints one label's before/after against the shared target line."""
 
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
@@ -92,8 +77,7 @@ class BalanceBarDelegate(QStyledItemDelegate):
                                 BAR_HEIGHT))
 
         if loaded > size:
-            # The same audio again. Striped, because it is not more recording -
-            # a label at +100% has been counted twice, not learned twice.
+            # The same audio again - striped.
             block = QRectF(x_of(size), y, x_of(loaded) - x_of(size), BAR_HEIGHT)
             tint = QColor(WARN if short else t["accent"])
             tint.setAlpha(70)
@@ -114,12 +98,8 @@ class BalanceBarDelegate(QStyledItemDelegate):
 
 
 class _Swatch(QWidget):
-    """A sample painted by the same code as the column.
-
-    Drawn rather than approximated in a stylesheet: a legend whose stripes are a
-    slightly different gradient from the real ones teaches the wrong thing, and
-    the stripe pitch is the whole point of this one.
-    """
+    """A sample painted by the same code as the column, so the legend's
+    stripes match the real ones exactly."""
     WIDTH = 46
 
     def __init__(self, kind, parent=None):
@@ -166,9 +146,9 @@ class _Swatch(QWidget):
 def balance_legend(parent=None):
     """What each kind of bar means, once, instead of on every row.
 
-    The terms are the trainer's own - the log prints "using oversampling: +27%"
-    while the run goes - so they are taught here rather than replaced with
-    something friendlier that would leave the two halves of the app disagreeing.
+    The terms are the trainer's own (the log prints "using oversampling:
+    +27%"), so they are taught here rather than replaced with friendlier words
+    that would disagree with the log.
     """
     t = theme.colors()
     box = QWidget(parent)

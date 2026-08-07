@@ -35,7 +35,7 @@ def _write_burst_wav(path, seconds, seed):
     envelopes, so detection's auto-calibration sees the same shape a real
     take of a popped sound has. A floor near the threshold estimate (or
     uniform, back-to-back bursts) makes calibration classify the whole file
-    as one endless sound and emit no events - learned the hard way."""
+    as one endless sound and emit no events."""
     rng = np.random.default_rng(seed)
     n = int(seconds * RATE)
     audio = rng.normal(0, 5, n)  # ~-76 dBFS floor, well under any threshold

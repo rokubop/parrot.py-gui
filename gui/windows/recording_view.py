@@ -1,17 +1,10 @@
 """Dedicated recording view - a record/review/edit loop.
 
-The flow the screen supports:
-  pick mic(s) -> Record -> make sounds -> Pause (space) -> scrub & play back the
-  take -> drag-select a bad part and Delete it -> Resume to keep recording ->
-  ... -> Done.
-
-How it works without editing a live stream: a "take" is a single growing WAV
-file. Each Record->Pause captures a *segment*; the first segment becomes the
-take, later segments are appended onto it (AppendWorker). While paused you're
-looking at the whole take in the interactive preview, so play/scrub/select and
-Delete (TrimWorker) all operate on a static file - no risky mid-stream splicing.
-Resume records the next segment. The take file lives in the sound from the first
-segment on, so it's always saved.
+A "take" is a single growing WAV: each Record->Pause captures a segment; the
+first becomes the take, later ones are appended onto it (AppendWorker). While
+paused the whole take shows in the interactive preview, so play/scrub/Delete
+(TrimWorker) operate on a static file - no mid-stream splicing. The take lives
+in the sound from the first segment on, so it's always saved.
 """
 import time
 import numpy as np
@@ -42,8 +35,7 @@ def _quality_from_snr(snr, ms_recorded):
     if ms_recorded <= 10000:
         return "-", theme.colors()["text_dim"]
     t = theme.colors()
-    # Ends from the theme, graded middle not. The old "Unusable" red measured
-    # 3.47 on a card.
+    # Ends from the theme, graded middle colors literal.
     bands = [(25, "Excellent", t["ok"]), (20, "Great", t["ok"]),
              (15, "Good", "#5ac8e0"), (10, "Average", "#e0b020"),
              (7, "Poor", "#e0853a")]
@@ -352,11 +344,8 @@ class RecordingView(QWidget):
 
     # state -> (primary text, primary color, indicator text, indicator color,
     #           live trace color)
-    #
-    # "Ready" takes None for its colour and resolves to the theme's dim text.
-    # It was a literal copy of text_dim, which then sat at the old low-contrast
-    # value after the token was fixed. The rest are literal because they are
-    # states rather than text tiers.
+    # None resolves to the theme's dim text; the rest are state colors, not
+    # text tiers, so they stay literal.
     _STATES = {
         "idle":      ("● Record", "#c0463f", "● Ready",     None,      (90, 230, 150)),
         "recording": ("❚❚ Pause", None,      "● Recording", "#e0534f", (224, 83, 79)),
@@ -789,10 +778,9 @@ class RecordingView(QWidget):
         self.play_btn.setText("▶ Play")
 
     def _heard_position(self):
-        """Where playback has actually reached, in seconds. The clock starts
-        when play() is called but the audio only leaves the device a buffer
-        later, so without subtracting that the playhead sits ahead of what
-        you're hearing - and points past the blip you were auditioning."""
+        """Where playback has actually reached, in seconds. Audio leaves the
+        device a buffer after play(), so subtract that latency or the playhead
+        runs ahead of what you're hearing."""
         return self._play_from + max(0.0, self._clock.elapsed() / 1000.0 - self._latency)
 
     def _tick(self):

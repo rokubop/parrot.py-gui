@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 """First-run environment bootstrap: create the venv and install dependencies.
 
-This runs BEFORE the application's dependencies exist, so it must import
-nothing outside the standard library — no PyQt6, no numpy. The progress UI is
-tkinter, which ships with CPython (including the python-build-standalone builds
-that run.sh/run.bat download).
+Runs BEFORE the application's dependencies exist, so stdlib only - no PyQt6,
+no numpy. The progress UI is tkinter, which ships with CPython (including the
+python-build-standalone builds that run.sh/run.bat download); it falls back to
+plain text when tkinter or a display is unavailable, or with --console.
 
-Two faces, one code path:
-
-    python bootstrap.py            GUI progress window, falls back to console
-                                   if tkinter or a display is unavailable
-    python bootstrap.py --console  plain text, for CI and headless machines
-
-Owning this step here rather than in run.sh and run.bat keeps the venv/pip
-logic in one place instead of three. The run scripts still handle acquiring
-Python (they have to — this file needs an interpreter to run at all) and
-launching the app afterwards.
+Lives here rather than in run.sh and run.bat so the venv/pip logic is written
+once. The run scripts still acquire Python (this file needs an interpreter to
+run at all) and launch the app afterwards.
 
 Exit codes:  0 environment ready   1 failed   2 cancelled by the user
 """
@@ -47,8 +40,7 @@ ICON_DIR = ROOT / "gui" / "assets"
 # with PYTHON_VERSION in run.sh / run.bat.
 REQUIRED_PYTHON = (3, 13)
 
-# Setup as a checklist: the GUI draws a row per step, the console prints each
-# one as it lands. Both faces are driven by the same Bootstrapper callback.
+# Checklist steps: the GUI draws a row per step, the console prints each as it lands
 STEP_PYTHON = "python"
 STEP_VENV = "venv"
 STEP_DOWNLOAD = "download"
@@ -324,7 +316,7 @@ class Bootstrapper:
     def _read_pip_line(self, line: str) -> bool:
         """Drive the phase and package displays. False means do not log it.
 
-        pip's lines carry the whole requirements path — "Collecting requests
+        pip's lines carry the whole requirements path - "Collecting requests
         (from -r /Users/.../requirements-posix.txt (line 1))" — so they can't
         be shown raw.
         """
@@ -637,8 +629,7 @@ def run_gui() -> int:
     bar.pack(fill="x", pady=(6, 10))
     bar.start(12)
 
-    # Details pane, collapsed by default but expanded on first run so the user
-    # can see it is doing something rather than staring at a bar.
+    # Details start expanded so a first run visibly does something
     details_shown = tk.BooleanVar(value=True)
     toggle_row = ttk.Frame(outer)
     toggle_row.pack(fill="x")
@@ -711,7 +702,7 @@ def run_gui() -> int:
             messages.put(("cancelled", ""))
         except RuntimeError as exc:
             messages.put(("error", str(exc)))
-        except Exception as exc:  # unexpected — still needs to reach the user
+        except Exception as exc:  # unexpected - still needs to reach the user
             messages.put(("error", f"{type(exc).__name__}: {exc}"))
 
     def finish(code: int, phase_text: str, *, failed: bool) -> None:

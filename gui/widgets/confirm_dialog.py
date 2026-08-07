@@ -102,14 +102,12 @@ class _ConfirmDialog(QDialog):
         self._confirm_btn = QPushButton(confirm_label)
         self._confirm_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._confirm_btn.setEnabled(False)
-        # Red, destructive styling so it's visually distinct from a safe action.
         self._confirm_btn.setStyleSheet(
             "QPushButton { background-color: #b03636; border: 1px solid #d14b4b;"
             " color: #ffffff; font-weight: bold; }"
             " QPushButton:hover { background-color: #c44141; }"
-            # The label of the button you are being asked to unlock has to be
-            # readable while it is still locked. #8a7575 measured 2.92 on this
-            # fill; #ab9494 is 4.42 and still reads as off.
+            # The button you are asked to unlock must be readable while still
+            # locked: #ab9494 measures 4.42 on this fill and still reads as off.
             " QPushButton:disabled { background-color: #4c2a2a; color: #ab9494;"
             " border-color: #5e3636; }")
         self._confirm_btn.clicked.connect(self.accept)

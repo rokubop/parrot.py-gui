@@ -105,9 +105,6 @@ class SettingsPage(QWidget):
         layout.addWidget(audio_group)
 
         # ---- Display ----
-        # Above the audio settings because it is the one thing here that is
-        # about the app rather than about the sound, and the one a returning
-        # user on a bigger monitor comes looking for.
         display_group = QGroupBox("Display")
         display_form = QFormLayout(display_group)
         display_form.setSpacing(10)
@@ -214,9 +211,8 @@ class SettingsPage(QWidget):
         value = self.scale_combo.currentData()
         if value == self._scale_now:
             return
-        # The window knows what a restart would throw away - a training run, an
-        # undeployed patterns draft, unsaved edits - and names it. Falls back to
-        # a plain question only when this page is not inside the main window.
+        # The main window can name what a restart would throw away; plain
+        # question when this page is hosted elsewhere.
         window = self.window()
         if hasattr(window, "confirm_closing"):
             accepted = window.confirm_closing(
@@ -235,9 +231,7 @@ class SettingsPage(QWidget):
             return
         ui_prefs.set_scale(value)
         env = dict(os.environ)
-        # This process has the old factor in its environment, and an explicit
-        # one wins over the file. Drop it so the new process reads what was
-        # just written.
+        # This process carries the old factor; an explicit one beats the file.
         env.pop(ui_prefs.ENV, None)
         profiles.relaunch(env)
         QTimer.singleShot(0, QApplication.instance().quit)

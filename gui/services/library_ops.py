@@ -198,12 +198,10 @@ def mics_for_labels(labels):
     """What these sounds were recorded with, as
     {"names": [...], "indices": [...], "named": n, "takes": n}.
 
-    Names come only from sidecars, so they cover the takes made since sidecars
-    existed. Indices come from every filename but are never turned into names -
-    device indices shift when hardware changes, so a late lookup would
-    confidently name the wrong microphone. They are here to count *how many*
-    mics are involved, which the names alone cannot say when most takes predate
-    the sidecar. Callers should show names and fall back to a count.
+    Names come only from sidecars. Indices come from every filename but are
+    never turned into names - device indices shift when hardware changes, so a
+    late lookup would name the wrong microphone; they only count how many mics
+    were involved. Callers should show names and fall back to a count.
     """
     names, indices, named, takes = [], [], 0, 0
     for label in labels:
@@ -231,9 +229,7 @@ def mics_for_labels(labels):
 def describe_mics(summary):
     """One line for a mic summary, or "" when there is nothing to say.
 
-    Never prints mici_<n>: an index looks like an identity and is not one. When
-    nothing is named it says how many were involved and no more, which is the
-    whole of what the filenames can honestly support.
+    Never prints mici_<n>: an index looks like an identity and is not one.
     """
     if not summary:
         return ""

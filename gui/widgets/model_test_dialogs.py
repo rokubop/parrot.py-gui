@@ -247,11 +247,10 @@ class LiveTestDialog(QDialog):
         self._ensure_bars(sorted(probabilities.keys()))
         t = theme.colors()
 
-        # Below the line the bars are emptied once and then left alone, so the
-        # panel is still whenever nothing is being said into the mic. Holding
-        # the last values instead would read as a stuck reading, and letting
-        # them run is the twitching this gate exists to stop. The level below
-        # keeps updating - it is what you set the slider against.
+        # Below the line the bars are emptied once and then left alone:
+        # holding the last values reads as stuck, letting them run is the
+        # twitching this gate exists to stop. The level below keeps updating -
+        # it is what you set the slider against.
         if dbfs < self._min_dbfs:
             if not self._quiet_shown:
                 self._quiet_shown = True

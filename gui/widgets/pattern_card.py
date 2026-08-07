@@ -338,7 +338,7 @@ class PatternCard(QFrame):
     def _apply_style(self):
         t = theme.colors()
         border = t["accent"] if self._selected else t["border"]
-        # Scoped per qt-traps: unscoped, this recolours every label inside.
+        # Scoped: unscoped, this recolours every label inside.
         self.setStyleSheet(
             f"QFrame#patternCard {{ background-color: {t['panel']}; "
             f"border: 1px solid {border}; "

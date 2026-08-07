@@ -25,10 +25,8 @@ def get_grouped_data_directories( labels ):
     return grouped_data_directories
 
 def resolved_balance(silence="all", balance_sounds=None):
-    """The values load_pytorch_data will actually apply, given the same
-    arguments. Exists so a caller can record what a run was told to do without
-    restating the None-means-config rule and drifting from it.
-    """
+    """The values load_pytorch_data will actually apply given the same
+    arguments, so callers can record them without restating the defaults."""
     return {"silence": silence,
             "balance_sounds": (AUTOMATIC_DATASET_BALANCING
                                if balance_sounds is None
@@ -40,11 +38,8 @@ def generate_data_balance_strategy_map(grouped_data_directories, silence="all",
     """balance_sounds: oversample thin labels (2x cap), undersample fat ones.
     None means AUTOMATIC_DATASET_BALANCING, which is what the CLI does.
 
-    silence: "all" keeps every quiet frame (the default since 0dac680e in 2024,
-    and what every model in the wild trained with), "balanced" gives it one
-    label's ration, "none" leaves the class out entirely - which is what the
-    models that predate the class did.
-    See memory/silence-is-most-of-the-training-set.md.
+    silence: "all" keeps every quiet frame (the default since 0dac680e),
+    "balanced" gives it one label's ration, "none" leaves the class out.
     """
     if balance_sounds is None:
         balance_sounds = AUTOMATIC_DATASET_BALANCING
@@ -295,8 +290,8 @@ def load_pytorch_data( filtered_data_directory_names, input_type, silence="all",
 
     dataset = {}
     augmented = {}
-    # "none" drops the class outright. Models that predate it work fine in
-    # Talon: listen.py fills a silence probability in when it is missing.
+    # "none" drops the class outright; listen.py fills a silence probability
+    # in when a model lacks it.
     keep_silence = silence != "none"
     if keep_silence:
         dataset[BACKGROUND_LABEL] = []

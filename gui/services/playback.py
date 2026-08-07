@@ -1,26 +1,18 @@
 """Preview playback that survives a busy UI thread.
 
-`sd.play()` runs its callback *in Python*, so every buffer needs the GIL. A
-preview repaints its playhead on a 16 ms timer and each repaint holds the main
-thread ~4 ms (more with many detection regions overlaid) - long enough for the
-callback to miss its deadline. Playback came out crackling while the recorded
-file itself was bit-perfect, which is what made this look like a recording bug.
-
-PortAudio's blocking `write()` API buffers in C, so a stalled main thread can no
-longer reach the device. Writing happens on a worker thread; nothing Python sits
-in the audio path.
+`sd.play()` runs its callback in Python, so every buffer needs the GIL, and
+playhead repaints hold the main thread long enough for the callback to miss
+its deadline - playback crackles. PortAudio's blocking `write()` buffers in C,
+so writing happens on a worker thread; nothing Python sits in the audio path.
 
 One stream at a time, matching the old `sd.play()` / `sd.stop()` behaviour:
 starting a clip replaces whatever was playing. The output device follows
 `sd.default`, which the device toolbar sets (see audio_devices.py).
 
-Buffering is kept as small as CoreAudio allows (~133 ms at 16 kHz) rather than
-as large as possible. Latency is not free here: auditioning a few frames before
-deciding where to cut is a core interaction, and `blocksize=1024` measured 388 ms
-- three times the floor - which is plainly audible as lag. `play()` therefore
-returns the stream's real latency so callers can hold their playhead back by it;
-otherwise the line runs ahead of the sound and points past the thing you're
-listening for.
+Buffering stays as small as CoreAudio allows (~133 ms at 16 kHz): auditioning
+a few frames before deciding where to cut is a core interaction, and larger
+blocks are audible lag. `play()` returns the stream's real latency so callers
+can hold their playhead back by it.
 """
 import threading
 

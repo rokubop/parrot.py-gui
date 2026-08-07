@@ -81,8 +81,7 @@ def learn_data():
         print( "--------------------------" )
         data = load_pytorch_data(dataset_labels, settings["FEATURE_ENGINEERING_TYPE"])        
         dataset = AudioDataset( data )
-        # The CLI takes load_pytorch_data's defaults rather than asking, so
-        # record those - a CLI model should describe itself like a GUI one.
+        # Record the defaults so a CLI model describes itself like a GUI one.
         trainer = AudioNetTrainer(dataset, net_count, settings,
                                   run_settings=resolved_balance())
         

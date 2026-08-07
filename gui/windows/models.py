@@ -1,30 +1,11 @@
 """Models tab - the library of trained models.
 
-Shaped like the Sounds tab: a three-column list on the left with one primary
-action under it, and a header panel on the right carrying the selected model's
-identity, the two actions that answer "does it work?" (Test live / Test
-accuracy), and a quiet row of management actions. Training itself is a sub-view
-(train_view.py), so a user with no models sees an empty state and a single call
-to action instead of a disabled details panel.
+Shaped like the Sounds tab: list on the left, header panel + details on the
+right. Training itself is a sub-view (train_view.py).
 
-The list answers the questions someone has after months away - which one is
-Talon running, which did I make last, does it know the sounds I record, what
-does it cost to run - so it carries a date, a sound count, a net count and a
-live tick, newest first.
-
-Net count belongs here rather than only on the training page: every net runs on
-every frame and the scores are averaged (TinyAudioNetEnsemble.forward), so it is
-not a spent training decision but part of what the model costs to run. The
-averaging is said in the column tooltip and the help, not in the value.
-
-The "~2% of a CPU core per net" figure this file used to quote is not repeated
-in any user-facing string, here or in the help: nobody has measured it on a
-machine we can name. Put it back once someone has.
-
-Every action in the header is also on the list's right-click menu, which is
-where someone with a dozen models looks for them.
-
-Destructive actions (delete) go through the two-step confirm dialog.
+Net count is listed alongside date and sounds because every net runs on every
+frame and the scores are averaged (TinyAudioNetEnsemble.forward), so it is
+part of what the model costs to run, not a spent training decision.
 """
 import os
 import time
@@ -55,16 +36,9 @@ UNSURE_DATE_TIP = ("File date, not a training record. Copying or restoring "
 
 
 def _trained_when(when, source="checkpoint"):
-    """Aimed at someone opening this after months away, so the anchor is the
-    date, not "313 days ago". Always carries the year: a bare "Aug 22" reads as
-    this year, and the gap between sessions here is measured in months. Relative
-    only for the week where it beats a date at answering "is this the one I just
-    made?".
-
-    A "mtime" source is the file's date rather than a record of training, so it
-    gets a ~ and never a relative form - "Yesterday" claims a precision we do
-    not have, where "~Feb 22, 2026" reads as the approximation it is.
-    """
+    """Absolute date with year (gaps here are measured in months); relative
+    only within a week. An "mtime" source is a file date, not a training
+    record, so it gets a ~ and never a relative form."""
     if not when:
         return ""
     stamp = time.localtime(when)
@@ -97,9 +71,8 @@ def _span(values, fmt):
 
 
 def _net_scores(meta):
-    """Per net, unqualified: it sits under a heading that already says these are
-    the networks. Never averaged into one figure - the ensemble means
-    probabilities, so its accuracy is not the mean of these."""
+    """Per-net accuracy span. Never averaged into one figure - the ensemble
+    means probabilities, so its accuracy is not the mean of these."""
     nets = meta.get("nets") or []
     scores = [n["accuracy"] for n in nets if n.get("accuracy") is not None]
     if not scores:
@@ -109,11 +82,7 @@ def _net_scores(meta):
 
 def _best_epochs(meta):
     """+1 throughout: the trainer counts from zero, every screen from one.
-
-    A range here is not decoration: each net's BEST checkpoint is written at its
-    own peak, so this is why the per-sound figures in the table below come from
-    several different moments and cannot match any single number from the run.
-    """
+    Each net's BEST checkpoint lands at its own peak epoch, hence the range."""
     epochs = [n["epoch"] for n in (meta.get("nets") or [])
               if n.get("epoch") is not None]
     if not epochs:
@@ -122,18 +91,9 @@ def _best_epochs(meta):
 
 
 def _combined_score(meta):
-    """What the nets scored together, which is how they are used - so this is
-    the model's accuracy, and it belongs beside what the model is rather than
-    among the networks.
-
-    Unqualified for the same reason as _net_scores: "combined" was there to tell
-    it apart from the per-net figure sitting in the same row, and they are no
-    longer in the same row. Note it is not bounded by the per-net span - an
-    ensemble can beat every net in it.
-
-    Belongs to the epoch, not the net, so take the highest epoch: the last
-    measurement rather than an arbitrary one.
-    """
+    """The ensemble's own score - the model's accuracy as it is used. Not
+    bounded by the per-net span (an ensemble can beat every net in it).
+    Highest epoch = the last measurement."""
     scored = [n for n in (meta.get("nets") or [])
               if n.get("combined_accuracy") is not None
               and n.get("epoch") is not None]
@@ -157,37 +117,26 @@ def _training_data(meta):
 
 
 def _facts_sections(meta, sound_count=None):
-    """[(heading, [(label, value)])], all read out of the model itself. Anything
-    measured off the recordings folder belongs in the sound notes.
-
-    Three questions kept apart: what the model is, what it was trained on, what
-    the networks did. The third has a heading so its rows can drop "per network".
-    Sections come up short on old models rather than showing blanks.
-    """
+    """[(heading, [(label, value)])], all read out of the model itself; nothing
+    measured off the recordings folder. Sections come up short on old models
+    rather than showing blanks."""
     t = theme.colors()
     # Talon is pointed at a path, so the pkl is the answer to "which file is
     # this" even though the weights are counted in Size alongside it.
     now = [("File", meta["name"] + ".pkl")]
     if sound_count:
         now.append(("Sounds", sound_count))
-    # The ensemble's own score, which is the model as Talon runs it. Sat at the
-    # bottom of the training facts before, under the least-read heading on the
-    # card; it is the number anyone is actually here for.
-    #
-    # Models trained before combined_accuracy existed have no ensemble figure at
-    # all, so they fall back to the per-net span rather than showing nothing -
-    # the headline is where an accuracy has to appear. The networks section then
-    # drops its own copy, below, instead of printing the same range twice.
+    # Models trained before combined_accuracy existed fall back to the per-net
+    # span rather than showing nothing; the networks section then drops its own
+    # copy instead of printing the same range twice.
     combined = _combined_score(meta)
     headline = combined or _net_scores(meta)
     if headline:
         now.append(("Accuracy", headline))
     if meta.get("trained_at"):
         when = _trained_when(meta["trained_at"], meta.get("trained_at_source"))
-        # A file date is not a training date: a copied data dir restamps every
-        # pkl. "Unknown" is the answer to the question; the date follows as the
-        # only related fact, keeping the ~ that _trained_when already puts on an
-        # approximation rather than restating it in words.
+        # A file date is not a training date (a copied data dir restamps every
+        # pkl), so lead with "Unknown" and give the date as the related fact.
         now.append(("Trained",
                     f"Unknown   <span style='color:{t['text_dim']};'>"
                     f"({when})</span>"
@@ -195,9 +144,8 @@ def _facts_sections(meta, sound_count=None):
     now.append(("Size", _human_size(meta["total_size_bytes"])))
 
     how = []
-    # "Trained on 11 minutes" sat under "Trained: yesterday" and read as the run
-    # having taken 11 minutes, which for a 4-6 hour job is badly wrong. "Audio"
-    # cannot be read as a duration of anything but audio.
+    # "Audio", not a bare duration: under "Trained: yesterday" it read as how
+    # long the run took.
     audio = _training_data(meta)
     if audio:
         how.append(("Audio", audio))
@@ -206,8 +154,7 @@ def _facts_sections(meta, sound_count=None):
     mics = library_ops.describe_mics(meta.get("source_mics"))
     if mics:
         how.append(("Microphones", mics))
-    # Wording follows the training screen's own controls, so the answer reads
-    # as the setting you picked rather than as a second vocabulary.
+    # Wording follows the training screen's own controls.
     run = meta.get("run_settings") or {}
     if "balance_sounds" in run:
         how.append(("Balance sounds", "On" if run["balance_sounds"] else "Off"))
@@ -215,9 +162,8 @@ def _facts_sections(meta, sound_count=None):
         how.append(("Silence", {"all": "Include all", "balanced": "Balanced",
                                 "none": "Omit"}.get(run["silence"],
                                                     run["silence"])))
-    # One net is not an ensemble: its score is already the model's, above, and
-    # repeating it here under a heading that promises a per-network breakdown
-    # would be the same measurement twice. Its best epoch is still its own fact.
+    # One net is not an ensemble: its score is already the model's, above.
+    # Its best epoch is still its own fact.
     count = len([n for n in (meta.get("nets") or []) if n.get("accuracy")])
     each = []
     if count > 1 and combined:
@@ -227,24 +173,16 @@ def _facts_sections(meta, sound_count=None):
         each.append(("Best epoch", epochs))
 
     nets = meta["net_count"]
-    # The count rides in the heading rather than taking a row of its own, which
-    # is what makes the section pay for itself: it replaces a row instead of
-    # only adding one.
     heading = f"Neural networks ({nets})" if nets else "Neural networks"
-    # "Training data", not "Recordings": the audio figure is post-balancing, so
-    # it is not what sits on disk and can exceed it where thin sounds were
-    # repeated. Balance and Silence ride here because they are what made it
-    # differ, so the setting explaining the number is next to the number.
+    # "Training data", not "Recordings": the audio figure is post-balancing and
+    # can exceed what is on disk. Balance and Silence ride here because they
+    # are what made it differ.
     return [("Model info", now), ("Training data", how), (heading, each)]
 
 
 def facts_html(meta, sound_count=None):
-    """The sections as one table, not one table per section: both columns then
-    line up down the whole card instead of per heading.
-
-    Public because the Integrations tab's model picker shows the same facts -
-    choosing which model Talon runs asks the same questions as reading one.
-    """
+    """The sections as one table so the columns line up down the whole card.
+    Public because the Integrations tab's model picker shows the same facts."""
     t = theme.colors()
     parts = []
     for heading, facts in _facts_sections(meta, sound_count):
@@ -263,11 +201,7 @@ def facts_html(meta, sound_count=None):
 
 def label_scores(meta):
     """Per sound, what each net scored on the held-back split: {label: (text,
-    worst)}. Sorted on the worst net, so ordering answers "weakest sound".
-
-    Empty on models trained before the field existed. Blank beats a number
-    measured off the recordings folder, which is what used to sit here.
-    """
+    worst)}. Empty on models trained before the field existed."""
     per_net = [n["label_accuracy"] for n in (meta.get("nets") or [])
                if n.get("label_accuracy")]
     if not per_net:
@@ -404,22 +338,15 @@ class ModelsPage(QWidget):
             self._on_list_context_menu)
         left_layout.addWidget(self.model_list)
 
-        # "+ New model", to the Sounds tab's "+ New sound" - the two lists are
-        # built the same way and their one primary action should read the same.
-        #
-        # Plain, for the same reason "+ New sound" is. The accent marks the main
-        # action of the panel you are looking at, and this tab's is Test live;
-        # an accent-filled footer button gave the Models tab two of them
-        # competing. Training's accent belongs on Start training, where the four
-        # hours are actually committed to.
+        # Plain, like "+ New sound": the accent marks the panel's main action
+        # (Test live here, Start training on the training page).
         self.train_btn = QPushButton("+ New model")
         self.train_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.train_btn.setToolTip("Train a new model from your recorded sounds")
         self.train_btn.clicked.connect(self.train_requested.emit)
         left_layout.addWidget(self.train_btn)
 
-        # Four columns, three of them sized to their contents, leave the name
-        # whatever is left - so the pane is wider than the Sounds tab's.
+        # Wider than the Sounds tab's pane: more columns.
         left.setMinimumWidth(320)
         splitter.addWidget(left)
 
@@ -553,10 +480,8 @@ class ModelsPage(QWidget):
         name_row.setSpacing(10)
         self.detail_title = components.heading("", "title")
         name_row.addWidget(self.detail_title)
-        # The list carries this as a tick in a narrow last column, which is not
-        # where anyone reading a model is looking. get_talon_model_name compares
-        # the actual files and never falls back to a guess, so it can be stated
-        # flatly rather than hedged.
+        # get_talon_model_name compares the actual files and never guesses, so
+        # this can be stated flatly rather than hedged.
         self.live_badge = components.badge(
             "Live in Talon", tip="Talon is running this model right now")
         self.live_badge.setVisible(False)
@@ -627,9 +552,8 @@ class ModelsPage(QWidget):
         return self.app_state.model_sort_key(meta["name"])
 
     def _populate_models(self):
-        """Newest first. Someone coming back after months wants the one they
-        made last, and it is also what Talon falls back to - alphabetical put
-        that answer in an arbitrary row."""
+        """Newest first: the one made last, which is also what Talon falls
+        back to."""
         prev = self._current
         t = theme.colors()
         # Cached for the detail header: this walks every pkl byte for byte
@@ -689,14 +613,8 @@ class ModelsPage(QWidget):
         self._refresh_details()
 
     def _on_list_context_menu(self, pos):
-        """Same actions as the header, on the row you pointed at. Right-clicking
-        a row selects it first, so the panel behind the menu is the model the
-        menu is about - a menu acting on something else on screen is the one
-        way this can go wrong.
-
-        Test live / Test accuracy lead, as they do in the header: they are what
-        the tab is for, and the management actions below are the rarer half.
-        """
+        """Same actions as the header. Right-clicking selects the row first,
+        so the panel behind the menu is the model the menu is about."""
         item = self.model_list.itemAt(pos)
         if item is None:
             return
@@ -797,11 +715,8 @@ class ModelsPage(QWidget):
 
     def _model_mtime(self):
         """When the model was trained, for comparing against recording dates.
-
-        The pkl's own mtime is the last resort inside _trained_at, not the
-        first: copying a data dir restamps every pkl to the time of the copy,
-        which would mark every sound in the library as newer than the model.
-        """
+        Not the pkl mtime first: copying a data dir restamps every pkl, which
+        would mark every sound as newer than the model."""
         return self.app_state.get_model_trained_at(self._current) or 0
 
     def _detail_html(self, meta):
@@ -841,8 +756,8 @@ class ModelsPage(QWidget):
             elif new_takes:
                 stale.append((label, new_takes))
                 note = f"{new_takes} new since"
-            # Score column is the model's own. Nothing measured off today's
-            # recordings folder goes there; that was the old Excellent/Good.
+            # Score column is the model's own; nothing measured off today's
+            # recordings folder goes there.
             rows.append((label, score, worst, note, colour))
 
         # A class, not a sound anyone made. Counting it overstates by one.
@@ -878,10 +793,8 @@ class ModelsPage(QWidget):
     # ---- empty states ---------------------------------------------------
 
     def _show_empty_state(self):
-        """Three dead ends, and they need different answers: nothing recorded,
-        one sound recorded, or everything ready and no model made. Telling
-        someone who has recorded a sound to "record some sounds" reads as if
-        their work went missing - name what they have, then what's missing."""
+        """Three dead ends, three answers: nothing recorded, one sound, or
+        ready with no model - name what they have, then what's missing."""
         self.header_frame.setVisible(False)
         self.columns.setVisible(False)
         self.stale_label.setText("")

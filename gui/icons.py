@@ -1,29 +1,22 @@
 """Small monochrome icons, painted in the theme's own colours.
 
-The toolbar carried two colour emoji, 👤 and 📝. An emoji is drawn by the
-system emoji font in the colours that font chose, and ignores the colour its
-label asks for: on this dark toolbar the person silhouette came out dark purple
-(#442a6c), measuring **1.28:1** against the toolbar behind it. Nothing in a
-stylesheet can reach it, and it does not change with the theme.
+Emoji are drawn by the system emoji font in colours of its own choosing, out
+of reach of any stylesheet and blind to the theme (the 👤 silhouette measured
+1.28:1 on this toolbar). Painted paths take one colour from `theme.colors()`
+at whatever size and device pixel ratio the button asks for.
 
-Painted paths instead - one colour, from `theme.colors()`, at whatever size and
-device pixel ratio the button asks for. Same reasoning as the frame-status row
-in talon_test.py, which dropped ⏱ for a word.
-
-A toolbar button is three different backgrounds, though, so one colour is not
-enough. Checked fills the button with the accent green, where the resting
-`text_dim` measures **1.24:1** - the Notes icon vanished exactly when the
-drawer was open. Each icon therefore carries a pixmap per state and lets Qt
-pick, which needs no signal wiring: QToolButton asks for `State.On` when it is
-checked and `Mode.Active` when the pointer is over it.
+A toolbar button has three backgrounds, so one colour is not enough: resting
+`text_dim` measures 1.24:1 on the checked accent fill. Each icon carries a
+pixmap per state and lets Qt pick - QToolButton asks for `State.On` when
+checked and `Mode.Active` on hover, so no signal wiring is needed.
 
     state          background     icon colour     ratio
     resting        toolbar        text_dim         5.4
     hover          button_hover   text_bright      5.9
     checked        accent         accent_text      9.4
 
-Geometry is in fractions of the icon box, so an icon is one drawing at any size
-rather than a bitmap that softens when the interface is scaled up.
+Geometry is in fractions of the icon box, so an icon is one drawing at any
+size rather than a bitmap that softens when the interface is scaled up.
 """
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap

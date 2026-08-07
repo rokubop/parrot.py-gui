@@ -26,7 +26,6 @@ class TrainingPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
 
-        # Left panel - label selection
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
 
@@ -36,11 +35,9 @@ class TrainingPage(QWidget):
 
         splitter.addWidget(left_panel)
 
-        # Right panel - training controls and plot
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
 
-        # Model name
         config_group = QGroupBox("Training Configuration")
         config_layout = QVBoxLayout(config_group)
 
@@ -51,7 +48,6 @@ class TrainingPage(QWidget):
         name_layout.addWidget(self.model_name_input)
         config_layout.addLayout(name_layout)
 
-        # Net count
         net_layout = QHBoxLayout()
         net_layout.addWidget(QLabel("Number of nets:"))
         self.net_count_spin = QSpinBox()
@@ -62,15 +58,12 @@ class TrainingPage(QWidget):
 
         right_layout.addWidget(config_group)
 
-        # Progress label
         self.progress_label = QLabel("Ready to train")
         right_layout.addWidget(self.progress_label)
 
-        # Training plot
         self.training_plot = TrainingPlotWidget()
         right_layout.addWidget(self.training_plot, stretch=3)
 
-        # Train/Stop buttons
         btn_layout = QHBoxLayout()
         self.train_btn = QPushButton("Train")
         self.train_btn.clicked.connect(self._on_train)

@@ -17,10 +17,9 @@ _ICON_CACHE = {}
 
 
 def _media_icon(kind, color, size=13):
-    """Draw a crisp, theme-colored play/pause glyph as a fixed-size QIcon so the
-    button never changes height when the label swaps (the old text glyphs
-    ▶/⏸ had different heights and shifted the layout). Cached per
-    (kind, color, size) so building many cards doesn't repaint identical icons."""
+    """Theme-colored play/pause glyph as a fixed-size QIcon: text glyphs ▶/⏸
+    have different heights and shift the layout when swapped. Cached per
+    (kind, color, size)."""
     key = (kind, color, size)
     cached = _ICON_CACHE.get(key)
     if cached is not None:
@@ -147,11 +146,9 @@ class SessionCard(QFrame):
 
         self._apply_border(False)
 
-        # Lazy preview: building a pyqtgraph plot per recording is the expensive
-        # part of switching sounds (~50-220 ms each), so we defer it. The card
-        # appears instantly with a placeholder of the same height (no layout
-        # jump); the real waveform is built on demand via load_preview(), driven
-        # by the library page (selected card first, the rest progressively).
+        # Lazy preview: a pyqtgraph plot per recording is the expensive part of
+        # switching sounds (~50-220 ms each). A placeholder of the same height
+        # shows instantly; the library page drives load_preview() on demand.
         self.preview = None
         self._loaded = False
         self._pending_mode = "waveform"
@@ -185,7 +182,6 @@ class SessionCard(QFrame):
         self.preview.pressed.connect(lambda: self.selected.emit(self))
         self.preview.selection_changed.connect(self._on_selection_changed)
         self.preview.selection_cleared.connect(self._on_selection_cleared)
-        # Swap the placeholder out for the real preview, keeping its position.
         self._layout.replaceWidget(self._placeholder, self.preview)
         self._placeholder.setParent(None)
         self._placeholder.deleteLater()
@@ -227,8 +223,7 @@ class SessionCard(QFrame):
             row.addWidget(self.edit_btn)
 
         # When it was recorded, not "mici_0": the mic index is a filename
-        # disambiguator for multi-mic takes, and naming it in the card's most
-        # prominent slot told the user nothing they could act on.
+        # disambiguator and tells the user nothing they can act on.
         title = _parse_when(session_name) or session_name
         name = QLabel(title)
         name.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")

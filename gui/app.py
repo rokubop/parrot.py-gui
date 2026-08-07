@@ -38,7 +38,6 @@ def create_app(argv):
     app.setWindowIcon(QIcon(ICON_PATH))
     indicator_style.install(app)
 
-    # Smoother, antialiased pyqtgraph curves
     pg.setConfigOptions(antialias=True)
 
     theme.apply(app, theme.current_name())
@@ -46,10 +45,8 @@ def create_app(argv):
 
     window = MainWindow()
     window.show()
-    # Keep a strong reference on the application object. Without this, `window`
-    # is only a local here; once create_app() returns, Python's GC can collect
-    # the MainWindow and delete the underlying C++ widget (and all its children:
-    # pages, scroll areas, layouts) out from under the running event loop.
+    # Strong reference: `window` is only a local, and once create_app() returns
+    # GC would delete the C++ widget (and every child) under the event loop.
     app._main_window = window
 
     return app

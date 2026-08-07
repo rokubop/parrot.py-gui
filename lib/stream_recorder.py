@@ -15,10 +15,10 @@ class StreamRecorder:
     srt_filename: str
     thresholds_filename: str
     comparison_wav_filename: str
-
+    
     stream: sd.InputStream
     detection_state: DetectionState
-
+    
     length_per_frame: int
     audio_frames: List[np.array]
     total_audio_frames: List[np.array]
@@ -26,13 +26,13 @@ class StreamRecorder:
     detection_frames: List[DetectionFrame]
     current_occurrence: List[DetectionFrame]
     false_occurrence: List[DetectionFrame]
-
+    
     def __init__(self, stream: sd.InputStream, total_wav_filename: str, srt_filename: str, detection_state: DetectionState):
         self.total_wav_filename = total_wav_filename
         self.srt_filename = srt_filename
         self.comparison_wav_filename = srt_filename.replace(".v" + str(CURRENT_VERSION) + ".srt", "_comparison.wav")
         self.thresholds_filename = srt_filename.replace(".v" + str(CURRENT_VERSION) + ".srt", "_thresholds.txt")
-
+        
         self.stream = stream
         self.detection_state = detection_state
         self.total_audio_frames = []
@@ -42,53 +42,53 @@ class StreamRecorder:
         self.false_occurrence = []
         self.index = 0
         self.length_per_frame = 0
-
+    
         # Write the source file first with the right settings to add the headers, and write the data later
         totalWaveFile = wave.open(self.total_wav_filename, 'wb')
         totalWaveFile.setnchannels(CHANNELS)
         totalWaveFile.setsampwidth(SAMPLE_WIDTH)
         totalWaveFile.setframerate(RATE)
         totalWaveFile.close()
-
+    
     # Add a single audio frame to the batch and start processing it
     def add_audio_frame(self, frame: List[np.array]):
         if self.length_per_frame == 0:
             self.length_per_frame = len(frame)
-
+    
         self.index += 1
         self.audio_frames.append(frame)
         self.detection_state.ms_recorded += self.detection_state.ms_per_frame
         audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence = \
             process_audio_frame(self.index, self.audio_frames, self.detection_state, self.detection_frames, self.current_occurrence, self.false_occurrence)
-
+        
         self.current_occurence = current_occurrence
         self.false_occurrence = false_occurrence
         self.detection_state = detection_state
         self.detection_frames = detection_frames
         self.audio_frames = audioFrames
         self.total_audio_frames.append( audioFrames[-1] )
-
-        # Append to the total wav file only once every fifteen audio frames
+        
+        # Append to the total wav file only once every fifteen audio frames 
         # This is roughly once every 225 milliseconds
         if len(self.total_audio_frames) >= 15:
             self.persist_total_wav_file()
-
-    def persist_total_wav_file(self):
+    
+    def persist_total_wav_file(self):    
         # This is used to modify the wave file directly
         CHUNK_SIZE_OFFSET = 4
         DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
         DATA_OFFSET = 44   # canonical PCM header; the payload starts here
         LITTLE_ENDIAN_INT = struct.Struct('<I')
-
+    
         byteString = b''.join(self.total_audio_frames)
         self.total_audio_frames = []
         appendTotalFile = open(self.total_wav_filename, 'ab')
         appendTotalFile.write(byteString)
         appendTotalFile.close()
-
+        
         # Set the amount of frames available and chunk size
         # By overriding the header part of the wave file manually
-        # Which wouldn't be needed if the wave package supported appending properly
+        # Which wouldn't be needed if the wave package supported appending properly                        
         # Thanks to hydrogen18.com for the explanation and code
         appendTotalFile = open(self.total_wav_filename, 'r+b')
         appendTotalFile.seek(0,2)
@@ -97,36 +97,32 @@ class StreamRecorder:
         appendTotalFile.seek(CHUNK_SIZE_OFFSET)
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(chunk_size))
         appendTotalFile.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-        # Measured from the file, not recomputed from the frame counter.
-        # length_per_frame is already a byte count ( the stream hands over
-        # indata.tobytes() ), so the old `2 * ( index * length_per_frame )`
-        # applied the 16-bit sample width a second time and declared twice the
-        # real length. Takes that were never re-written by AppendWorker kept
-        # that header, and anything trusting it read the take as double its
-        # duration.
+        # Measured from the file. length_per_frame is already a byte count, so
+        # the old `2 * ( index * length_per_frame )` applied the 16-bit sample
+        # width twice and declared double the real length.
         sample_length = file_size - DATA_OFFSET
-
+        
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(sample_length))
         appendTotalFile.close()
 
     # Resume playing
     def resume(self):
         self.stream.start()
-
+    
     def pause(self):
         self.stream.stop()
-
+        
         self.index -= len(self.total_audio_frames)
         if self.index != 0 and len(self.total_audio_frames) > 0:
             self.detection_frames = self.detection_frames[:-len(self.total_audio_frames)]
         self.total_audio_frames = []
         self.audio_frames = []
-
+    
     # Clear out the last N seconds and pauses the stream, returns whether it should resume after
     def clear(self, seconds: float) -> bool:
         should_resume = self.detection_state != "paused"
         self.pause()
-
+        
         ms_per_frame = self.detection_state.ms_per_frame
         frames_to_remove = math.floor(seconds * 1000 / ms_per_frame)
         clear_file = False
@@ -135,7 +131,7 @@ class StreamRecorder:
         self.index -= self.index if clear_file else frames_to_remove
         self.current_occurrence = []
         self.false_occurrence = []
-
+        
         self.detection_frames = self.detection_frames[:-frames_to_remove]
         self.detection_state.ms_recorded = len(self.detection_frames) * ms_per_frame
         for label in self.detection_state.labels:
@@ -143,7 +139,7 @@ class StreamRecorder:
             for frame in self.detection_frames:
                 if frame.label == label.label:
                     label.ms_detected += ms_per_frame
-
+        
         # Just completely overwrite the file if we go back to the start for simplicities sake
         if clear_file:
             totalWaveFile = wave.open(self.total_wav_filename, 'wb')
@@ -151,14 +147,14 @@ class StreamRecorder:
             totalWaveFile.setsampwidth(SAMPLE_WIDTH)
             totalWaveFile.setframerate(RATE)
             totalWaveFile.close()
-
+            
         # Truncate the frames from the total wav file
         else:
             with open(self.total_wav_filename, 'r+b') as f:
                 # Drop the last N bytes from the file
                 f.seek(-frames_to_remove * self.length_per_frame, io.SEEK_END)
                 f.truncate()
-
+                
                 # Overwrite the total recording length
                 CHUNK_SIZE_OFFSET = 4
                 DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
@@ -172,26 +168,24 @@ class StreamRecorder:
                 f.write(LITTLE_ENDIAN_INT.pack(chunk_size))
                 f.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
                 sample_length = file_size - DATA_OFFSET   # see persist_total_wav_file
-                f.write(LITTLE_ENDIAN_INT.pack(sample_length))
-
+                f.write(LITTLE_ENDIAN_INT.pack(sample_length))        
+        
         return should_resume
-
+    
     # Reset the counts of the state so they count up nicely during reprocessing of multiple streams
     def reset_label_count(self):
         for label in self.detection_state.labels:
             label.ms_detected = 0
-
+    
     def get_detection_state(self) -> DetectionState:
         return self.detection_state
-
+    
     def get_status(self, detection_states: List[DetectionState] = []) -> List[str]:
         return get_current_status(self.detection_state, detection_states)
-
-    # Second detection pass over the take - settle the thresholds over ALL of it
-    # and re-judge every frame, so the first sounds are judged with the same
-    # criteria as the last ones instead of with barely-warmed-up thresholds.
-    # The wav file on disk always matches the in-memory frames ( pause and clear
-    # truncate it too ), so the take can simply be re-read.
+    
+    # Second detection pass - settle the thresholds over the whole take and
+    # re-judge every frame. The wav on disk always matches the in-memory frames
+    # ( pause and clear truncate it too ), so the take can simply be re-read.
     def rejudge_recording(self, callback = None):
         if not TWO_PASS_DETECTION or self.index == 0 or len(self.detection_frames) == 0 \
             or not os.path.exists(self.total_wav_filename):
@@ -207,7 +201,7 @@ class StreamRecorder:
         self.pause()
         self.persist_total_wav_file()
         if self.index == 0:
-            os.remove(self.total_wav_filename)
+            os.remove(self.total_wav_filename)        
         self.rejudge_recording(callback)
 
         comparison_wav_file = wave.open(self.comparison_wav_filename, 'wb')

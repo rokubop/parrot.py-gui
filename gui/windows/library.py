@@ -72,7 +72,7 @@ class SoundLibraryPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter)
 
-        # Left: sound list - three columns (sound / data quantity / detected time)
+        # Left: sound list
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
@@ -144,14 +144,12 @@ class SoundLibraryPage(QWidget):
         # Rename / Clone / Open / Delete are quiet, second-class actions.
         for b in self._secondary_btns:
             b.setStyleSheet(components.ghost_button_style())
-        # View / Normalize are state toggles, not actions. The app-wide
-        # QPushButton:checked rule fills them with the accent color, which put
-        # three accent-filled buttons next to the one real call to action - so
-        # they get a quieter segmented-control look, scoped to this header.
+        # View / Normalize are state toggles, not actions: the app-wide
+        # :checked accent fill made three accent buttons compete with the one
+        # real call to action, so they get a quieter segmented look.
         toggle_style = (
             # $text, not $text_dim: dim on the $button fill measures 3.29, and
             # the unselected half of a segmented control still has to be read.
-            # It stays the quiet one through its fill and border, not its ink.
             f"QPushButton#viewToggle {{ background-color: {t['button']}; "
             f"color: {t['text']}; border: 1px solid {t['control_border']}; "
             f"border-radius: {t['radius']}; padding: 5px 14px; }} "
@@ -173,9 +171,8 @@ class SoundLibraryPage(QWidget):
         self._build_for_item(self.label_list.currentItem())
 
     def _build_header(self):
-        """The per-sound header: a visually distinct panel holding the sound's
-        title/stats, the primary 'Add recording' action, the view toggles, and
-        the de-emphasized rename/clone/delete management actions."""
+        """Per-sound header: title/stats, primary Add recording, view toggles,
+        quiet management actions."""
         header = QFrame()
         header.setObjectName("soundHeader")
         self.header_frame = header
@@ -279,9 +276,8 @@ class SoundLibraryPage(QWidget):
             self._build_for_item(None)
             return
 
-        # Reselect the previous sound if it still exists, else fall back to the
-        # first. Setting the current item (signals now unblocked) fires the
-        # selection handler, which rebuilds the cards for whatever is selected.
+        # Setting the current item (signals now unblocked) fires the selection
+        # handler, which rebuilds the cards.
         target = None
         if prev_label is not None:
             for i in range(count):
@@ -318,9 +314,6 @@ class SoundLibraryPage(QWidget):
         self._selected_card = None
         self._cards = []
         try:
-            # Build a brand-new container and populate it completely before it
-            # is ever shown. Nothing is being deleted during this loop, so the
-            # layout cannot die underneath us.
             container, layout, message = self._new_container()
             self.cards_container = container
             self.cards_layout = layout
@@ -328,10 +321,8 @@ class SoundLibraryPage(QWidget):
 
             recordings = []
             if current is None:
-                # Every control in the header (title, add recording, rename,
-                # clone, delete) is about *a* sound. With none selected they'd
-                # all point at nothing, so hide the panel entirely and let the
-                # body carry the single action that makes sense here.
+                # Every header control is about *a* sound; with none selected
+                # hide the panel entirely.
                 self.header_frame.setVisible(False)
                 self.sound_title.setText("")
                 self.sound_stats.setText("")
@@ -441,10 +432,8 @@ class SoundLibraryPage(QWidget):
         components.center_in(layout, panel)
 
     def _destroy_cards(self, cards, container):
-        """Clean up replaced cards (stop playback/animations, clear their plots)
-        and delete the old container they lived in. Runs only after the new view
-        is installed, so pyqtgraph never paints an item whose ViewBox is going
-        away and the live layout is never touched."""
+        """Stop and delete replaced cards, only after the new view is installed,
+        so pyqtgraph never paints an item whose ViewBox is going away."""
         for card in cards:
             if not sip.isdeleted(card):
                 card.cleanup()
@@ -469,10 +458,8 @@ class SoundLibraryPage(QWidget):
         detected_ms = self.app_state.get_label_duration_ms(label)
         detected_s = detected_ms / 1000.0
         noun = "recording" if count == 1 else "recordings"
-        # Per take the mic is on the card below; this is the same question asked
-        # of the sound as a whole, which is the form the model inherits. Appended
-        # rather than given a line, and absent entirely on a sound whose takes
-        # all predate the sidecar.
+        # Mic summary for the sound as a whole (per-take mic is on the card);
+        # absent when the takes all predate the sidecar.
         mics = library_ops.describe_mics(library_ops.mics_for_labels([label]))
         self.sound_stats.setText(
             f"{count} {noun}   ·   {recorded_s:.1f}s recorded   ·   "
@@ -629,15 +616,13 @@ class SoundLibraryPage(QWidget):
         menu.exec(self.label_list.viewport().mapToGlobal(pos))
 
     def _prompt_new_sound_name(self):
-        """Name prompt for a new sound. Deliberately not a bare QInputDialog:
-        *which* noise you choose decides how well the model can ever do, and
-        this is the one moment the app can say so before you record 20 takes of
-        something that collides with your own voice."""
+        """Name prompt for a new sound. Not a bare QInputDialog: *which* noise
+        you choose decides how well the model can ever do, and this is the one
+        moment the app can say so."""
         t = theme.colors()
         dlg = QDialog(self)
         dlg.setWindowTitle("New sound")
-        # Wide enough that the diagram reads and the tips don't fight a
-        # scrollbar - this dialog is carrying real content, not just a field.
+        # Wide enough that the diagram reads and the tips don't fight a scrollbar.
         dlg.setMinimumWidth(760)
         v = QVBoxLayout(dlg)
         v.setContentsMargins(20, 16, 20, 16)
@@ -652,8 +637,6 @@ class SoundLibraryPage(QWidget):
         edit.setMinimumWidth(300)
         v.addWidget(edit)
 
-        # The advice belongs here, not behind a button: which noise you pick is
-        # decided in this dialog and nowhere else.
         tips_title = QLabel("Choosing a sound")
         tips_title.setStyleSheet(
             f"color: {t['text_bright']}; font-weight: bold; margin-top: 6px;")
@@ -670,10 +653,8 @@ class SoundLibraryPage(QWidget):
         buttons.rejected.connect(dlg.reject)
         ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
         ok.setObjectName("primaryAction")
-        # Typing a name and pressing Enter has to create the sound. Setting Ok
-        # as the default button is not enough on its own: the box re-picks a
-        # default when the dialog is shown and Cancel wins, so Enter silently
-        # cancelled and looked like nothing happening. Take Cancel out of the
+        # setDefault alone isn't enough: the box re-picks a default on show and
+        # Cancel wins, so Enter silently cancelled. Take Cancel out of the
         # running and accept straight from the field.
         ok.setDefault(True)
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setAutoDefault(False)
@@ -681,9 +662,7 @@ class SoundLibraryPage(QWidget):
         v.addLayout(row)
 
         def sync_ok():
-            """There is nothing to confirm until the field holds a name, so Ok
-            only lights up as the accent action once it does - and Enter follows
-            the same rule rather than accepting an empty name."""
+            """Ok (and Enter) only work once the field holds a name."""
             ready = bool(edit.text().strip())
             ok.setEnabled(ready)
             ok.setStyleSheet(components.primary_button_style() if ready else "")
@@ -825,8 +804,7 @@ class SoundLibraryPage(QWidget):
     def _on_add_recording(self):
         label = self._current_label()
         if not label:
-            # A recording is always a take *of* a sound, so there's nothing to
-            # record into yet - creating the sound is the step that comes first.
+            # A recording is always a take *of* a sound - create the sound first.
             self._on_new_sound()
             return
         self.record_requested.emit(label)

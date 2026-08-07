@@ -1,8 +1,8 @@
-"""Parrot integration for Talon — installed by the Parrot.py GUI.
+"""Parrot integration for Talon - installed by the Parrot.py GUI.
 
 Loads the parrot model and maps detections to Talon noise triggers via
-patterns.json (see the Integrations tab in the Parrot.py app: edit patterns with
-validation, deploy models, watch live frames). patterns.json is hot-reloaded.
+patterns.json (managed from the Integrations tab in the Parrot.py app).
+patterns.json is hot-reloaded.
 
 Based on chaosparrot's parrot_integration.py.
 """

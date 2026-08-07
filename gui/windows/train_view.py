@@ -1,21 +1,9 @@
 """Dedicated training view, in two states.
 
 Setting a run up and watching one have almost nothing in common, so this page
-swaps between them rather than showing both at once. It used to be a form on the
-left and a progress column on the right, which meant half the screen was an
-empty pair of axes for the whole time you were making the only decision that
-matters, and then a disabled form for the four to six hours after it.
-
-**Setup** is the decisions on the left ( name, which sounds, how many nets ) and
-the explanation of those decisions on the right. That is the treatment the New
-sound dialog already gets: the advice sits where the choice is made rather than
-behind a button, because the choice is what decides how good the model can ever
-be. Here it also fills a column that had nothing in it.
-
-**Running** drops the form to a one-line summary and gives the screen to the
-things that answer "how is it going and when will it be done": an estimate that
-is measured rather than guessed, the loss and accuracy curves, and per sound
-accuracy, which the worker has always emitted and the view used to discard.
+swaps between them rather than showing both at once. Setup: the decisions
+(name, sounds, nets) with the advice beside them. Running: a measured time
+estimate, the loss/accuracy curves, and per-sound accuracy.
 """
 import os
 import re
@@ -43,8 +31,7 @@ from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
 from lib.print_status import get_quantity_rating
 
-# From the theme, not literals: these print as text on cards, where the
-# pre-contrast-pass red measured 3.47.
+# From the theme, not literals: these print as text on cards.
 def _warn():
     return theme.colors()["warn"]
 
@@ -55,10 +42,9 @@ def _bad():
 # The column the balance delegate paints into.
 BAR_COLUMN = 3
 
-# Duplicated from AudioNetTrainer.max_epochs, deliberately. Reading the real one
-# means importing lib.audio_net, which imports torch - one to two seconds, on a
-# screen that has not decided to train anything yet. The run page does not guess:
-# it takes the true ceiling from the worker's run_started signal.
+# Duplicated from AudioNetTrainer.max_epochs deliberately: reading the real one
+# imports torch (1-2 s) on a screen that may never train. The run page takes
+# the true ceiling from the worker's run_started signal.
 MAX_EPOCHS = 300
 
 # A full run prints tens of thousands of lines. Keeping the tail is what the
@@ -68,10 +54,7 @@ LOG_MAX_LINES = 4000
 
 class _PrepRow(QWidget):
     """One phase of getting the data ready: a name, a bar, and what it is on.
-
-    The count comes from the trainer naming each label as it reaches it, so the
-    bar only has a total once the selection is known - before that it is an
-    honest indeterminate rather than a fake 0%.
+    No total until the selection is known - indeterminate rather than a fake 0%.
     """
 
     def __init__(self, title, parent=None):
@@ -115,12 +98,9 @@ class _PrepRow(QWidget):
 
 
 class ModelSoundsWorker(QThread):
-    """Reads which sounds an existing model was trained on.
-
-    Off-thread because the answer lives inside a checkpoint: the first call also
-    pays for importing torch, which is a second or two, and this runs from a
-    click on a screen that has not otherwise touched it.
-    """
+    """Reads which sounds an existing model was trained on. Off-thread: the
+    answer lives inside a checkpoint, and the first call pays for importing
+    torch."""
     ready = pyqtSignal(str, object, str)   # model name, labels or None, error
 
     def __init__(self, app_state, model_name, parent=None):
@@ -161,17 +141,9 @@ class BalanceWorker(QThread):
             # which reads as "still working" rather than "this is broken".
             self.ready.emit(self.labels, None, f"{type(exc).__name__}: {exc}")
 
-# There is deliberately no estimate before a run starts.
-#
-# There was one: audio seconds x nets x a constant, anchored on a single measured
-# run of a different library on a different machine, printed as "roughly 5 hr 6
-# min to 9 hr 27 min". Every part of that was a guess wearing a number - the
-# constant, the assumed seconds per sound, and the machine it would run on - and
-# a range 30% wide either side cannot be rescued by putting minutes on it.
-#
-# The run page still says how long it has left, because by then it is measured:
-# every epoch does the same work, so elapsed time over completed epochs is a real
-# prediction rather than a multiplier. See _update_eta.
+# Deliberately no estimate before a run starts: any formula here is a guess
+# wearing a number. The run page does say how long is left, because by then it
+# is measured - see _update_eta.
 
 
 def _next_free_name(base="my_model"):
@@ -181,10 +153,8 @@ def _next_free_name(base="my_model"):
     "totoro_2" offers "totoro_3" rather than "totoro_2_2".
     """
     stem = re.sub(r"_\d+$", "", base) or base
-    # Only hand back the bare stem when that is what was asked for. Stripping
-    # the suffix off "totoro_2" and offering "totoro" suggests a name that is
-    # free but reads like going backwards, and could be one the user had
-    # already deliberately moved on from.
+    # Only hand back the bare stem when it was asked for: offering "totoro"
+    # for "totoro_2" reads like going backwards.
     if base == stem and not library_ops.model_exists(base):
         return stem
     n = 2
@@ -286,8 +256,7 @@ class TrainView(QWidget):
     def start(self):
         """Fresh training run: repopulate from disk and clear the last result."""
         if self.worker is not None:
-            # Re-entered while a run is going ( left to Models and came back ).
-            # Resetting here would wipe the state of a run still in progress.
+            # Re-entered while a run is going; resetting would wipe its state.
             self.stack.setCurrentWidget(self.run_page)
             return
         self._reset_run_state()
@@ -299,9 +268,7 @@ class TrainView(QWidget):
         self.stack.setCurrentWidget(self.setup_page)
 
     def _reset_run_state(self):
-        """Everything a previous run left behind. Called from both entry points -
-        they had drifted into two near-identical copies of this list, and the run
-        page has enough moving parts now that a third would be a matter of time."""
+        """Everything a previous run left behind. Called from both entry points."""
         self._best_accuracy = None
         self._best_epoch = None
         self._stopped = False
@@ -372,14 +339,7 @@ class TrainView(QWidget):
     # ---- setup state -----------------------------------------------------
 
     def _build_setup_page(self):
-        """The list and what it adds up to, side by side.
-
-        This used to be decisions on the left and a teaching column on the right,
-        where the middle teaching block was a bar chart of the very labels the
-        checklist beside it was already listing. The chart moved into the list as
-        a column; the space it freed holds a running answer to "what am I about
-        to train", which is the one thing the old page never showed.
-        """
+        """The list and what it adds up to, side by side."""
         page = QWidget()
         columns = QHBoxLayout(page)
         columns.setContentsMargins(0, 0, 0, 0)
@@ -406,9 +366,8 @@ class TrainView(QWidget):
                  f"QPushButton:hover {{ color: {t['text_bright']}; }} "
                  f"QPushButton::menu-indicator {{ width: 0px; }}")
 
-        # "The same sounds as last time" is the common case for a second model,
-        # and picking 18 boxes by hand to get there is not a thing anyone should
-        # be asked to do. Every model already knows its own label list.
+        # "The same sounds as last time" is the common case for a second model;
+        # every model already knows its own label list.
         self.copy_btn = QPushButton("Use sounds from…")
         self.copy_btn.setFlat(True)
         self.copy_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -529,12 +488,8 @@ class TrainView(QWidget):
         self._plan_timer.start()
 
     def _build_action_column(self):
-        """Name, what it adds up to, the two knobs, and the commitment.
-
-        Everything here is a consequence of the ticking going on to the left, so
-        it sits in one card rather than as rows stacked under the list - which is
-        where they were, below the fold, on a page whose list is twenty rows long.
-        """
+        """Name, what it adds up to, the two knobs, and the commitment - one
+        card, everything a consequence of the ticking to the left."""
         t = theme.colors()
         col = QWidget()
         col.setFixedWidth(310)
@@ -601,9 +556,8 @@ class TrainView(QWidget):
         balance_row.addStretch()
         v.addLayout(balance_row)
 
-        # The note under it is the point: silence has no row in the table.
-        # Three states, not a checkbox: leaving it out is a real option, and
-        # the models that predate the class are the best ones anyone has.
+        # Three states, not a checkbox: leaving silence out is a real option,
+        # and the models that predate the class are the best ones anyone has.
         silence_row = QHBoxLayout()
         silence_row.setSpacing(8)
         silence_head = QLabel("Silence")
@@ -684,13 +638,9 @@ class TrainView(QWidget):
         return scroll
 
     def _build_tips(self):
-        """Below the card, not in it: these do not change with the choices above.
-
-        Set in the ordinary text colour, not the dim one. Dim is what the app
-        uses for things it is de-emphasising, and someone about to spend a night
-        on this should read these once - "General info" in grey read as fine
-        print, which is the opposite of the intent.
-        """
+        """Below the card, not in it: these do not change with the choices
+        above. Ordinary text colour, not dim - someone about to spend a night
+        on this should read them once."""
         t = theme.colors()
         box = QWidget()
         v = QVBoxLayout(box)
@@ -730,11 +680,8 @@ class TrainView(QWidget):
         self.run_subtitle = components.dim_label("")
         v.addWidget(self.run_subtitle)
 
-        # Everything that changes every epoch on the left, everything worth
-        # glancing at on the right. The same shape as the setup page - detail in
-        # the wide column, the decision in a card beside it - and it gives the
-        # churn somewhere to be demoted to. A run is hours long; what it asks
-        # for is a glance, not a reading.
+        # Epoch churn on the left, glanceables on the right - same shape as the
+        # setup page. A run is hours long; it asks for a glance, not a reading.
         columns = QHBoxLayout()
         columns.setSpacing(12)
 
@@ -789,12 +736,8 @@ class TrainView(QWidget):
         return page
 
     def _build_run_card(self):
-        """What the run has produced, and the button that keeps it.
-
-        The button used to sit a page away from the thing it preserves, so
-        "keep the best model so far" was a claim you had to go and check. Beside
-        the figure it is keeping, stopping stops being a decision.
-        """
+        """What the run has produced, and the button that keeps it - beside
+        the figure it is keeping, stopping stops being a decision."""
         t = theme.colors()
         card, v = components.card_frame(
             "runCard",
