@@ -1,5 +1,10 @@
-"""Single source of truth for workflow help. Shown as a modal from the home
-step cards and from the Sounds / Models / Integrations page headers."""
+"""Help rendering: the diagrams, and one renderer for a help topic.
+
+The words live in `gui/help_content.py`. This module turns a topic from there
+into a widget, and that same widget is what the ``?  Help`` modal shows and
+what the About page stacks up - so a topic is written once and drawn the same
+way wherever it appears.
+"""
 import math
 
 from PyQt6.QtCore import Qt, QRectF, QPointF
@@ -9,158 +14,10 @@ from PyQt6.QtWidgets import (
     QScrollArea, QWidget, QFrame, QSizePolicy
 )
 
-from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
-from gui import components, theme
+from gui import components, help_content, theme
+from gui.help_content import MS_PER_FRAME
 from lib.print_status import get_quantity_rating
 
-# A frame is one sliding window, not a whole sample. Same arithmetic as
-# load_data, so the help cannot quote a length the trainer does not use.
-MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
-
-# Detected sound per label: below the first, get_quantity_rating says "Not
-# enough" (16.5s) and training is a formality; the second is where a model
-# starts being usable. Quoted in the Sounds empty state too.
-MIN_TRAIN_SECONDS = 17
-GOOD_TRAIN_SECONDS = 40
-
-# Row bodies read as their own sentence, so they start capitalised. Literal
-# names (sound labels, filenames) keep their own casing.
-RECORD_ROWS = (
-    ("Good sounds", "Tongue clicks, lip pops, palate clicks, “sh” / “ss” "
-                    "hisses, short vowels - distinct from each other and from "
-                    "normal speech. “Choosing sounds”, on the New sound "
-                    "dialog, goes into which ones work and why."),
-    ("Goal", "Record each sound until its Data rating says Excellent "
-             "(~80 s of detected sound). More data beats more sounds."),
-    ("How many", "2 sounds minimum to train. A daily-driver setup is "
-                 "usually 10-20."),
-    ("Time", "A real commitment: 1 hr+ of recording spread over multiple "
-             "days, 4 hr+ for a full model. Bursts are fine; every "
-             "recording is saved as you go."),
-    ("Mic", "A quiet room, and the mic you'll actually use day to day (pick "
-            "it in Settings). Avoid dynamic mics - takes vary too much "
-            "between sessions."),
-    ("Where", "Sounds tab: “+ New sound”, then “+ Add recording”."),
-)
-# Nets get their own topic because the number reads as a per-run setting and
-# is really the shape of the model: every net loads into Talon and runs on
-# every frame forever. Big picture first, training cost last.
-NET_ROWS = (
-    # No opening row restating the caption: the diagram renders above the rows,
-    # so it has already said what a network does.
-    (None, "If you choose 3, every sound detection consults all 3 and averages "
-           "their predictions. Training has to train each of the 3 on every "
-           "round (epoch), which is why more of them means a longer wait."),
-    (None, "They score every frame while training, and again every day "
-           "afterwards when Talon is listening. The number you pick stays part "
-           "of the model, not just the training run, so changing it means "
-           "training again."),
-    (None, "More than one is worth it because each net starts from different "
-           "random values, so they don't end up wrong about the same sounds. "
-           "Averaging them means one net getting a sound wrong doesn't decide "
-           "the answer on its own."),
-    (None, "<b>2 to 5 is the useful range</b>, 3 by default. Use 1 to find out "
-           "quickly whether your recordings are good enough: it trains fastest, "
-           "though one net has nothing to average with."),
-)
-
-BALANCE_ROWS = (
-    ("Why", "A model can guess. Give it 99 examples of one sound and 1 of "
-            "another, and always answering the first is right 99% of the time - "
-            "while the second never fires. Even amounts take that shortcut away."),
-    ("Balance sounds", "Repeats the thin ones, trims the fat ones. Repeating "
-                       "stops at 2x, so a very thin sound still goes in light. "
-                       "Off means each sound goes in exactly as recorded."),
-    ("Better fix", "Record more of the thin sound. Trimming throws away data "
-                   "you already have."),
-    ("Silence", "You never record it: the trainer collects the quiet between "
-                "your recordings. It becomes a sound the model can answer with."),
-    ("It never fires", "No pattern names silence, and Talon drops quiet frames "
-                       "on power before the model is even asked. That gate is "
-                       "what stops quiet triggering things, not this class."),
-    ("Include all", "Every quiet frame. Usually several times your largest "
-                    "sound."),
-    ("Balanced", "One sound's ration. The default."),
-    ("Omit", "No silence class. Pair it with a recorded background sound (a "
-             "fan, talking) so real noise still has somewhere harmless to land."),
-    ("Which is best", "Unmeasured. Balanced is the default because it does the "
-                      "same job for far less of the run."),
-)
-
-TRAIN_ROWS = (
-    ("What", "Training reads every recording of every sound and produces "
-             "a model file in data/models."),
-    ("Needs", "2+ sounds. The more sounds rated Excellent, the better the "
-              "model."),
-    ("Time", "Hours, not minutes - roughly 4-6 hrs for 14 sounds at 5 nets "
-             "running all 300 epochs. Sound count, how much you've recorded "
-             "and the net count each multiply it. Runs unattended, so start "
-             "it and leave it."),
-    ("Rough draft", "You don't have to run it out. The best model so far is "
-                    "saved every time accuracy improves, so Stop once the "
-                    "curve flattens and you keep it - a usable first pass in "
-                    "a fraction of the time. Let it finish when you're "
-                    "chasing the last few points."),
-    ("Neural networks", "How many the model owns. Each one is trained on "
-             "every round, and every one of them is consulted on every sound "
-             "the model hears afterwards. 3 is a good default; the ? beside the "
-             "setting explains the rest."),
-    ("Stay awake", "The app has to stay open for the whole run. Keep computer "
-                   "awake holds sleep off while it goes, so there is nothing "
-                   "to turn off first. Closing a laptop lid still stops it."),
-    ("Where", "Models tab, + New model. Training again never replaces what "
-              "you have; old models are kept."),
-)
-
-# What the training page teaches. A block is a question, a picture that
-# answers it, and one line - anything needing a paragraph is not on the page
-# at all, since a paragraph on a setup screen does not get read.
-TRAINING_BLOCKS = (
-    ("How it picks a sound", "labels",
-     "It always answers with one of the sounds it knows. Nothing is ever "
-     "rejected."),
-    ("How much of each", "balance",
-     "Even amounts stop the model guessing the sound it saw most. Thin ones are "
-     "repeated, fat ones cut back, and repeating stops at 2x."),
-    ("How many neural networks", "nets",
-     "The model consults every net it owns and averages them. Each one is "
-     "another full training run."),
-)
-CONNECT_ROWS = (
-    ("What", "Talon (talonvoice.com) runs your model live and maps each "
-             "sound to an action."),
-    ("Patterns", "Each trigger, and the sound that fires it, lives in "
-                 "patterns.json. Edit and deploy from the Integrations tab."),
-    ("Throttle", "Detection runs 60 times a second. A pattern's throttle on "
-                 "itself is how long before it fires again, so one utterance "
-                 "is one action. On another pattern, it silences that one "
-                 "instead."),
-    ("Setup", "The Integrations tab finds your Talon install and can "
-              "bootstrap the parrot integration from nothing."),
-    ("Where", "Integrations tab."),
-)
-
-SOUNDS_ROWS = (
-    ("How it works", "The audio is cut into 15 ms frames and each one is "
-                     "classified on its own."),
-    ("Start unique", "The opening frames are the most important to keep unique. "
-                     "It's ok if the tail overlaps other sounds, because you "
-                     "can throttle them."),
-    ("Suggestions", None),
-    ("Safe with speech", "<b>pop</b>, <b>palate</b> (palatal click), "
-                         "<b>cluck</b> (alveolar click), <b>tut</b> (dental "
-                         "click)."),
-    ("Conflicts with speech", "Vowels (<b>ah</b>, <b>oh</b>, <b>ee</b>) and "
-                              "consonants (<b>mm</b>, <b>hiss</b>, <b>shush</b>, "
-                              "<b>t</b>, <b>ff</b>, <b>guh</b>, <b>er</b>, "
-                              "<b>eh</b>). Usable, but you give up voice "
-                              "commands while they're live, and pairs sharing "
-                              "an opening (<b>uh</b> vs <b>ah</b>) misfire."),
-    ("Distractors", "Record the noises you want ignored - table bumps, throat "
-                    "clears, keyboard - as their own sound, and map them to "
-                    "nothing."),
-    ("Plan", "Use 📝 Notes to keep notes."),
-)
 
 class WrappedBody(QLabel):
     """Word-wrapped rich text that keeps the height its copy actually needs.
@@ -303,6 +160,89 @@ class FramesDiagram(QWidget):
                        "pop" if matches else "silence")
 
         p.end()
+
+
+class PipelineDiagram(QWidget):
+    """Record, train, connect, and the tab each happens on. Same order and
+    names as Home's numbered steps, deliberately."""
+
+    STEPS = (
+        ("You record", "many takes of each sound", "Sounds"),
+        ("Parrot trains", "one model, all your sounds", "Models"),
+        ("Talon listens", "each sound does something", "Integrations"),
+    )
+
+    BOX_H = 52
+    SUB_ROW = 17
+    TAB_ROW = 18
+    GAP = 34            # room for the arrow between boxes
+    ARROW_HEAD = 7
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(150 * len(self.STEPS))
+        self.setFixedHeight(self.BOX_H + self.SUB_ROW + self.TAB_ROW + 6)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Fixed)
+
+    def _arrow(self, painter, x0, x1, y, color):
+        pad = 7
+        x0, x1 = x0 + pad, x1 - pad
+        head = self.ARROW_HEAD
+        painter.setPen(QPen(color, 1.4))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(x0, y), QPointF(x1 - head + 1, y))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        painter.drawPolygon(QPolygonF([
+            QPointF(x1, y),
+            QPointF(x1 - head, y - head * 0.62),
+            QPointF(x1 - head, y + head * 0.62)]))
+
+    def paintEvent(self, _event):
+        t = theme.colors()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        accent = QColor(t["accent"])
+        dim = QColor(t["text_dim"])
+        bright = QColor(t["text_bright"])
+        small = components.painter_font(self)
+
+        n = len(self.STEPS)
+        span = (self.width() - self.GAP * (n - 1)) / n
+        x = 0.0
+        for index, (title, sub, tab) in enumerate(self.STEPS):
+            rect = QRectF(x, 0, span, self.BOX_H)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(t["plot_bg"]))
+            p.drawRect(rect)
+            p.setPen(QPen(accent, 1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
+
+            p.setFont(self.font())
+            p.setPen(bright)
+            p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), title)
+
+            p.setFont(small)
+            p.setPen(dim)
+            p.drawText(QRectF(x, self.BOX_H + 1, span, self.SUB_ROW),
+                       int(Qt.AlignmentFlag.AlignCenter), sub)
+            p.setPen(accent)
+            p.drawText(QRectF(x, self.BOX_H + self.SUB_ROW, span,
+                              self.TAB_ROW),
+                       int(Qt.AlignmentFlag.AlignCenter), f"{tab} tab")
+
+            if index < n - 1:
+                self._arrow(p, x + span, x + span + self.GAP,
+                            self.BOX_H / 2, dim)
+            x += span + self.GAP
+        p.end()
+
+
+def pipeline_diagram_widget():
+    return PipelineDiagram()
 
 
 def frames_diagram_widget():
@@ -567,21 +507,16 @@ def _balance_legend_widget():
     return balance_legend()
 
 
-TOPICS = {
-    "record": ("Recording sounds", RECORD_ROWS, None),
-    "train": ("Training a model", TRAIN_ROWS, nets_diagram_widget),
-    "connect": ("Connecting to Talon", CONNECT_ROWS, None),
-    "sounds": ("Choosing sounds", SOUNDS_ROWS, frames_diagram_widget),
-    "nets": ("Neural networks", NET_ROWS, nets_diagram_widget),
-    "balance": ("Balancing", BALANCE_ROWS, _balance_legend_widget),
-}
-
-TRAINING_DIAGRAMS = {
-    "labels": closed_set_diagram_widget,
+# The names topics use for their pictures. A topic in help_content names one
+# of these; nothing outside this module knows a diagram is a widget.
+DIAGRAMS = {
+    "pipeline": pipeline_diagram_widget,
+    "frames": frames_diagram_widget,
     "nets": nets_diagram_widget,
-    # The modal cannot borrow the training page's live table column, so it
-    # gets the legend that explains the same bars.
-    "balance": _balance_legend_widget,
+    "closed_set": closed_set_diagram_widget,
+    # The training page's own live column cannot be borrowed by a modal, so
+    # the legend that explains the same bars stands in for it.
+    "balance_legend": _balance_legend_widget,
 }
 
 
@@ -620,9 +555,10 @@ def thin_data_warning(count, total):
         return (f"{count} {noun} too little data and will be the model's weak "
                 f"spot.")
     subject = "Both are" if total == 2 else "They are all"
-    return (f"{subject} under {MIN_TRAIN_SECONDS}s of detected sound, so expect "
-            f"a lot of misfires. Around {GOOD_TRAIN_SECONDS}s each is where a "
-            f"model starts being usable.")
+    return (f"{subject} under {help_content.MIN_TRAIN_SECONDS}s of detected "
+            f"sound, so expect a lot of misfires. Around "
+            f"{help_content.GOOD_TRAIN_SECONDS}s each is where a model starts "
+            f"being usable.")
 
 
 def rows_html(rows):
@@ -650,62 +586,93 @@ def rows_html(rows):
     return "".join(out)
 
 
-def topic_content(key, parent=None):
-    """The topic's body (diagram, if it has one, plus its rows) as a widget, so
-    it can be embedded where the advice is actually needed instead of only
-    behind a modal."""
-    _title, rows, diagram = TOPICS[key]
+# Wider than a comfortable measure, so a long topic fits on one screen -
+# which matters more for help nobody scrolls.
+BODY_WIDTH = 860
+
+
+def _prose(html, rank=None):
+    body = WrappedBody(html)
+    body.setMaximumWidth(BODY_WIDTH)
+    if rank:
+        body.setStyleSheet(f"color: {theme.colors()['text']}; "
+                           f"font-size: {theme.TYPE_SCALE[rank]}px;")
+    return body
+
+
+def bands_html(bands):
+    """Rating name + the span it covers, each in the colour that rating wears
+    everywhere else in the app."""
+    t = theme.colors()
+    rows = "".join(
+        f"<tr><td style='color:{theme.QUANTITY_COLORS[name]}; "
+        f"font-weight:bold; padding:2px 14px 2px 0; white-space:nowrap;'>"
+        f"{name}</td><td style='color:{t['text']}; padding:2px 0;'>{span}</td>"
+        f"</tr>" for name, span in bands)
+    return f"<table cellspacing='0' cellpadding='0'>{rows}</table>"
+
+
+def topic_content(key, parent=None, stretch=True):
+    """A topic drawn as a widget: lede, diagram, intro, rows, note.
+
+    The one renderer for help. The ``?  Help`` modal shows this, and the About
+    page stacks one per topic, so a topic looks the same in both and gains
+    nothing by being defined twice.
+    """
+    spec = help_content.get(key) if isinstance(key, str) else key
     content = QWidget(parent)
     inner = QVBoxLayout(content)
     inner.setContentsMargins(0, 0, 0, 0)
     inner.setSpacing(12)
-    if diagram is not None:
+
+    if spec["lede"]:
+        inner.addWidget(_prose(spec["lede"], rank="card"))
+    if spec["diagram"]:
+        widget = DIAGRAMS[spec["diagram"]]()
         # The caption belongs to the drawing, not to this slot.
-        widget = diagram()
         text = getattr(widget, "CAPTION", "")
         if text:
             caption = QLabel(text)
             caption.setStyleSheet(f"color: {theme.colors()['text_dim']};")
             inner.addWidget(caption)
         inner.addWidget(widget)
-    # Wider than a comfortable measure, so a long topic fits on screen -
-    # which matters more for help nobody scrolls.
-    body = WrappedBody(rows_html(rows))
-    body.setMaximumWidth(860)
-    inner.addWidget(body)
-    # The scroll area resizes this to its viewport, so without a trailing spring
-    # any spare height is shared out between the rows instead of sitting below.
-    inner.addStretch(1)
+    if spec["intro"]:
+        inner.addWidget(_prose(spec["intro"]))
+    if spec.get("bands"):
+        inner.addWidget(_prose(bands_html(spec["bands"])))
+    if spec["rows"]:
+        inner.addWidget(_prose(rows_html(spec["rows"])))
+    if spec["note"]:
+        inner.addWidget(_prose(spec["note"]))
+
+    if stretch:
+        # A scroll area resizes this to its viewport; without a trailing spring
+        # spare height is shared between the rows instead of sitting below.
+        inner.addStretch(1)
     return content
 
 
 def training_sections(parent=None, live=None):
-    """The three training blocks in one column.
+    """What the training screen teaches, in its own order.
 
-    `live` maps a block key to a widget built by the caller, so the training
-    page can drop in a picture of the sounds actually selected. A block with
-    no diagram and no live widget is skipped rather than drawn as a title over
-    an empty space.
+    `live` maps a topic key to a widget built by the caller, so the training
+    page can drop in a picture of the sounds actually selected in place of the
+    stock diagram.
     """
-    t = theme.colors()
     live = live or {}
     content = QWidget(parent)
     v = QVBoxLayout(content)
     v.setContentsMargins(0, 0, 0, 0)
     v.setSpacing(18)
-    for title, key, caption in TRAINING_BLOCKS:
-        widget = live.get(key) or (TRAINING_DIAGRAMS[key]()
-                                   if key in TRAINING_DIAGRAMS else None)
-        if widget is None:
-            continue
-        heading = QLabel(title, content)
+    for key in help_content.TRAINING_TOPICS:
+        spec = help_content.get(key)
+        heading = QLabel(spec["title"], content)
         heading.setStyleSheet(components.heading_style("card"))
         v.addWidget(heading)
-        v.addWidget(widget)
-        line = WrappedBody(caption, content)
-        line.setStyleSheet(f"color: {t['text_dim']};")
-        line.setMaximumWidth(700)
-        v.addWidget(line)
+        if key in live:
+            v.addWidget(live[key])
+            spec = dict(spec, diagram=None)
+        v.addWidget(topic_content(spec, content, stretch=False))
     v.addStretch(1)
     return content
 
@@ -735,7 +702,7 @@ def _fit_to_screen(dlg, content_widget, width=760):
 
 
 def show_help(parent, key):
-    title = TOPICS[key][0]
+    title = help_content.title(key)
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
     v = QVBoxLayout(dlg)

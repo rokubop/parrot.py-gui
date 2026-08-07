@@ -1,314 +1,24 @@
-"""About: the app's help, gathered in one place and split by tab.
+"""About: every help topic in the app, drawn end to end.
 
-Every block here is the same content the ``?  Help`` buttons open beside the
-controls they explain - `help_dialog` owns the copy and the diagrams, this
-page only arranges them. Nothing is retyped, so the two can never drift.
+The page has no copy of its own. It walks `gui/help_content.TABS` and asks
+`help_dialog` to render each topic, which is the same widget the ``?  Help``
+buttons open - so a topic added to the registry appears here without this
+file being touched.
 
-What is written here is the material that has nowhere else to live: how
-detection decides what is sound, what the data ratings mean, what a pattern's
-keys do, and where files are kept.
+Its own part is the program itself: the version, the update check and the
+license.
 """
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QUrl
-from PyQt6.QtGui import QColor, QDesktopServices, QPainter, QPen, QPolygonF
+from PyQt6.QtCore import Qt, QPoint, QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
-    QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
-from config.config import (
-    RATE, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, CURRENT_DETECTION_STRATEGY,
-    THRESHOLD_DETECTION,
-)
-from gui import components, theme
+from gui import components, help_content, theme
 from gui.widgets import help_dialog
-from gui.widgets.help_dialog import WrappedBody, rows_html
+from gui.widgets.help_dialog import WrappedBody
 
-# Data-quantity thresholds, mirrored from lib/print_status.get_quantity_rating
-# so this page and the live ratings always agree.
-_SUFFICIENT_S = 16.5
-_GOOD_S = 41.25
-_EXCELLENT_S = 82.5
-
-_MS_PER_FRAME = int(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
-
-# A measure, not the window: help nobody scrolls is help nobody reads, but a
-# 1400px line is unreadable too.
-_BODY_WIDTH = 860
-
-
-# ---- the shape of the whole thing --------------------------------------
-
-class PipelineDiagram(QWidget):
-    """Record, train, connect, and the tab each happens on. Same order and
-    names as Home's numbered steps, deliberately."""
-
-    STEPS = (
-        ("You record", "many takes of each sound", "Sounds"),
-        ("Parrot trains", "one model, all your sounds", "Models"),
-        ("Talon listens", "each sound does something", "Integrations"),
-    )
-
-    BOX_H = 52
-    SUB_ROW = 17
-    TAB_ROW = 18
-    GAP = 34            # room for the arrow between boxes
-    ARROW_HEAD = 7
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumWidth(150 * len(self.STEPS))
-        self.setFixedHeight(self.BOX_H + self.SUB_ROW + self.TAB_ROW + 6)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding,
-                           QSizePolicy.Policy.Fixed)
-
-    def _arrow(self, painter, x0, x1, y, color):
-        pad = 7
-        x0, x1 = x0 + pad, x1 - pad
-        head = self.ARROW_HEAD
-        painter.setPen(QPen(color, 1.4))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawLine(QPointF(x0, y), QPointF(x1 - head + 1, y))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(color)
-        painter.drawPolygon(QPolygonF([
-            QPointF(x1, y),
-            QPointF(x1 - head, y - head * 0.62),
-            QPointF(x1 - head, y + head * 0.62)]))
-
-    def paintEvent(self, _event):
-        t = theme.colors()
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        accent = QColor(t["accent"])
-        dim = QColor(t["text_dim"])
-        bright = QColor(t["text_bright"])
-        small = components.painter_font(self)
-
-        n = len(self.STEPS)
-        span = (self.width() - self.GAP * (n - 1)) / n
-        x = 0.0
-        for index, (title, sub, tab) in enumerate(self.STEPS):
-            rect = QRectF(x, 0, span, self.BOX_H)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(t["plot_bg"]))
-            p.drawRect(rect)
-            p.setPen(QPen(accent, 1))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
-
-            p.setFont(self.font())
-            p.setPen(bright)
-            p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), title)
-
-            p.setFont(small)
-            p.setPen(dim)
-            p.drawText(QRectF(x, self.BOX_H + 1, span, self.SUB_ROW),
-                       int(Qt.AlignmentFlag.AlignCenter), sub)
-            p.setPen(accent)
-            p.drawText(QRectF(x, self.BOX_H + self.SUB_ROW, span,
-                              self.TAB_ROW),
-                       int(Qt.AlignmentFlag.AlignCenter), f"{tab} tab")
-
-            if index < n - 1:
-                self._arrow(p, x + span, x + span + self.GAP,
-                            self.BOX_H / 2, dim)
-            x += span + self.GAP
-        p.end()
-
-
-def pipeline_diagram_widget():
-    return PipelineDiagram()
-
-
-TAGLINE = ("Train a model on the sounds you make - clicks, pops, vowels, "
-           "hisses - and use them to control your computer.")
-
-SPEED_TEXT = (
-    f"<p>Speech has to wait for you to stop talking before it can decide what "
-    f"you said. Parrot judges every {_MS_PER_FRAME} ms slice as it arrives, "
-    f"so a sound fires while you are still making it, and the next one can "
-    f"fire {_MS_PER_FRAME} ms later instead of waiting out another speech "
-    f"timeout.</p>")
-
-
-# ---- copy that exists only here ----------------------------------------
-
-DETECTION_ROWS = (
-    ("Why", f"Most of a recording is the silence between sounds. Parrot cuts "
-            f"each recording into {_MS_PER_FRAME} ms frames and judges each "
-            f"one as sound or silence, so training sees the sound and not "
-            f"the room."),
-    ("Blue bands", "The detected regions drawn over a waveform. Everything "
-                   "outside them is ignored when training. Re-run detection "
-                   "at a different threshold, or edit the regions by hand, "
-                   "from a recording's edit view."),
-    ("dBFS", "Loudness, in decibels relative to full scale: 0 is the loudest "
-             "possible, more negative is quieter. The threshold is a dBFS "
-             "value."),
-    ("How the threshold is set", None),
-    ("While recording", "Parrot listens to your noise floor and calibrates as "
-                        "you go. It needs roughly ten finished sounds before "
-                        "it settles, so the first few in a take are judged on "
-                        "a provisional number."),
-    ("On save", "The whole take is judged again with the threshold that "
-                "settled over all of it, so the first sound is segmented on "
-                "the same terms as the last. (Two-pass detection, on by "
-                "default, switchable in Settings.)"),
-    ("By hand", "A threshold you set in a recording's edit view wins over "
-                "both, for that recording only."),
-    ("Discrete or continuous", f"Short and punchy (a click, a pop) against "
-                               f"sustained (a held vowel, a hiss). Parrot "
-                               f"estimates this per recording because it "
-                               f"changes how hard short detections are "
-                               f"rejected. Override it when editing."),
-    ("Strategy", f"How onsets, rejections and gap-mending are handled while "
-                 f"segmenting. Currently <code>{CURRENT_DETECTION_STRATEGY}</code> "
-                 f"in <b>{THRESHOLD_DETECTION}</b> mode: <i>strict</i> suits "
-                 f"rapid back-to-back sounds, <i>lenient</i> leaves more room "
-                 f"to settle. Pick one when recording."),
-)
-
-QUALITY_ROWS = (
-    ("Signal to noise", "How far your sound stands above the room. A quiet "
-                        "room and a steady mic distance make the line between "
-                        "sound and silence sharp; a noisy one blurs it. This "
-                        "is separate from how much you have recorded."),
-)
-
-PATTERN_ROWS = (
-    ("patterns.json", "Maps the model's sounds to the named triggers your "
-                      ".talon files bind actions to. The Integrations tab "
-                      "edits it with validation and keeps a snapshot of every "
-                      "deploy."),
-    ("What a pattern holds", None),
-    ("sounds", "Which model sounds count toward it. Their probabilities are "
-               "summed."),
-    ("threshold", "Rules that must <i>all</i> pass for a frame to fire: "
-                  "<code>&gt;probability</code> (summed confidence, 0-1), "
-                  "<code>&gt;power</code> (loudness), <code>&gt;f0/f1/f2</code> "
-                  "(pitch and formants in Hz, to tell a high hiss from a low "
-                  "one), each also available as <code>&lt;</code>."),
-    ("throttle", "After firing, silence the listed patterns - itself "
-                 "included - for N seconds. Targets are pattern names, never "
-                 "sound names."),
-    ("graceperiod", "Right after a detection, softer rules apply for N "
-                    "seconds, so a sound you are holding does not stutter as "
-                    "its probability wobbles."),
-    ("detect_after", "The rules must hold this long before the first fire, "
-                     "which turns a pop into a hold-to-activate."),
-)
-
-PATTERN_NOTE = (
-    "<p>The Live and Captures views show the real power and probability your "
-    "sounds produce - the numbers to judge a threshold against. Those are "
-    "Talon-engine units, not the dBFS used elsewhere here.</p>")
-
-DATA_ROWS = (
-    ("Recordings", "<code>data/recordings/</code>, one folder per sound: the "
-                   "source <code>.wav</code> plus a <code>.srt</code> marking "
-                   "where the sound occurs."),
-    ("Models", "<code>data/models/</code>. A trained model is a single "
-               "<code>.pkl</code> carrying its own nets."),
-    ("Notes", "<code>data/notes.json</code>, global and per model."),
-    ("Profiles", "A profile is a whole separate data folder - its own "
-                 "recordings, models and notes. Use one per person, mic or "
-                 "experiment. Switch from the toolbar chip; create one from "
-                 "Settings. Switching relaunches the app."),
-    ("Audio", f"Captured at {RATE} Hz and processed in {_MS_PER_FRAME} ms "
-              f"frames."),
-)
-
-
-def _quantity_html():
-    """The rating bands, in the colours the ratings use everywhere else."""
-    t = theme.colors()
-    q = theme.QUANTITY_COLORS
-    bands = (
-        (q["Not enough"], "Not enough", f"under {_SUFFICIENT_S:g}s"),
-        (q["Sufficient"], "Sufficient", f"{_SUFFICIENT_S:g}s to {_GOOD_S:g}s"),
-        (q["Good"], "Good", f"{_GOOD_S:g}s to {_EXCELLENT_S:g}s"),
-        (q["Excellent"], "Excellent", f"{_EXCELLENT_S:g}s and up"),
-    )
-    rows = "".join(
-        f"<tr><td style='color:{color}; font-weight:bold; padding:2px 14px "
-        f"2px 0; white-space:nowrap;'>{name}</td>"
-        f"<td style='color:{t['text']}; padding:2px 0;'>{span}</td></tr>"
-        for color, name, span in bands)
-    return (
-        f"<div style='color:{t['text']};'>"
-        f"<p>Each sound is rated on its <b>detected</b> time - the blue "
-        f"regions only, never the silence around them.</p>"
-        f"<table cellspacing='0' cellpadding='0'>{rows}</table>"
-        f"<p style='color:{t['text_dim']};'>Guidelines, not limits. Good is "
-        f"usually enough to train something usable; Excellent gives the "
-        f"classifier variety. The sound left at Not enough is the one the "
-        f"model will confuse most, so it is where another recording pays "
-        f"best.</p></div>")
-
-
-# ---- page structure -----------------------------------------------------
-
-def _block(title, rows=None, diagram=None, lede=None, intro=None, note=None):
-    """One titled block. Drawn in this order: lede, diagram (with its own
-    caption), intro, rows, note. `lede` is one line, set larger.
-
-    Prose is kept out of `rows` deliberately. A full-width paragraph sharing
-    the table with label/body rows stretches the label column halfway across
-    the page, so anything that is not a label goes in a prose slot.
-    """
-    return dict(title=title, rows=rows, diagram=diagram, lede=lede,
-                intro=intro, note=note)
-
-
-# (section title, what the section is for, [blocks])
-def _sections():
-    return (
-        ("Overview", None,
-         (
-             _block("How Parrot works", diagram=pipeline_diagram_widget,
-                    lede=TAGLINE),
-             _block("Why Parrot is so much faster than voice commands",
-                    intro=SPEED_TEXT),
-         )),
-        ("Sounds",
-         "Recording the sounds a model learns. Everything here is also on the "
-         "Sounds tab, behind ?  Help.",
-         (
-             _block("Choosing sounds", help_dialog.SOUNDS_ROWS,
-                    diagram=help_dialog.frames_diagram_widget),
-             _block("Recording sounds", help_dialog.RECORD_ROWS),
-             _block("Detection: what counts as sound", DETECTION_ROWS),
-             _block("How much data you need", intro=_quantity_html()),
-             _block("Sound quality", QUALITY_ROWS),
-         )),
-        ("Models",
-         "Turning recordings into a model. Also on the Models tab and the "
-         "training screen.",
-         (
-             _block("Training a model", help_dialog.TRAIN_ROWS),
-             _block("How it picks a sound",
-                    diagram=help_dialog.closed_set_diagram_widget,
-                    note="<p>It always answers with one of the sounds it "
-                         "knows. Nothing is ever rejected, which is why a "
-                         "noise you want ignored still has to be "
-                         "recorded.</p>"),
-             _block("Neural networks", help_dialog.NET_ROWS,
-                    diagram=help_dialog.nets_diagram_widget),
-             _block("Balancing the data", help_dialog.BALANCE_ROWS),
-         )),
-        ("Integrations",
-         "Running a trained model live. Also on the Integrations tab.",
-         (
-             _block("Connecting to Talon", help_dialog.CONNECT_ROWS),
-             _block("Patterns", PATTERN_ROWS, note=PATTERN_NOTE),
-         )),
-        ("About",
-         "The program itself.",
-         (
-             _block("Where your data lives", DATA_ROWS),
-         )),
-    )
+_BODY_WIDTH = help_dialog.BODY_WIDTH
 
 
 class AboutPage(QWidget):
@@ -346,8 +56,9 @@ class AboutPage(QWidget):
         self.body_layout.setSpacing(0)
         self.scroll.setWidget(body)
 
-        for name, blurb, blocks in _sections():
-            section = self._build_section(name, blurb, blocks)
+        for tab in help_content.TABS:
+            section = self._build_section(tab)
+            name = tab["title"]
             self._sections.append((name, section))
             self.body_layout.addWidget(section)
 
@@ -368,16 +79,16 @@ class AboutPage(QWidget):
         self._apply_styles()
         self._set_active(0)
 
-    def _build_section(self, name, blurb, blocks):
+    def _build_section(self, tab):
         section = QWidget()
         layout = QVBoxLayout(section)
         layout.setContentsMargins(0, 0, 0, 34)
         layout.setSpacing(0)
 
-        title = components.heading(name, "title")
+        title = components.heading(tab["title"], "title")
         layout.addWidget(title)
-        if blurb:
-            caption = components.dim_label(blurb, wrap=True)
+        if tab["blurb"]:
+            caption = components.dim_label(tab["blurb"], wrap=True)
             caption.setMaximumWidth(_BODY_WIDTH)
             layout.addWidget(caption)
         rule = QFrame()
@@ -388,35 +99,12 @@ class AboutPage(QWidget):
         layout.addSpacing(10)
         layout.addWidget(rule)
 
-        for block in blocks:
+        for spec in tab["topics"]:
             layout.addSpacing(22)
-            layout.addWidget(components.heading(block["title"], "card"))
+            layout.addWidget(components.heading(spec["title"], "card"))
             layout.addSpacing(8)
-            if block["lede"]:
-                lede = WrappedBody(block["lede"])
-                lede.setMaximumWidth(_BODY_WIDTH)
-                lede.setStyleSheet(
-                    f"color: {theme.colors()['text']}; "
-                    f"font-size: {theme.TYPE_SCALE['card']}px;")
-                layout.addWidget(lede)
-                layout.addSpacing(14)
-            if block["diagram"] is not None:
-                widget = block["diagram"]()
-                caption_text = getattr(widget, "CAPTION", "")
-                if caption_text:
-                    layout.addWidget(components.dim_label(caption_text))
-                    layout.addSpacing(4)
-                layout.addWidget(widget)
-                layout.addSpacing(14)
-            for key in ("intro", "rows", "note"):
-                text = block[key]
-                if not text:
-                    continue
-                if key != "intro":
-                    layout.addSpacing(8)
-                body = WrappedBody(rows_html(text) if key == "rows" else text)
-                body.setMaximumWidth(_BODY_WIDTH)
-                layout.addWidget(body)
+            # The same widget the topic's own Help button opens.
+            layout.addWidget(help_dialog.topic_content(spec, stretch=False))
         return section
 
     def _append_about_extras(self):
