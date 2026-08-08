@@ -1,4 +1,5 @@
 from importlib.util import find_spec
+import os
 import sys
 
 import pyaudio
@@ -39,15 +40,17 @@ TYPE_FEATURE_ENGINEERING_NORM_MFCC = 3
 TYPE_FEATURE_ENGINEERING_NORM_MFSC = 4
 FEATURE_ENGINEERING_TYPE = TYPE_FEATURE_ENGINEERING_NORM_MFSC
 
-DATASET_FOLDER = "data/recordings"
-RECORDINGS_FOLDER = "data/recordings"
-REPLAYS_FOLDER = "data/replays"
-REPLAYS_AUDIO_FOLDER = "data/replays/audio"
-REPLAYS_FILE = REPLAYS_FOLDER + "/run.csv"
-CLASSIFIER_FOLDER = "data/models"
-OVERLAY_FOLDER = "data/overlays"
+# Every user data path derives from DATA_DIR; see lib/data_root.py.
+from lib.data_root import DATA_ROOT, PROFILES_DIR, DATA_DIR
+DATASET_FOLDER = os.path.join(DATA_DIR, "recordings")
+RECORDINGS_FOLDER = DATASET_FOLDER
+REPLAYS_FOLDER = os.path.join(DATA_DIR, "replays")
+REPLAYS_AUDIO_FOLDER = os.path.join(REPLAYS_FOLDER, "audio")
+REPLAYS_FILE = os.path.join(REPLAYS_FOLDER, "run.csv")
+CLASSIFIER_FOLDER = os.path.join(DATA_DIR, "models")
+OVERLAY_FOLDER = os.path.join(DATA_DIR, "overlays")
 COORDINATE_FILEPATH = "config/current-coordinate.txt"
-CONVERSION_OUTPUT_FOLDER = "data/output"
+CONVERSION_OUTPUT_FOLDER = os.path.join(DATA_DIR, "output")
 PATH_TO_FFMPEG = "ffmpeg/bin/ffmpeg"
 
 DEFAULT_CLF_FILE = ""
