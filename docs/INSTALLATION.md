@@ -21,8 +21,8 @@ Step one - Installing python
 
 ![Installing python](media/install-python.png)
 
-This can be done by following the [Python installation link](https://www.python.org/downloads/release/python-31210/) and selecting your desired way of installing - I used the Windows x86 executable installer option.
-Make sure you have the checkbox 'Add Python 3.12 to PATH' enabled and pick the Install Now option.
+This can be done by following the [Python installation link](https://www.python.org/downloads/) and selecting your desired way of installing - I used the Windows x86 executable installer option.
+Make sure you have the checkbox 'Add Python 3.13 to PATH' enabled and pick the Install Now option.
 
 Step two - Download and extract the zipfile from this github repository
 ---------------
@@ -40,7 +40,7 @@ Step three - Installing all the packages
 ![Installing packages](media/install-libs.png)
 
 Now that you have python installed, you can use it to download packages. Open a command line program ( Search for cmd in your Windows search box ) and test if your python is installed properly.
-This can be done by typing 'python --version', this will display the version of your current python installation. If it is 3.12, you should be good to run the following code.
+This can be done by typing 'python --version', this will display the version of your current python installation. If it is 3.13, you should be good to run the following code.
 
 Now you can install the requirements for Windows using the following command.
 
@@ -105,7 +105,7 @@ That way it should work out of the box without having to go into configuration.
 Optional - Increasing the python version
 ----------------
 
-When I want to increase a python version for parrot, I need to ensure it works on both Windows, Mac and Linux. This takes a while so I don't usually do this. Currently Parrot supports Python v3.12 because audiomentations, used for augmenting audio, only supports up to Python v3.12.
+When I want to increase a python version for parrot, I need to ensure it works on both Windows, Mac and Linux. This takes a while so I don't usually do this. Parrot now runs on Python v3.13; audiomentations no longer caps at v3.12, so the version it pinned for is no longer the constraint.
 
 If you want to increase the python version yourself, you will need to do a lot more tinkering to figure out if everything works for you.
-For example, `audioop` has been removed from Python 3.13, so you need to install `audioop-lts` to fix dependency issues.
+For example, `audioop` was removed from Python 3.13, which is why `audioop-lts` is listed in the requirements files.
