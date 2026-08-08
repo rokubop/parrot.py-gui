@@ -185,6 +185,7 @@ class AudioNetTrainer:
                 epoch_loss = []
                 accuracy = []
                 combined_correct = 0
+                label_accuracy = []
                 for j in range(self.net_count):
                     epoch_validation_loss.append(0.0)
                     correct.append(0)
@@ -224,6 +225,13 @@ class AudioNetTrainer:
                                     accuracy_batch['correct'][local_label_string] += 1
                                 accuracy_batch['percent'][local_label_string] = accuracy_batch['correct'][local_label_string] / accuracy_batch['total'][local_label_string]
                 
+                        label_accuracy.append(accuracy_batch['percent'])
+
+                mean_label_accuracy = {}
+                for dataset_label in self.dataset_labels:
+                    scores = [p[dataset_label] for p in label_accuracy]
+                    mean_label_accuracy[dataset_label] = (
+                        sum(scores) / len(scores) if scores else 0)
                 
                 for j in range(self.net_count):
                     epoch_loss.append(epoch_validation_loss[j] / ( self.dataset_size * self.validation_split ) )
@@ -234,7 +242,7 @@ class AudioNetTrainer:
                 
                 csv_row = { 'epoch': epoch, 'loss': np.sum(epoch_loss), 'avg_validation_accuracy': np.average(accuracy) }
                 for dataset_label in self.dataset_labels:
-                    csv_row[dataset_label] = accuracy_batch['percent'][dataset_label]
+                    csv_row[dataset_label] = mean_label_accuracy[dataset_label]
                 writer.writerow( csv_row )
                 csvfile.flush()
                                 
