@@ -12,6 +12,7 @@ string; `gui.widgets.help_dialog` owns the drawings and the rendering.
 Numbers come from the config the app actually runs on, never typed twice.
 """
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from gui.services.talon_discovery import TALON_URL, TALON_BETA_URL
 
 # A frame is one sliding window, not a whole sample - same arithmetic as
 # load_data, so help cannot quote a length the trainer does not use.
@@ -31,6 +32,15 @@ EXCELLENT_S = 82.5
 
 TAGLINE = ("Train a model on the sounds you make - clicks, pops, vowels, "
            "hisses - and use them to control your computer.")
+
+# Copy names a link as {token}; help_dialog swaps in an anchor coloured by the
+# current theme. A constant anchor cannot work - a stylesheet makes Qt ignore
+# the palette's Link role, so the colour has to be inlined at render time -
+# and a token keeps this file free of Qt and readable to a translator.
+LINKS = {
+    "talon": (TALON_URL, "talonvoice.com"),
+    "talon_beta": (TALON_BETA_URL, "How to get the beta"),
+}
 
 
 def topic(key, title, rows=None, diagram=None, lede=None, intro=None,

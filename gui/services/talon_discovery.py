@@ -1,17 +1,33 @@
 import os
 import sys
 import re
+import glob
 import json
 import filecmp
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
+TALON_URL = "https://talonvoice.com/"
+TALON_BETA_URL = "https://talon.wiki/Help/beta_talon/"
+
+# Only the beta ships talon.experimental.parrot, and stable Talon fails on it
+# in its own log where nothing here can see it. So look for it on disk.
+#
+# Stable ships the parrot/ folder EMPTY, so the folder existing proves nothing;
+# the module file inside it is the check. Talon compiles its Python to .py4.
+PARROT_API = os.path.join("talon", "experimental", "parrot", "__init__.py*")
+
 
 @dataclass
 class TalonDiscoveryResult:
     talon_found: bool = False
     talon_home: Optional[str] = None
+    # The home dir is left behind by an uninstall, so it does not answer this.
+    talon_installed: bool = False
+    # None means couldn't tell, which is not False. Never tell someone their
+    # beta is not a beta because we failed to find their site-packages.
+    talon_beta: Optional[bool] = None
     talon_user_dir: Optional[str] = None
     integration_path: Optional[str] = None
     model_path_from_talon: Optional[str] = None
@@ -80,6 +96,71 @@ def get_talon_user_dir() -> Optional[str]:
         return None
     candidate = os.path.join(talon_home, "user")
     return candidate if os.path.isdir(candidate) else None
+
+
+def _as_local_path(path: Optional[str]) -> Optional[str]:
+    """A path this process can actually open.
+
+    Under WSL the Talon we find is the Windows one, so its pyvenv.cfg records
+    `C:\\Users\\...`, which no os.path call here can see. Untouched everywhere
+    else, including a Linux Talon under WSL, whose paths have no drive letter.
+    """
+    if not path or sys.platform == "win32" or not _is_wsl():
+        return path
+    match = re.match(r"^([A-Za-z]):[\\/](.*)$", path)
+    if not match:
+        return path
+    return "/mnt/{}/{}".format(match.group(1).lower(),
+                               match.group(2).replace("\\", "/"))
+
+
+def recorded_talon_python(talon_home: str) -> Optional[str]:
+    """Where pyvenv.cfg says Talon's bundled Python is, existing or not. The
+    only pointer from ~/.talon back to the app itself, on every platform."""
+    cfg = os.path.join(talon_home or "", ".venv", "pyvenv.cfg")
+    try:
+        with open(cfg, "r", encoding="utf-8") as f:
+            for line in f:
+                key, _sep, value = line.partition("=")
+                if key.strip() == "home":
+                    return _as_local_path(value.strip()) or None
+    except OSError:
+        return None
+    return None
+
+
+def find_talon_python(talon_home: str) -> Optional[str]:
+    """The recorded interpreter, if it is still on disk."""
+    recorded = recorded_talon_python(talon_home)
+    return recorded if recorded and os.path.isdir(recorded) else None
+
+
+def app_is_installed(talon_home: str) -> bool:
+    """~/.talon outlives the app - uninstalling leaves the user folder, logs
+    and venv behind - so the home dir is not the install.
+
+    False only on evidence: a pyvenv.cfg naming an interpreter that is gone.
+    No cfg to read is no evidence, so True.
+    """
+    recorded = recorded_talon_python(talon_home)
+    return os.path.isdir(recorded) if recorded else True
+
+
+def has_parrot_api(talon_home: str) -> Optional[bool]:
+    """The beta check. None if Talon's site-packages was not found at all."""
+    python_home = find_talon_python(talon_home)
+    if python_home is None:
+        return None
+    # Escaped: a [] in a username is a glob character class, and the check
+    # would quietly find nothing.
+    root = glob.escape(python_home)
+    roots = (glob.glob(os.path.join(root, "lib", "python*", "site-packages"))
+             + glob.glob(os.path.join(root, "Lib", "site-packages")))
+    roots = [r for r in roots if os.path.isdir(os.path.join(r, "talon"))]
+    if not roots:
+        return None
+    return any(glob.glob(os.path.join(glob.escape(r), PARROT_API))
+               for r in roots)
 
 
 def find_parrot_integration(talon_user_dir: str) -> Optional[str]:
@@ -164,6 +245,8 @@ def discover_talon() -> TalonDiscoveryResult:
         return result
 
     result.talon_home = talon_home
+    result.talon_installed = app_is_installed(talon_home)
+    result.talon_beta = has_parrot_api(talon_home)
 
     talon_user_dir = get_talon_user_dir()
     if talon_user_dir is None:

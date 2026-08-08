@@ -70,6 +70,7 @@ class SetupPanel(QWidget):
         self.body.setWordWrap(True)
         self.body.setFixedWidth(BODY_WIDTH)
         self.body.setStyleSheet(f"color: {t['text_dim']};")
+        components.enable_links(self.body)
         main.addWidget(self.body, 0, Qt.AlignmentFlag.AlignLeft)
         self.button = QPushButton("")
         self.button.setObjectName("primaryAction")
@@ -88,6 +89,7 @@ class SetupPanel(QWidget):
         self.note.setWordWrap(True)
         self.note.setFixedWidth(BODY_WIDTH)
         self.note.setStyleSheet(f"color: {t['text_dim']};")
+        components.enable_links(self.note)
         main.addWidget(self.note, 0, Qt.AlignmentFlag.AlignLeft)
         main.addStretch()
         row.addLayout(main, 1)
@@ -106,11 +108,18 @@ class SetupPanel(QWidget):
 
         current = next((s for s in self._steps if not s["done"]), None)
         self._current = current["key"] if current else None
+        # Ticks under a blocked step are still true and still worth nothing, so
+        # they keep the ✓ and lose the green.
+        blocked = any(s.get("blocked") for s in self._steps)
         for step in self._steps:
             is_current = current is not None and step["key"] == current["key"]
-            mark, colour = (("✓", t["accent"]) if step["done"]
-                            else ("→", t["text_bright"]) if is_current
-                            else ("·", t["text_dim"]))
+            # A blocked step is a wrong state, not an unreached one, so it
+            # takes ✗ and red rather than the arrow every other step gets.
+            mark, colour = (
+                ("✓", t["text_dim"] if blocked else t["accent"]) if step["done"]
+                else ("✗", t["bad"]) if step.get("blocked")
+                else ("→", t["text_bright"]) if is_current
+                else ("·", t["text_dim"]))
             label = QLabel(f"{mark}  {step['label']}")
             label.setWordWrap(True)
             label.setStyleSheet(
@@ -126,6 +135,8 @@ class SetupPanel(QWidget):
             self.detail.setText("")
             self.note.setText("")
             return
+        self.title.setStyleSheet(components.heading_style(
+            "section", color=t["bad"] if current.get("blocked") else None))
         self.title.setText(current.get("title", ""))
         components.set_wrapped_text(self.body, current.get("body", ""),
                                     BODY_WIDTH)
@@ -135,5 +146,6 @@ class SetupPanel(QWidget):
             self.button.setText(action)
         self.detail.setText(current.get("detail") or "")
         self.detail.setVisible(bool(current.get("detail")))
-        self.note.setText(current.get("note") or "")
+        components.set_wrapped_text(self.note, current.get("note") or "",
+                                    BODY_WIDTH)
         self.note.setVisible(bool(current.get("note")))

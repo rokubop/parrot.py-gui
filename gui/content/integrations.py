@@ -6,8 +6,12 @@ from gui.content import rows_of, tab, topic
 
 
 CONNECT_ROWS = (
-    ("What", "Talon (talonvoice.com) runs your model live and maps each "
-             "sound to an action."),
+    ("What", "Talon ({talon}) runs your model live and maps each sound to an "
+             "action."),
+    # Second, because nothing below it works without the beta.
+    ("Requires", "The <b>Talon beta</b>. Parrot support is not in the stable "
+                 "build: it comes with a Patreon tier and the #beta channel "
+                 "on Slack. {talon_beta}."),
     ("Patterns", "Each trigger, and the sound that fires it, lives in "
                  "patterns.json. Edit and deploy from the Integrations tab."),
     ("Throttle", "Detection runs 60 times a second. A pattern's throttle on "

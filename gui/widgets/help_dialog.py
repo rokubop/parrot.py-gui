@@ -30,7 +30,7 @@ class WrappedBody(QLabel):
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.setWordWrap(True)
-        self.setTextFormat(Qt.TextFormat.RichText)
+        components.enable_links(self)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -561,6 +561,20 @@ def thin_data_warning(count, total):
             f"being usable.")
 
 
+def with_links(text):
+    """Swap a copy token like {talon_beta} for a themed anchor.
+
+    Replacement rather than str.format: copy is full of HTML and a stray brace
+    would raise, and a token nobody defined should render as itself rather
+    than take the app down.
+    """
+    if "{" not in text:
+        return text
+    for token, (url, label) in content.LINKS.items():
+        text = text.replace("{" + token + "}", components.link(url, label))
+    return text
+
+
 def rows_html(rows):
     """Label/body rows. A row whose body is None is a section header spanning
     both columns; a row whose *label* is None is a plain paragraph, also
@@ -576,12 +590,13 @@ def rows_html(rows):
         elif label is None:
             out.append(
                 f"<tr><td colspan='2' style='color:{text}; "
-                f"padding-bottom:9px;'>{body}</td></tr>")
+                f"padding-bottom:9px;'>{with_links(body)}</td></tr>")
         else:
             out.append(
                 f"<tr><td style='color:{dim}; font-weight:bold; "
                 f"padding-right:12px; white-space:nowrap; vertical-align:top;'>"
-                f"{label}</td><td style='color:{text};'>{body}</td></tr>")
+                f"{label}</td><td style='color:{text};'>"
+                f"{with_links(body)}</td></tr>")
     out.append("</table>")
     return "".join(out)
 
@@ -592,7 +607,7 @@ BODY_WIDTH = 860
 
 
 def _prose(html, rank=None):
-    body = WrappedBody(html)
+    body = WrappedBody(with_links(html))
     body.setMaximumWidth(BODY_WIDTH)
     if rank:
         body.setStyleSheet(f"color: {theme.colors()['text']}; "
