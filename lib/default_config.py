@@ -2,33 +2,42 @@ from importlib.util import find_spec
 import os
 import sys
 
-import pyaudio
+import numpy as np
+import sounddevice as sd
 
 if sys.platform == "darwin":
     # This is necessary to import before pyautogui
     # See https://github.com/asweigart/pyautogui/issues/495#issuecomment-778241850
     import AppKit
 
-import pyautogui
+try:
+    import pyautogui
+    pyautogui.FAILSAFE = False
+except Exception:
+    pyautogui = None
 
-pyautogui.FAILSAFE = False
-
-default_audio = pyaudio.PyAudio().get_default_input_device_info()
+try:
+    default_audio = sd.query_devices(kind='input')
+except sd.PortAudioError:
+    default_audio = None
 REPEAT_DELAY = 0.5
 REPEAT_RATE = 33
 SPEECHREC_ENABLED = False
 
-FORMAT = pyaudio.paInt16
+FORMAT = np.int16
+SAMPLE_WIDTH = 2  # 16-bit = 2 bytes
 CHANNELS = 1
+# Every existing recording, trained model and Talon's feature extraction
+# assume 16000. Recordings at other rates are resampled to RATE on read.
 RATE = 16000
 CHUNK = 1024
 RECORD_SECONDS = 0.03
 TEMP_FILE_NAME = "play.wav"
 PREDICTION_LENGTH = 10
 SILENCE_INTENSITY_THRESHOLD = 400
-INPUT_DEVICE_INDEX = 1
+INPUT_DEVICE_INDEX = sd.default.device[0] if sd.default.device[0] is not None else 1
 if (default_audio is not None):
-    INPUT_DEVICE_INDEX = default_audio['index']
+    INPUT_DEVICE_INDEX = sd.default.device[0]
 
 SLIDING_WINDOW_AMOUNT = 2
 INPUT_TESTING_MODE = False
