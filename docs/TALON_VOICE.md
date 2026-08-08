@@ -4,7 +4,7 @@
 Talon Voice is a program that allows you to make your own voice commands, but as of the current version ( 0.1.5 ) it does not support more than two noises ( a pop and a hiss ).
 As Parrot allows for any type of noise to be made, but lacks amazing speech recognition possiblities beyond Windows Speech Recognition, these two complement eachother fairly well.
 
-I have collaborated with TalonVoice to make it possible to have first party support. For this you need to have access to the beta of TalonVoice. Instructions on how to set it up can be found there. But the gist of it is the following:
+I have collaborated with TalonVoice to make it possible to have first party support. For this you need to have access to the [beta of TalonVoice](https://talon.wiki/Help/beta_talon/) - the parrot API is not in the stable build. Instructions on how to set it up can be found there. But the gist of it is the following:
 
 - First, train a AudioNet model, the resulting pkl file is supported by Talon Voice, and name it model.pkl
 - Second, make a directory called 'parrot' inside your Talon home folder
