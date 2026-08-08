@@ -169,7 +169,7 @@ class AudioNetTrainer:
                             
                             if( i % 10 == 0 ):
                                 correct_in_minibatch = ( local_labels == output.max(dim = 1)[1] ).sum()
-                                print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/self.batch_size))
+                                print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/local_labels.size(0)))
                                 running_loss[j] = 0.0
                     
                 epoch_loss = epoch_loss / ( self.dataset_size * (1 - self.validation_split) )
