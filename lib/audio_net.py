@@ -64,25 +64,27 @@ class TinyAudioNetEnsemble(nn.Module):
         return out / self.model_length
             
 class AudioNetTrainer:
-    nets = []
     dataset_labels = []
     dataset_size = 0
     
-    optimizers = []
-    validation_loaders = []
-    train_loaders = []
     criterion = nn.NLLLoss()
     batch_size = 512
     validation_split = .2
     max_epochs = 300
-    random_seeds = []
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
     dataset = False
-    train_indices = []
     input_size = 120
     
     def __init__(self, dataset, net_count = 1, audio_settings = None):
+        # Instance state: class-level lists would be shared between trainers.
+        self.nets = []
+        self.optimizers = []
+        self.random_seeds = []
+        self.train_indices = []
+        self.train_loaders = []
+        self.validation_loaders = []
+
         self.net_count = net_count
         x, y = dataset[0]
         self.input_size = len(x)
