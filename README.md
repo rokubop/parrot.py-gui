@@ -3,10 +3,10 @@ This program is a prototype meant to explore ways to interact with computer syst
 
 It's name is inspired by the way parrots and parakeets communicate, using chirps, clicks and sometimes speech. 
 
-# Desktop app ( preview )
+# Desktop app
 
 A GUI for recording, training and connecting sounds, covering what `settings.py` does.
-New in this fork, still in development.
+New in this fork.
 
 ![Parrot.py desktop app](docs/media/gui-sounds.png)
 
@@ -19,12 +19,6 @@ Same `data/` folder as the CLI. `settings.py` and `play.py` are unchanged.
 **Already have recordings?** First launch offers "Find my setup" on the Home screen,
 or Settings > Manage profiles. It copies your folder in. The original is never written to.
 
-Not done yet:
-
-* No full training run has finished through the GUI. Use `settings.py` for real training for now
-* Run on Windows and macOS. Linux is untested
-* The Talon companion has not been run inside a live Talon
-
 # Software requirements
 * Windows version 7 and up, MacOS or Linux (X11)
 * Python 3.13 (64 bit). `run.bat` and `run.sh` fetch it for you if it isn't there
@@ -35,7 +29,7 @@ Python packages such as
 * pandas 
 * matplotlib *( for the graphing of test results )*
 * scikit-learn *( for the machine learning bits )*
-* pyaudio *( audio recording and playing )*
+* sounddevice *( audio recording and playing )*
 * python_speech_features *( for audio manipulation, specifically the MFCC algorithm )*
 * pyautogui *( for mouse and keyboard simulation )*
 * pydirectinput *( for mouse and keyboard simulation, but with DirectX keycodes instead )*
