@@ -93,3 +93,7 @@ CURRENT_DETECTION_STRATEGY = "auto_dBFS_secondary_dBFS_reject_cont_45ms_repair"
 # Lenient allows for more space between noises to gather a proper threshold
 # Strict allows you to do rapid recordings
 THRESHOLD_DETECTION = "strict" # "lenient"
+
+# On save/reprocess, settle thresholds over the whole recording and re-judge
+# every frame; the online pass needs ~10 sounds before thresholds stabilize.
+TWO_PASS_DETECTION = True
