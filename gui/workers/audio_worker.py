@@ -17,6 +17,7 @@ from lib.stream_recorder import StreamRecorder
 
 class AudioWorker(QThread):
     frame_recorded = pyqtSignal(bytes, bool)  # raw frame, detected-as-sound?
+    frame_level = pyqtSignal(float, float)    # seconds recorded, this frame's dBFS
     status_updated = pyqtSignal(object)  # DetectionState
     recording_finished = pyqtSignal(str, str)  # wav_path, srt_path
 
@@ -101,9 +102,19 @@ class AudioWorker(QThread):
                 while not audio_queue.empty() and not self._stop_requested:
                     frame = audio_queue.get()
                     self.recorder.add_audio_frame(frame)
-                    detected = bool(self.recorder.detection_frames[-1].positive) \
-                        if self.recorder.detection_frames else False
+                    frames = self.recorder.detection_frames
+                    detected = bool(frames[-1].positive) if frames else False
                     self.frame_recorded.emit(frame, detected)
+                    # The level off the frame the detector just judged. Reading
+                    # it from DetectionState instead samples one frame in
+                    # fifteen: latest_dBFS is only refreshed when the noise
+                    # floor is recalculated, every 225 ms, so anything shorter
+                    # than that is usually missed. `power` is 0 on the very
+                    # first frame, which has no window behind it yet.
+                    if frames and frames[-1].power:
+                        self.frame_level.emit(
+                            detection_state.ms_recorded / 1000.0,
+                            float(frames[-1].dBFS))
                     self.status_updated.emit(self.recorder.get_detection_state())
 
                 if self._clear_requested:

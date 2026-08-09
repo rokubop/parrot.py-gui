@@ -74,6 +74,10 @@ class RecordingView(QWidget):
         # Pause by what the re-judge of the whole take actually produced.
         self._live_sounds = 0
         self._was_detected = False
+        # Loudest frame since the panel last drew. A pop is two or three
+        # frames, so a readout that samples one frame per redraw mostly shows
+        # the silence between them.
+        self._peak_dbfs = None
 
         self._setup_ui()
 
@@ -337,6 +341,11 @@ class RecordingView(QWidget):
         self._manual_dbfs = float(value)
         self.thr_note.setText(f"{round(value)} dBFS - drag the line to move it")
         self._push_threshold()
+
+    def _on_frame_level(self, seconds, dbfs):
+        """Every frame, from the frame the detector judged."""
+        self.level_lane.push_level(seconds, dbfs)
+        self._peak_dbfs = dbfs if self._peak_dbfs is None else max(self._peak_dbfs, dbfs)
 
     def _count_sound(self, _frame, detected):
         """One more sound on the rising edge of the detection flag. Provisional,
@@ -621,8 +630,10 @@ class RecordingView(QWidget):
         threshold = self._threshold_override()
         self.worker = AudioWorker(label, mic, strategy, time_string, threshold)
         self._was_detected = False
+        self._peak_dbfs = None
         self.worker.frame_recorded.connect(self.waveform.append_live_data)
         self.worker.frame_recorded.connect(self._count_sound)
+        self.worker.frame_level.connect(self._on_frame_level)
         self.worker.status_updated.connect(self._on_status)
         self.worker.recording_finished.connect(self._on_segment_finished)
         self.worker.start()
@@ -811,11 +822,6 @@ class RecordingView(QWidget):
     # ---- live status ---------------------------------------------------
 
     def _on_status(self, state):
-        # Before the throttle: the lane wants every frame, and drawing it is
-        # already throttled on its own clock. Skipping frames here would put
-        # gaps in the level trace that the audio does not have.
-        self.level_lane.push_level(state.ms_recorded / 1000.0, state.latest_dBFS)
-
         now = time.monotonic()
         if now - self._last_status_draw < 0.12:
             return
@@ -837,10 +843,16 @@ class RecordingView(QWidget):
         quality, color = _quality_from_snr(state.expected_snr, state.ms_recorded)
         self.v_quality.setText(quality)
         self.v_quality.setStyleSheet(f"color: {color}; font-weight: bold;")
-        if state.latest_dBFS <= -100:
+        # The loudest frame since the last draw, not whichever one this tick
+        # landed on. state.latest_dBFS is refreshed every 15 frames, so it
+        # showed the gaps between sharp sounds far more often than the sounds.
+        peak, self._peak_dbfs = self._peak_dbfs, None
+        if peak is None:
+            pass
+        elif peak <= -100:
             self.v_dbfs.setText("weak / muted?")
         else:
-            self.v_dbfs.setText(f"{round(state.latest_dBFS)}")
+            self.v_dbfs.setText(f"{round(peak)}")
         self.v_noise.setText(f"{round(state.expected_noise_floor)}")
         self.v_snr.setText(f"{round(state.expected_snr)}")
 
