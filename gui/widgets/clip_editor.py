@@ -16,8 +16,9 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import components, icons, theme
-from gui.services import playback
+from gui.services import levels, playback
 from gui.widgets.audio_preview import AudioPreviewWidget, view_after_cut
+from gui.widgets.level_lane import LevelLane
 from gui.workers.segment_worker import TrimWorker
 
 
@@ -38,10 +39,15 @@ class ClipEditorWidget(QWidget):
     edited = pyqtSignal()               # the clip's files changed on disk
     history_changed = pyqtSignal()      # undo/redo availability moved
 
-    def __init__(self, history, noun="clip", parent=None):
+    def __init__(self, history, noun="clip", show_levels=False, parent=None):
         super().__init__(parent)
         self.history = history
         self.noun = noun
+        # A dBFS lane under the waveform. Only the screen that owns a threshold
+        # control asks for it; everywhere else it would be a strip of chart
+        # nothing on the page can act on.
+        self.lane = None
+        self._show_levels = show_levels
         # Where to look up the clip's srt after an undo restores it. The two
         # views resolve it differently, so the host supplies it.
         self.srt_provider = lambda: None
@@ -88,6 +94,11 @@ class ClipEditorWidget(QWidget):
         self.preview = AudioPreviewWidget()
         self.preview.seeked.connect(self.on_seek)
         root.addWidget(self.preview, 1)
+
+        if self._show_levels:
+            self.lane = LevelLane()
+            self.lane.link_x(self.preview.plot)
+            root.addWidget(self.lane)
 
         row = QHBoxLayout()
         row.setSpacing(6)
@@ -149,10 +160,21 @@ class ClipEditorWidget(QWidget):
         self._stop_at = None
         view = None if reset_view else self.preview.view_range()
         self.preview.load(wav_path, srt_path, view=view)
+        self.refresh_levels()
         if reset_view:
             self.preview.fit_full()
         self.preview.set_busy(False)
         self.refresh_history_buttons()
+
+    def refresh_levels(self):
+        """Recompute the dBFS lane from the clip on disk. Cheap next to a
+        re-detect, and the audio can have changed under it (a trim, an undo)."""
+        if self.lane is None:
+            return
+        if not self.wav_path:
+            self.lane.clear()
+            return
+        self.lane.set_levels(*levels.frame_dbfs(self.wav_path))
 
     def set_regions(self, srt_path):
         """Refresh only the detection overlay."""
@@ -164,6 +186,8 @@ class ClipEditorWidget(QWidget):
         self._audio = None
         self._cut_note = ""
         self.preview.set_busy(False)
+        if self.lane is not None:
+            self.lane.clear()
 
     # ---- enabling -------------------------------------------------------
 
@@ -171,6 +195,8 @@ class ClipEditorWidget(QWidget):
         """Host work that reprocesses the clip (re-detection) uses this too, so
         the plot is inert for the whole of it and not just for our own edits."""
         self.preview.set_busy(busy, message)
+        if self.lane is not None:
+            self.lane.setEnabled(not busy)
         for btn in (self.play_btn, self.fit_btn, self.norm_btn, self.spec_btn):
             btn.setEnabled(not busy)
         self.delete_btn.setEnabled(not busy and self._editing_allowed)
@@ -274,6 +300,7 @@ class ClipEditorWidget(QWidget):
         view = view_after_cut(self._view_before_cut or self.preview.view_range(),
                               cut_start, removed, new_duration)
         self.preview.load(self.wav_path, None, view=view)
+        self.refresh_levels()                  # the audio under the lane changed
         self.set_busy(True, "Re-detecting…")   # load repositions the scrim
         self.preview.clear_selection()
         self.preview.flash_seam(cut_start)
@@ -340,6 +367,7 @@ class ClipEditorWidget(QWidget):
         # the whole clip again.
         self.preview.load(self.wav_path, self.srt_provider(),
                           view=self.preview.view_range())
+        self.refresh_levels()
         self._audio = None
         self.edited.emit()
         self.refresh_history_buttons()
@@ -423,4 +451,8 @@ class ClipEditorWidget(QWidget):
 
     def cleanup(self):
         self.stop_playback()
+        # Unlink before either plot is torn down, or pyqtgraph paints one
+        # ViewBox from another that has already gone.
+        if self.lane is not None:
+            self.lane.cleanup()
         self.preview.cleanup()

@@ -20,6 +20,7 @@ from gui import components, icons, theme
 from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.clip_editor import ClipEditorWidget
+from gui.widgets.level_lane import LevelLane
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets.mic_picker import MicPicker
 from gui.workers.audio_worker import AudioWorker
@@ -157,6 +158,14 @@ class RecordingView(QWidget):
         left = QVBoxLayout()
         self.waveform = WaveformWidget()
         left.addWidget(self.waveform)
+        # Level in dBFS under the live trace, with the threshold on it. The
+        # trace says what was recorded; this says what detection is going to
+        # call sound, while there is still time to change it.
+        self.level_lane = LevelLane()
+        self.level_lane.link_x(self.waveform.get_plot_widget())
+        self.level_lane.threshold_moved.connect(self._on_threshold_moved)
+        left.addWidget(self.level_lane)
+        left.addWidget(self._build_threshold_row())
         self.editor = ClipEditorWidget(self.history, noun="take")
         self.editor.setVisible(False)
         self.editor.srt_provider = lambda: self._srt_for(self._take_wav)
@@ -266,6 +275,66 @@ class RecordingView(QWidget):
         group.setMaximumWidth(280)
         return group
 
+    def _build_threshold_row(self):
+        """Automatic or a threshold you set, beside the lane that draws it.
+
+        Automatic is not one number: detection picks a threshold per sound and
+        only settles on a floor once ten onsets have been seen, so the line is
+        dim and dashed and there is nothing to drag. Manual pins it, live -
+        useful for a sound the automatic pass keeps missing, where the
+        alternative is finishing the take and finding out afterwards.
+        """
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QLabel("Detection threshold:"))
+        self.thr_mode = QComboBox()
+        self.thr_mode.addItem("Automatic", None)
+        self.thr_mode.addItem("Manual", "manual")
+        self.thr_mode.setToolTip("Manual pins the threshold and lets you drag "
+                                 "the line while recording")
+        self.thr_mode.currentIndexChanged.connect(self._on_threshold_mode)
+        layout.addWidget(self.thr_mode)
+        self.thr_note = QLabel("")
+        self.thr_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+        layout.addWidget(self.thr_note, 1)
+        self._manual_dbfs = -40.0     # remembered across a switch back to auto
+        self._threshold_row = row
+        self._on_threshold_mode()
+        return row
+
+    def _threshold_override(self):
+        """The value to run detection at, or None while it is automatic."""
+        return self._manual_dbfs if self.thr_mode.currentData() == "manual" else None
+
+    def _on_threshold_mode(self, *_):
+        manual = self.thr_mode.currentData() == "manual"
+        lane = self.level_lane
+        lane.set_mode("manual" if manual else "auto")
+        if manual:
+            lane.set_threshold(self._manual_dbfs)
+            lane.set_line_visible(True)
+            self.thr_note.setText(f"{round(self._manual_dbfs)} dBFS - drag the "
+                                  f"line to move it")
+        else:
+            # Nothing to draw until the automatic threshold settles; _on_status
+            # brings the line back when it does.
+            lane.set_line_visible(False)
+            self.thr_note.setText("detection picks its own")
+        self._push_threshold()
+
+    def _on_threshold_moved(self, value):
+        self._manual_dbfs = float(value)
+        self.thr_note.setText(f"{round(value)} dBFS - drag the line to move it")
+        self._push_threshold()
+
+    def _push_threshold(self):
+        """Every live mic, not just the one driving the view - the extras are
+        writing their own srt files against the same take."""
+        value = self._threshold_override()
+        for worker in ([self.worker] if self.worker else []) + self._extra_workers:
+            worker.set_threshold(value)
+
     def refresh_mic_label(self):
         """Once a take exists the session's mics are locked so every segment
         of the take uses the same devices - the picker greys out until reset."""
@@ -304,6 +373,7 @@ class RecordingView(QWidget):
         else:
             self.editor.clear()
             self.waveform.clear_display()
+            self.level_lane.clear()
             self._set_state("idle")
             self.hint.setText("")
 
@@ -350,6 +420,8 @@ class RecordingView(QWidget):
         recording = state == "recording"
         reviewing = state == "review"
         self.waveform.setVisible(not reviewing)
+        self.level_lane.setVisible(not reviewing)
+        self._threshold_row.setVisible(not reviewing)
         self.editor.setVisible(reviewing)
         # Start over only makes sense once a take exists; you can finish anytime.
         self.start_over_btn.setVisible(self._take_wav is not None)
@@ -462,10 +534,14 @@ class RecordingView(QWidget):
 
         self.stop_playback()
         self._seed_or_clear_live()
+        # Continue the take's time axis, so a resumed segment's levels line up
+        # with the trace seeded above them instead of restarting at zero.
+        self.level_lane.begin_live(self.waveform.total_seconds())
 
         # one timestamp for all mics: their files read as one take
         time_string = str(int(time.time()))
-        self.worker = AudioWorker(label, mic, strategy, time_string)
+        threshold = self._threshold_override()
+        self.worker = AudioWorker(label, mic, strategy, time_string, threshold)
         self.worker.frame_recorded.connect(self.waveform.append_live_data)
         self.worker.status_updated.connect(self._on_status)
         self.worker.recording_finished.connect(self._on_segment_finished)
@@ -473,7 +549,7 @@ class RecordingView(QWidget):
 
         # extra mics record headless; the primary drives the live view
         for extra in extras:
-            w = AudioWorker(label, extra, strategy, time_string)
+            w = AudioWorker(label, extra, strategy, time_string, threshold)
             w.recording_finished.connect(
                 lambda wav, srt, m=extra, wk=w:
                     self._on_extra_segment_finished(m, wk, wav, srt))
@@ -653,10 +729,27 @@ class RecordingView(QWidget):
     # ---- live status ---------------------------------------------------
 
     def _on_status(self, state):
+        # Before the throttle: the lane wants every frame, and drawing it is
+        # already throttled on its own clock. Skipping frames here would put
+        # gaps in the level trace that the audio does not have.
+        self.level_lane.push_level(state.ms_recorded / 1000.0, state.latest_dBFS)
+
         now = time.monotonic()
         if now - self._last_status_draw < 0.12:
             return
         self._last_status_draw = now
+
+        # Automatic has no threshold to show until calibration engages (it
+        # needs ten onset valleys), and 0 is how "not yet" is expressed.
+        if self.thr_mode.currentData() != "manual":
+            settled = state.upper_bound_dBFS_threshold or 0
+            if settled < 0:
+                self.level_lane.set_threshold(settled)
+                self.level_lane.set_line_visible(True)
+                self.thr_note.setText(f"detection settled on {round(settled)} dBFS")
+            else:
+                self.level_lane.set_line_visible(False)
+                self.thr_note.setText("detection is still calibrating")
 
         self.v_time.setText(ms_to_srt_timestring(state.ms_recorded, False))
         quality, color = _quality_from_snr(state.expected_snr, state.ms_recorded)

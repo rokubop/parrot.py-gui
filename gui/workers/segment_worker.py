@@ -62,6 +62,14 @@ def read_min_dbfs(wav_path):
     return None
 
 
+def has_manual_override(wav_path):
+    """Whether this recording's detection came from a threshold someone set,
+    rather than one detection settled on. Same test ``redetect`` makes, so the
+    two can never disagree about which the screen is showing."""
+    base, _label, seg = _paths(wav_path)
+    return os.path.isfile(_thresholds(seg, base)) and os.path.isfile(_manual_srt(seg, base))
+
+
 def redetect(wav_path, label):
     """Re-run detection on a wav, preserving a manual threshold override if the
     recording has one (-> MANUAL.srt) else producing the automatic .v<N>.srt.

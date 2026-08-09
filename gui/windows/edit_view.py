@@ -20,7 +20,9 @@ from gui.widgets.clip_editor import ClipEditorWidget
 from gui.widgets.click_slider import ClickSlider, slider_qss
 from gui.services import library_ops
 from gui.services.undo import UndoHistory
-from gui.workers.segment_worker import ReSegmentWorker, ResetWorker, read_min_dbfs
+from gui.workers.segment_worker import (
+    ReSegmentWorker, ResetWorker, has_manual_override, read_min_dbfs
+)
 
 
 class EditRecordingView(QWidget):
@@ -97,7 +99,7 @@ class EditRecordingView(QWidget):
         top.addWidget(self.save_btn)
         root.addLayout(top)
 
-        self.editor = ClipEditorWidget(self.history, noun="clip")
+        self.editor = ClipEditorWidget(self.history, noun="clip", show_levels=True)
         self.editor.srt_provider = self._current_srt
         self.editor.whole_clip_hint = "Delete the recording from Sounds instead."
         self.editor.status.connect(self.status_text)
@@ -131,6 +133,11 @@ class EditRecordingView(QWidget):
         det_group = QGroupBox("Detection (the blue overlay)")
         det = QHBoxLayout(det_group)
         det.addWidget(QLabel("Threshold:"))
+        # The lane under the waveform carries the same value as a line you can
+        # drag. Releasing it re-detects, so the slider is not the only way in
+        # and neither one has to be guessed at.
+        self.editor.lane.threshold_moved.connect(self._on_lane_moved)
+        self.editor.lane.threshold_committed.connect(self._on_lane_committed)
         self.slider = ClickSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(-96, 0)
         self.slider.setValue(-40)
@@ -172,15 +179,41 @@ class EditRecordingView(QWidget):
     def _update_slider_label(self, *_):
         v = self.slider.value()
         self.slider_label.setText(f"{v} dBFS")
+        # Touching the slider is choosing a value, so the lane stops describing
+        # what detection found and starts showing what is about to be applied.
+        lane = self.editor.lane
+        lane.set_threshold(v)
+        lane.set_mode("manual")
+        lane.set_line_visible(True)
+
+    def _on_lane_moved(self, value):
+        """Dragging the line moves the slider, not the other way round."""
+        self.slider.setValue(int(round(value)))
+
+    def _on_lane_committed(self, _value):
+        self._apply_timer.start()
 
     def _sync_slider_from_file(self):
         """Move the slider to whatever threshold is on disk - so after Auto-detect
-        it shows the value detection picked."""
+        it shows the value detection picked.
+
+        The lane follows, and says which of the two it is: a value someone set,
+        or the floor detection settled on for a threshold that moves per sound.
+        """
         existing = read_min_dbfs(self.wav_path)
+        manual = has_manual_override(self.wav_path)
         self.slider.blockSignals(True)
         self.slider.setValue(int(existing) if existing is not None else -40)
         self.slider.blockSignals(False)
-        self._update_slider_label()
+        v = self.slider.value()
+        self.slider_label.setText(f"{v} dBFS")
+        lane = self.editor.lane
+        lane.set_threshold(v)
+        lane.set_mode("manual" if manual else "auto")
+        # A settled auto threshold of 0 means calibration never engaged (it
+        # needs ten onset valleys). Drawing a line at 0 would claim a cutoff
+        # nothing can clear.
+        lane.set_line_visible(manual or (existing is not None and existing < 0))
 
     # ---- detection edits ----------------------------------------------
 

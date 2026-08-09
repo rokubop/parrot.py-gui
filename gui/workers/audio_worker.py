@@ -20,13 +20,25 @@ class AudioWorker(QThread):
     status_updated = pyqtSignal(object)  # DetectionState
     recording_finished = pyqtSignal(str, str)  # wav_path, srt_path
 
-    def __init__(self, label, mic_index=None, strategy=None, time_string=None, parent=None):
+    # A threshold at or below this reads as "no override" everywhere downstream
+    # (lib/stream_processing), so it is how automatic is expressed.
+    AUTO_DBFS = -96.0
+
+    def __init__(self, label, mic_index=None, strategy=None, time_string=None,
+                 min_dbfs=None, parent=None):
         super().__init__(parent)
         self.label = label
         self.mic_index = mic_index if mic_index is not None else INPUT_DEVICE_INDEX
         self.strategy = strategy or CURRENT_DETECTION_STRATEGY
         # shared across simultaneous multi-mic workers so files group as one take
         self.time_string = time_string or str(int(time.time()))
+        # Manual detection threshold in dBFS, or None for automatic. The live
+        # path already supports this - determine_detection_state applies
+        # override_labels on every frame - so it is a value to keep current,
+        # not a second code path.
+        self._min_dbfs = min_dbfs
+        self._override = None
+        self._detection_labels = []
         self._stop_requested = False
         self._pause_requested = False
         self._clear_requested = False
@@ -48,9 +60,14 @@ class AudioWorker(QThread):
 
         ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
         detection_labels = [DetectionLabel(self.label, 0, 0, "", 0, 0, 0, 0, 0)]
+        self._detection_labels = detection_labels
+        self._override = DetectionLabel(
+            self.label, 0, 0, "", 0,
+            self.AUTO_DBFS if self._min_dbfs is None else float(self._min_dbfs),
+            0, 0, 0)
         detection_state = DetectionState(
             self.strategy, "recording", ms_per_frame, 0, True,
-            0, 0, 0, 0, detection_labels, None, []
+            0, 0, 0, 0, detection_labels, [self._override], []
         )
 
         audio_queue = Queue(maxsize=0)
@@ -128,6 +145,28 @@ class AudioWorker(QThread):
                            "strategy": self.strategy}, f)
         except OSError:
             pass
+
+    def set_threshold(self, min_dbfs):
+        """Change the detection threshold mid-take. ``None`` restores automatic.
+
+        Called from the UI thread while the worker is running. No lock: the
+        recorder reads one float off the override label per frame, and the
+        assignment is atomic, so the worst case is that a drag lands one frame
+        (15 ms) later than the mouse.
+        """
+        self._min_dbfs = min_dbfs
+        if self._override is None:
+            return
+        value = self.AUTO_DBFS if min_dbfs is None else float(min_dbfs)
+        self._override.min_dBFS = value
+        self._override.min_secondary_dBFS = value
+        if min_dbfs is None:
+            # `overridden` is only ever set, never cleared, by
+            # determine_detection_state. Clearing it here is what hands the
+            # per-sound dynamic threshold back; leaving it pins detection to
+            # the last manual value under a label that says automatic.
+            for label in self._detection_labels:
+                label.overridden = False
 
     def request_stop(self):
         self._stop_requested = True
