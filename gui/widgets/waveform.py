@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 
+from config.config import RATE
+
 
 class WaveformWidget(QWidget):
     MAX_DISPLAY_POINTS = 100000   # for a one-shot loaded file
@@ -50,7 +52,7 @@ class WaveformWidget(QWidget):
         self.plot_widget.addItem(self.cut_region)
 
         self.plot_item = self.plot_widget.plot(pen=pg.mkPen(color='c', width=1))
-        self._sample_rate = 48000
+        self._sample_rate = RATE
 
         # Live view behaves like a DAW recorder: fixed vertical scale, fixed-
         # width time window scrolling to keep the record head at the right
@@ -65,6 +67,11 @@ class WaveformWidget(QWidget):
         self._reset_live()
 
     def _reset_live(self):
+        # Live audio always arrives at the recorder's rate. Without this a take
+        # started after a wav had been loaded kept that file's rate, and a fresh
+        # one kept the constructor's - the time axis ran three times fast and
+        # the ten second window held thirty.
+        self._sample_rate = RATE
         # Growable int16 buffer (amortized doubling) so appending a frame is O(1)
         # and we never rebuild an array from a growing Python list per frame.
         # A parallel uint8 buffer tracks detection (1 = sound) per sample.
