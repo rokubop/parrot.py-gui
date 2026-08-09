@@ -6,6 +6,8 @@ paused the whole take shows in the interactive preview, so play/scrub/Delete
 (TrimWorker) operate on a static file - no mid-stream splicing. The take lives
 in the sound from the first segment on, so it's always saved.
 """
+import math
+import os
 import time
 import numpy as np
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -15,7 +17,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QGroupBox, QFormLayout, QMessageBox
 )
 
-from config.config import RATE
+from config.config import RATE, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from gui import components, icons, theme
 from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
@@ -27,7 +29,7 @@ from gui.workers.audio_worker import AudioWorker
 from gui.workers.segment_worker import AppendWorker, read_min_dbfs
 from gui.services import library_ops, strategies
 from gui.services.undo import UndoHistory
-from lib.srt import ms_to_srt_timestring
+from lib.srt import ms_to_srt_timestring, parse_srt_file
 from lib.print_status import get_quantity_rating
 
 
@@ -68,6 +70,10 @@ class RecordingView(QWidget):
         self._pending_action = None     # 'pause' | 'done' while a segment stops
         self._state = "idle"
         self._last_status_draw = 0.0
+        # Sounds so far. Counted live off the detection flag, then replaced at
+        # Pause by what the re-judge of the whole take actually produced.
+        self._live_sounds = 0
+        self._was_detected = False
 
         self._setup_ui()
 
@@ -261,6 +267,7 @@ class RecordingView(QWidget):
         self.v_noise = value_label()
         self.v_snr = value_label()
         self.v_detected = value_label()
+        self.v_sounds = value_label()
         self.v_quantity = value_label()
         self.v_type = value_label()
         for caption, widget in (("Recorded", self.v_time),
@@ -269,6 +276,7 @@ class RecordingView(QWidget):
                                 ("Noise floor", self.v_noise),
                                 ("SNR", self.v_snr),
                                 ("Detected sound", self.v_detected),
+                                ("Sounds", self.v_sounds),
                                 ("Data quantity", self.v_quantity),
                                 ("Type", self.v_type)):
             cap = QLabel(caption + ":")
@@ -330,6 +338,54 @@ class RecordingView(QWidget):
         self.thr_note.setText(f"{round(value)} dBFS - drag the line to move it")
         self._push_threshold()
 
+    def _count_sound(self, _frame, detected):
+        """One more sound on the rising edge of the detection flag. Provisional,
+        like the bands it counts: Pause re-judges the take and overwrites it."""
+        if detected and not self._was_detected:
+            self._live_sounds += 1
+            self.v_sounds.setText(str(self._live_sounds))
+        self._was_detected = detected
+
+    def _take_summary(self):
+        """``(sounds, ms)`` in the take's srt, or None.
+
+        The live counters are the online estimator's running total, and Pause
+        throws that away: the whole take is re-judged from 0:00 with settled
+        thresholds. Left alone the panel keeps showing a number that nothing on
+        screen agrees with any more.
+        """
+        if not self._take_srt or not os.path.isfile(self._take_srt):
+            return None
+        ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
+        try:
+            events = parse_srt_file(self._take_srt, ms_per_frame, show_errors=False)
+        except Exception:
+            return None
+        label = (self._label or "").lower()
+        sounds = total = 0
+        start = -1
+        for event in events:
+            if event.label.lower() == label:
+                start = event.start_ms
+            elif start > -1:
+                total += event.start_ms - start
+                sounds += 1
+                start = -1
+        return sounds, total
+
+    def _show_take_summary(self):
+        """Replace the live counters with what the re-judge actually produced."""
+        summary = self._take_summary()
+        if summary is None:
+            return
+        sounds, ms = summary
+        self._live_sounds = sounds
+        self.v_detected.setText(ms_to_srt_timestring(ms, False))
+        self.v_sounds.setText(str(sounds))
+        quantity, pct, nxt = get_quantity_rating(ms)
+        tail = f" ({round(pct)}% → {nxt})" if nxt else ""
+        self.v_quantity.setText(quantity + tail)
+
     def _sync_review_lane(self):
         """Carry the threshold onto the take's own lane after Pause.
 
@@ -389,11 +445,15 @@ class RecordingView(QWidget):
             self.history.clear()
         self.name_input.setEnabled(take is None and self._new_mode)
         for w in (self.v_time, self.v_quality, self.v_dbfs, self.v_noise,
-                  self.v_snr, self.v_detected, self.v_quantity, self.v_type):
+                  self.v_snr, self.v_detected, self.v_sounds, self.v_quantity,
+                  self.v_type):
             w.setText("-")
+        self._live_sounds = 0
+        self._was_detected = False
         if take:
             self.editor.open(take, self._take_srt, self._label)
             self._sync_review_lane()
+            self._show_take_summary()
             self._set_state("review")
             self.hint.setText(self._review_hint("Resume to add more."))
         else:
@@ -568,7 +628,9 @@ class RecordingView(QWidget):
         time_string = str(int(time.time()))
         threshold = self._threshold_override()
         self.worker = AudioWorker(label, mic, strategy, time_string, threshold)
+        self._was_detected = False
         self.worker.frame_recorded.connect(self.waveform.append_live_data)
+        self.worker.frame_recorded.connect(self._count_sound)
         self.worker.status_updated.connect(self._on_status)
         self.worker.recording_finished.connect(self._on_segment_finished)
         self.worker.start()
@@ -739,6 +801,7 @@ class RecordingView(QWidget):
         self._take_srt = self._srt_for(self._take_wav) or self._take_srt
         self.editor.open(self._take_wav, self._take_srt, self._label)
         self._sync_review_lane()
+        self._show_take_summary()
         self._set_state("review")
         self.hint.setText(self._review_hint("Resume to add more, Done to finish."))
 
