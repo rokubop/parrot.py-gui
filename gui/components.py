@@ -148,6 +148,34 @@ def primary_button(text, slot=None, height=34):
     return btn
 
 
+def lock_width(button, *texts, floor=0):
+    """Pin a button to one width for every label it will ever show.
+
+    A button whose text changes - Play/Stop, Record/Pause/Resume - is otherwise
+    re-measured on each click, and every button to its right jumps sideways at
+    the moment you press it.
+
+    Two traps make the obvious fixes not work:
+
+    * ``setMinimumWidth`` stops a button shrinking, not growing, so a wider
+      label still shoves the row along.
+    * The labels start with symbols (▶ ■ ❚❚) that Windows resolves through font
+      fallback, and a colour-emoji glyph paints wider than ``QFontMetrics``
+      reports. Measuring alone cannot be trusted, hence ``floor``.
+
+    Setting ``sizeHint`` per label does not work either: QPushButton caches it,
+    and the cache does not always drop on ``setText`` - every label measures the
+    same, so a hint-based version silently does nothing.
+    """
+    fm = button.fontMetrics()
+    # Padding/border come from the stylesheet, so read them off rather than
+    # hard-coding: the hint for the label it already has, less that label.
+    chrome = max(0, button.sizeHint().width() - fm.horizontalAdvance(button.text()))
+    widest = max(fm.horizontalAdvance(t) for t in texts) if texts else 0
+    button.setFixedWidth(max(widest + chrome, floor))
+    return button
+
+
 def ghost_button_style():
     """Borderless, dim, second-class actions - Rename / Clone / Delete."""
     t = theme.colors()
