@@ -118,7 +118,9 @@ def write_meta(name, meta):
         json.dump(meta, f, indent=2)
 
 
-def _check_new_name(name):
+def check_new_name(name):
+    """Raise ProfileError if this name cannot be used. Public so a dialog can
+    ask the same question per keystroke that create/duplicate ask on submit."""
     if not _VALID_NAME.match(name or ""):
         raise ProfileError("Profile names use letters, numbers, spaces, . _ -")
     if name == "current":
@@ -137,7 +139,7 @@ def _copy_data_tree(src, dst):
 
 
 def create_empty(name):
-    _check_new_name(name)
+    check_new_name(name)
     root = profile_data_dir(name)
     for sub in ("recordings", "models", "code"):
         os.makedirs(os.path.join(root, sub), exist_ok=True)
@@ -147,7 +149,7 @@ def create_empty(name):
 
 def duplicate(source_data_dir, name, talon="real"):
     """New profile from any data tree: the real data/ or another profile."""
-    _check_new_name(name)
+    check_new_name(name)
     if not os.path.isdir(source_data_dir):
         raise ProfileError(f"Nothing to copy at {source_data_dir}")
     _copy_data_tree(source_data_dir, profile_data_dir(name))
@@ -218,6 +220,40 @@ def reset(name):
             shutil.copytree(src, dst)
         else:
             shutil.copy2(src, dst)
+
+
+def rename(name, new_name):
+    """Rename a profile. The folder is the profile, so this is os.rename plus
+    the two things that hold its old path: the current pointer, and a mock
+    Talon home, which test profiles store as an absolute path inside it.
+
+    A caller renaming the *running* profile must relaunch: DATA_DIR was
+    resolved at import and still names the folder that no longer exists.
+    """
+    check_new_name(new_name)
+    old_dir = profile_data_dir(name)
+    if not os.path.isdir(old_dir):
+        raise ProfileError(f"No profile named {name}")
+    new_dir = profile_data_dir(new_name)
+    os.rename(old_dir, new_dir)
+
+    meta = read_meta(new_name)
+    talon = meta.get("talon")
+    if talon and talon not in ("real", "none"):
+        old_abs = os.path.abspath(old_dir)
+        talon_abs = os.path.abspath(talon)
+        if talon_abs.startswith(old_abs + os.sep):
+            meta["talon"] = os.path.join(os.path.abspath(new_dir),
+                                         os.path.relpath(talon_abs, old_abs))
+            write_meta(new_name, meta)
+
+    try:
+        with open(CURRENT_POINTER, encoding="utf-8") as f:
+            points_here = f.read().strip() == name
+    except OSError:
+        points_here = False
+    if points_here:
+        set_current(new_name)
 
 
 def delete(name):

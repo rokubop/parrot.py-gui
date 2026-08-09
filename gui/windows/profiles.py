@@ -11,7 +11,7 @@ import os
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QGroupBox, QComboBox, QInputDialog, QMessageBox,
+    QListWidgetItem, QGroupBox, QComboBox, QMessageBox,
     QApplication, QFileDialog, QWidget, QRadioButton, QLineEdit
 )
 
@@ -46,6 +46,31 @@ def _counts(sounds, models):
     """What a data tree holds, worded the same in every list that shows one."""
     return (f"{sounds} sound{'' if sounds == 1 else 's'}, "
             f"{models} model{'' if models == 1 else 's'}")
+
+
+def _name_problem(name):
+    """Why this profile name will not work, or None.
+
+    Asked per keystroke so a name is never a click that fails. Blank is not
+    a complaint, it is just not finished, so it reads as None.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    try:
+        profiles.check_new_name(name)
+    except profiles.ProfileError as exc:
+        return str(exc)
+    return None
+
+
+def _suggested_name(setup):
+    """A profile name from the folder it came from. Every one of them is
+    called parrot.py, so that name suggests nothing and is not offered."""
+    name = os.path.basename(setup["root"]).strip()
+    if not name or name.lower() in ("parrot.py", "parrot", "data"):
+        return "Imported"
+    return name
 
 
 class _ScanWorker(QThread):
@@ -169,6 +194,14 @@ class ImportSetupDialog(QDialog):
         self.dest_combo.setToolTip(
             "Where the copy lands. Whatever is already there is kept.")
         dest_row.addWidget(self.dest_combo)
+        self.new_name_edit = QLineEdit()
+        self.new_name_edit.setPlaceholderText("call it")
+        self.new_name_edit.setMaximumWidth(150)
+        self.new_name_edit.setVisible(False)
+        self.new_name_edit.textChanged.connect(lambda *_: self._update_buttons())
+        dest_row.addWidget(self.new_name_edit)
+        self.dest_combo.currentIndexChanged.connect(
+            lambda *_: self._on_dest_changed())
         row.addWidget(self.dest_widget)
         row.addStretch()
         self.status_label = QLabel("")
@@ -239,6 +272,21 @@ class ImportSetupDialog(QDialog):
     def _is_here(self, data_dir):
         return data_dir == os.path.abspath(profiles.current_data_dir())
 
+    def _on_dest_changed(self):
+        making_new = self.dest_combo.currentData() is None
+        self.new_name_edit.setVisible(making_new)
+        self._suggest_name()
+        self._update_buttons()
+
+    def _suggest_name(self):
+        if (self.dest_combo.currentData() is not None
+                or self.new_name_edit.text().strip()):
+            return
+        item = self.list.currentItem()
+        if item is not None:
+            self.new_name_edit.setText(
+                _suggested_name(item.data(Qt.ItemDataRole.UserRole)))
+
     def _add_candidate(self, setup, select=False):
         text = f"{setup['label']}    {_counts(setup['sounds'], setup['models'])}"
         item = QListWidgetItem(text)
@@ -246,6 +294,7 @@ class ImportSetupDialog(QDialog):
         self.list.addItem(item)
         if select:
             self.list.setCurrentItem(item)
+            self._suggest_name()
 
     def _known_dirs(self):
         return {self.list.item(i).data(Qt.ItemDataRole.UserRole)["data_dir"]
@@ -330,9 +379,18 @@ class ImportSetupDialog(QDialog):
 
     def _update_buttons(self):
         busy = self._worker is not None
+        making_new = (not self._pick_only
+                      and self.dest_combo.currentData() is None)
+        name = self.new_name_edit.text().strip()
+        problem = _name_problem(name) if making_new else None
+        if not busy:
+            self.status_label.setText(problem or "")
         self.import_btn.setEnabled(
-            not busy and self.list.currentItem() is not None)
-        self.dest_combo.setEnabled(not busy)
+            not busy
+            and self.list.currentItem() is not None
+            and problem is None
+            and (bool(name) or not making_new))
+        self.dest_widget.setEnabled(not busy)
 
     def _on_import(self):
         item = self.list.currentItem()
@@ -367,12 +425,7 @@ class ImportSetupDialog(QDialog):
 
     def _import_as_new_profile(self, setup):
         source = setup["data_dir"]
-        default = os.path.basename(setup["root"]) or "imported"
-        name, ok = QInputDialog.getText(
-            self, "Import as profile", "Profile name:", text=default)
-        name = name.strip() if ok and name.strip() else None
-        if not name:
-            return
+        name = self.new_name_edit.text().strip()
         self._start(lambda: profiles.duplicate(source, name), name,
                     os.path.abspath(profiles.profile_data_dir(name)))
 
@@ -418,6 +471,53 @@ class ImportSetupDialog(QDialog):
         else:
             profiles.spawn_into(name)
         QTimer.singleShot(0, QApplication.instance().quit)
+
+
+class _NameDialog(QDialog):
+    """One name field that says why a name will not work as it is typed."""
+
+    def __init__(self, parent, title, action, initial=""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(360)
+        t = theme.colors()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Name"))
+        self.edit = QLineEdit(initial)
+        self.edit.textChanged.connect(lambda *_: self._update())
+        row.addWidget(self.edit, stretch=1)
+        layout.addLayout(row)
+
+        self.problem_label = QLabel("")
+        self.problem_label.setStyleSheet(f"color: {t['text_dim']};")
+        layout.addWidget(self.problem_label)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(cancel_btn)
+        self.ok_btn = QPushButton(action)
+        self.ok_btn.setDefault(True)
+        self.ok_btn.clicked.connect(self.accept)
+        buttons.addWidget(self.ok_btn)
+        layout.addLayout(buttons)
+
+        self.edit.selectAll()
+        self._update()
+
+    def _update(self):
+        problem = _name_problem(self.edit.text())
+        self.problem_label.setText(problem or "")
+        self.ok_btn.setEnabled(
+            bool(self.edit.text().strip()) and problem is None)
+
+    def value(self):
+        return self.edit.text().strip()
 
 
 class NewProfileDialog(QDialog):
@@ -519,7 +619,11 @@ class NewProfileDialog(QDialog):
 
     def _update_buttons(self):
         busy = self._worker is not None
-        ready = bool(self.name_edit.text().strip())
+        name = self.name_edit.text().strip()
+        problem = _name_problem(name)
+        if not busy:
+            self.status_label.setText(problem or "")
+        ready = bool(name) and problem is None
         if self.folder_radio.isChecked() and self._setup is None:
             ready = False
         self.create_btn.setEnabled(ready and not busy)
@@ -536,7 +640,7 @@ class NewProfileDialog(QDialog):
                 f"{_counts(self._setup['sounds'], self._setup['models'])}")
             self.folder_radio.setChecked(True)
             if not self.name_edit.text().strip():
-                self.name_edit.setText(os.path.basename(self._setup["root"]))
+                self.name_edit.setText(_suggested_name(self._setup))
         self._update_buttons()
 
     def _on_create(self):
@@ -624,6 +728,10 @@ class ProfilesDialog(QDialog):
         self.import_btn.clicked.connect(self._on_import)
         actions.addWidget(self.import_btn)
 
+        self.rename_btn = QPushButton("Rename")
+        self.rename_btn.clicked.connect(self._on_rename)
+        actions.addWidget(self.rename_btn)
+
         self.reset_btn = QPushButton("Reset")
         self.reset_btn.setToolTip("Back to how this profile started")
         self.reset_btn.clicked.connect(self._on_reset)
@@ -698,6 +806,7 @@ class ProfilesDialog(QDialog):
         self.switch_btn.setEnabled(not busy and name != current)
         self.new_btn.setEnabled(not busy)
         self.import_btn.setEnabled(not busy)
+        self.rename_btn.setEnabled(not busy and is_profile)
         self.reset_btn.setEnabled(not busy and is_profile)
         self.delete_btn.setEnabled(not busy and is_profile and name != current)
         self.open_btn.setEnabled(self.list.currentItem() is not None)
@@ -771,6 +880,22 @@ class ProfilesDialog(QDialog):
         dialog = ImportSetupDialog(self)
         dialog.exec()
         self._refresh()
+
+    def _on_rename(self):
+        name = self._selected()
+        if name is None:
+            return
+        dialog = _NameDialog(self, f"Rename {name}", "Rename", name)
+        if not dialog.exec() or dialog.value() == name:
+            return
+        new_name = dialog.value()
+        if name == profiles.current_profile():
+            # DATA_DIR still names the old folder in this process
+            self._run(lambda: (profiles.rename(name, new_name),
+                               profiles.spawn_into(new_name)), "Renaming...")
+            self._worker.done.connect(self._quit_if_ok)
+        else:
+            self._run(lambda: profiles.rename(name, new_name), "Renaming...")
 
     def _on_reset(self):
         name = self._selected()
