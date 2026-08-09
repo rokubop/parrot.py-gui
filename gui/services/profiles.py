@@ -158,25 +158,30 @@ def duplicate(source_data_dir, name, talon="real"):
 
 
 def import_into(dest_data_dir, source_data_dir):
-    """Copy a data tree into one that already exists.
+    """Copy a whole data tree into an empty one.
 
-    Whatever is already there stays; a file of the same name is replaced.
-    An empty profile is refrozen afterwards, because its baseline is the
-    empty tree and Reset would otherwise throw the import straight away. A
-    profile with content in it keeps the baseline it has.
+    Empty only, deliberately. Merging into a library with content in it was
+    the one unrecoverable act here, and it silently replaced notes, config
+    and the Talon setup along with the sounds. Every real path lands
+    somewhere empty: a first launch, or a profile just made.
+
+    Because the destination has nothing to lose, the copy takes the source
+    entire, which is what someone bringing an old install in expects.
     """
     if not os.path.isdir(source_data_dir):
         raise ProfileError(f"Nothing to copy at {source_data_dir}")
     if os.path.realpath(source_data_dir) == os.path.realpath(dest_data_dir):
         raise ProfileError("That is the folder you are copying into")
-    was_empty = stats(dest_data_dir) == (0, 0)
+    if stats(dest_data_dir) != (0, 0):
+        raise ProfileError("Import needs somewhere empty; this one already "
+                           "has sounds or models")
     os.makedirs(dest_data_dir, exist_ok=True)
     shutil.copytree(source_data_dir, dest_data_dir,
                     ignore=shutil.ignore_patterns(*_NON_DATA),
                     dirs_exist_ok=True)
     name = profile_name_of(dest_data_dir)
-    if name is not None and was_empty:
-        freeze(name)
+    if name is not None:
+        freeze(name)  # its baseline was the empty tree it no longer is
 
 
 def freeze(name):

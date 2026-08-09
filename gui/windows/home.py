@@ -222,7 +222,7 @@ class HomePage(QWidget):
         self.import_panel, self.import_title, self.import_body = self._make_panel(
             "Already used Parrot.py before?")
         self.import_body.setText(
-            "Copy the sounds and models of an existing install in here. "
+            "Copy an existing install in here. "
             "The original folder is not changed.")
         import_row = QHBoxLayout()
         import_row.setContentsMargins(0, 10, 0, 0)

@@ -116,6 +116,10 @@ class ImportSetupDialog(QDialog):
     they just made, and an import that can only ever make another profile
     is a dead end there. It hides itself when there is nothing to choose.
 
+    Only somewhere empty can take the copy. A library with content in it is
+    listed but not selectable, so the rule reads as a rule rather than as a
+    missing row. See import_into() for why.
+
     pick_only borrows the top half as a folder picker: NewProfileDialog
     needs the same "choose or search for it" machinery and should not own a
     second copy of it.
@@ -141,8 +145,8 @@ class ImportSetupDialog(QDialog):
         note = QLabel(
             "Point at an install you already have. Nothing in it is changed."
             if pick_only else
-            "Copy the sounds and models of an existing install in. "
-            "The original folder is not changed.")
+            "Copy an existing install in. The original folder is not "
+            "changed.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(note)
@@ -192,14 +196,8 @@ class ImportSetupDialog(QDialog):
         dest_row.addWidget(QLabel("Copy into:"))
         self.dest_combo = QComboBox()
         self.dest_combo.setToolTip(
-            "Where the copy lands. Whatever is already there is kept.")
+            "Where the copy lands. Somewhere empty, or a new profile.")
         dest_row.addWidget(self.dest_combo)
-        self.new_name_edit = QLineEdit()
-        self.new_name_edit.setPlaceholderText("call it")
-        self.new_name_edit.setMaximumWidth(150)
-        self.new_name_edit.setVisible(False)
-        self.new_name_edit.textChanged.connect(lambda *_: self._update_buttons())
-        dest_row.addWidget(self.new_name_edit)
         self.dest_combo.currentIndexChanged.connect(
             lambda *_: self._on_dest_changed())
         row.addWidget(self.dest_widget)
@@ -218,6 +216,17 @@ class ImportSetupDialog(QDialog):
         self.import_btn.clicked.connect(self._on_import)
         row.addWidget(self.import_btn)
         layout.addLayout(row)
+
+        # its own row under the destination it belongs to, not a placeholder
+        self.name_widget = QWidget()
+        name_row = QHBoxLayout(self.name_widget)
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.addWidget(QLabel("Name:"))
+        self.new_name_edit = QLineEdit()
+        self.new_name_edit.textChanged.connect(lambda *_: self._update_buttons())
+        name_row.addWidget(self.new_name_edit, stretch=1)
+        self.name_widget.setVisible(False)
+        layout.addWidget(self.name_widget)
 
         self._fill_destinations()
 
@@ -253,15 +262,22 @@ class ImportSetupDialog(QDialog):
         for index, (label, data_dir) in enumerate(entries):
             self._dest_labels[data_dir] = label
             sounds, models = profiles.stats(data_dir)
-            has = _counts(sounds, models) if sounds or models else "empty"
-            text = f"{label} ({has})"
+            occupied = bool(sounds or models)
+            text = f"{label} ({_counts(sounds, models) if occupied else 'empty'})"
             if data_dir == here:
                 text += "    (current)"
-                if not (sounds or models):
+                if not occupied:
                     default = index
+            if occupied:
+                text += "    already has sounds"
             self.dest_combo.addItem(text, data_dir)
             self.dest_combo.setItemData(index, data_dir,
                                         Qt.ItemDataRole.ToolTipRole)
+            if occupied:
+                # listed but not selectable, so the rule is visible
+                item = self.dest_combo.model().item(index)
+                if item is not None:
+                    item.setEnabled(False)
         self.dest_combo.addItem("New profile...", None)
         self.dest_combo.setCurrentIndex(
             self.dest_combo.count() - 1 if default is None else default)
@@ -274,7 +290,7 @@ class ImportSetupDialog(QDialog):
 
     def _on_dest_changed(self):
         making_new = self.dest_combo.currentData() is None
-        self.new_name_edit.setVisible(making_new)
+        self.name_widget.setVisible(making_new and not self._pick_only)
         self._suggest_name()
         self._update_buttons()
 
@@ -409,12 +425,8 @@ class ImportSetupDialog(QDialog):
             return
 
         label = self._dest_labels[dest_dir]
-        sounds, models = profiles.stats(dest_dir)
         lines = [f"Copy {_counts(setup['sounds'], setup['models'])} "
                  f"into {label}?"]
-        if sounds or models:
-            lines.append(f"{label} keeps what it has. A sound or model of the "
-                         "same name is replaced.")
         if self._is_here(dest_dir):
             lines.append("Parrot restarts afterwards.")
         answer = QMessageBox.question(self, "Bring it in", "\n\n".join(lines))
@@ -452,8 +464,7 @@ class ImportSetupDialog(QDialog):
             return
         answer = QMessageBox.question(
             self, "Imported",
-            f"{label} is ready. Switch to it now? Parrot restarts, "
-            "about a second.")
+            f"{label} is ready. Switch to it now? Parrot restarts.")
         if answer == QMessageBox.StandardButton.Yes:
             self._relaunch_into(dest_dir)
         self.accept()
@@ -674,8 +685,7 @@ class NewProfileDialog(QDialog):
         self.created = name
         answer = QMessageBox.question(
             self, "Created",
-            f"{name} is ready. Switch to it now? Parrot restarts, "
-            "about a second.")
+            f"{name} is ready. Switch to it now? Parrot restarts.")
         if answer == QMessageBox.StandardButton.Yes:
             profiles.spawn_into(name)
             QTimer.singleShot(0, QApplication.instance().quit)
