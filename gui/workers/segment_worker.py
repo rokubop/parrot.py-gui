@@ -150,34 +150,60 @@ class ResetWorker(QThread):
 
 
 class TrimWorker(QThread):
-    """Remove time ranges from the source WAV, then re-detect. Destructive.
+    """Remove time ranges from a take, then re-detect. Destructive.
 
-    Two results, because they take wildly different times: rewriting the wav is
-    a mask and a write, while re-detection reprocesses the whole clip. ``trimmed``
-    fires the moment the audio is cut so the waveform can update at once, and
+    Every microphone's file gets the same ranges cut. They are one take
+    recorded in parallel, so trimming only the one on screen leaves the others
+    a different length and the take no longer lines up with itself.
+
+    All the audio is rewritten before any of it is re-detected: a failure part
+    way through detection leaves a take whose audio is still consistent, and a
+    wrong srt is recoverable in a way a half-trimmed take is not.
+
+    Two results, because they take wildly different times: rewriting a wav is a
+    mask and a write, while re-detection reprocesses the whole clip. ``trimmed``
+    fires once the audio is cut so the waveform can update at once, and
     ``finished_ok`` follows with the srt for the overlay.
     """
     trimmed = pyqtSignal(float, float, float)  # cut start, removed, new duration
     finished_ok = pyqtSignal(str)
-    failed = pyqtSignal(str)
+    failed = pyqtSignal(str, bool)             # message, files already changed
 
     def __init__(self, wav_path, label, ranges, parent=None):
         super().__init__(parent)
         self.wav_path = wav_path
         self.label = label
         self.ranges = ranges  # list of (start_s, end_s)
+        self.group = library_ops.take_group(wav_path)
 
     def run(self):
+        written = False
         try:
-            removed, new_duration = self._trim_wav()
+            removed = new_duration = 0.0
+            for index, wav in enumerate(self.group):
+                result = self._trim_wav(wav)
+                written = True
+                if index == 0:
+                    removed, new_duration = result
             cut_start = min((r[0] for r in self.ranges), default=0.0)
             self.trimmed.emit(cut_start, removed, new_duration)
-            self.finished_ok.emit(redetect(self.wav_path, self.label))
-        except Exception as exc:
-            self.failed.emit(str(exc))
 
-    def _trim_wav(self):
-        wf = wave.open(self.wav_path, "rb")
+            srt = None
+            for index, wav in enumerate(self.group):
+                result = redetect(wav, self.label)
+                if index == 0:
+                    srt = result
+            self.finished_ok.emit(srt)
+        except Exception as exc:
+            extra = ""
+            if written and len(self.group) > 1:
+                extra = (f"\n\nThis take has {len(self.group)} microphone files "
+                         f"and they may no longer match. Undo restores all of "
+                         f"them.")
+            self.failed.emit(str(exc) + extra, written)
+
+    def _trim_wav(self, wav_path):
+        wf = wave.open(wav_path, "rb")
         nch = wf.getnchannels()
         sw = wf.getsampwidth()
         fr = wf.getframerate()
@@ -197,7 +223,7 @@ class TrimWorker(QThread):
                 keep[i0:i1] = False
         trimmed = arr[keep]
 
-        out = wave.open(self.wav_path, "wb")
+        out = wave.open(wav_path, "wb")
         out.setnchannels(nch)
         out.setsampwidth(sw)
         out.setframerate(fr)

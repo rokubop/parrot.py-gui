@@ -168,6 +168,31 @@ def recording_sibling_files(wav_path):
     return files
 
 
+def take_group(wav_path):
+    """Every microphone's wav for one take, the given one first.
+
+    Simultaneous mics write ``mici_<index>__<time_string>.wav`` into one source
+    dir, and the shared time_string is the only thing tying them together - the
+    sidecars name the device, not the take. A single-mic take returns just
+    itself, so callers can always treat a take as a group.
+
+    Anything that rewrites a take's audio has to cover all of these or the mic
+    files end up different lengths.
+    """
+    base = recording_base(wav_path)
+    source = os.path.dirname(wav_path)
+    if not base.startswith("mici_") or "__" not in base or not os.path.isdir(source):
+        return [wav_path]
+    time_string = base.split("__", 1)[1]
+    group = [wav_path]
+    for f in sorted(os.listdir(source)):
+        if not f.lower().endswith(".wav") or f[:-4] == base:
+            continue
+        if f.startswith("mici_") and f[:-4].split("__", 1)[-1] == time_string:
+            group.append(os.path.join(source, f))
+    return group
+
+
 def read_mic_info(wav_path):
     """What a take was recorded with, from its ``<base>_mic.json`` sidecar, or
     None. Recordings made before the sidecar existed return None rather than a

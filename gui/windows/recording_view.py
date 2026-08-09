@@ -512,12 +512,6 @@ class RecordingView(QWidget):
         # Start over only makes sense once a take exists; you can finish anytime.
         self.start_over_btn.setVisible(self._take_wav is not None)
         self.start_over_btn.setEnabled(reviewing)
-        # Selection editing only touches the primary take; with extra mics that
-        # would desync the per-mic files, so it's off for multi-mic sessions.
-        self.editor.set_editing_enabled(
-            not self._multi_mic(),
-            "Off for a multi-mic take: cutting the primary would desync the "
-            "other mics' files.")
         if reviewing:
             self.editor.refresh_history_buttons()
         # Lock strategy/name once a take exists.
@@ -537,12 +531,10 @@ class RecordingView(QWidget):
             self._session_mics is not None and bool(self._session_mics[1]))
 
     def _review_hint(self, tail):
-        """One place, because every caller used to overwrite the multi-mic line
-        with an instruction to drag-select and delete - which is exactly what a
-        multi-mic take cannot do."""
+        """One place, because every caller used to write its own version."""
         if self._multi_mic():
-            return ("Multi-mic take: cutting is off so the mic files stay in "
-                    "sync. Play to review, " + tail)
+            return ("Play to review, drag-select to delete from every mic "
+                    "file, " + tail)
         return "Play to review, drag-select to delete, " + tail
 
     def _on_editor_edited(self):

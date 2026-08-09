@@ -58,7 +58,6 @@ class ClipEditorWidget(QWidget):
         self.wav_path = None
         self.label = None
         self.worker = None
-        self._editing_allowed = True
 
         # view toggles (mirror AudioPreviewWidget defaults)
         self._norm = False
@@ -199,26 +198,12 @@ class ClipEditorWidget(QWidget):
             self.lane.setEnabled(not busy)
         for btn in (self.play_btn, self.fit_btn, self.norm_btn, self.spec_btn):
             btn.setEnabled(not busy)
-        self.delete_btn.setEnabled(not busy and self._editing_allowed)
+        self.delete_btn.setEnabled(not busy)
         if busy:
             self.undo_btn.setEnabled(False)
             self.redo_btn.setEnabled(False)
         else:
             self.refresh_history_buttons()
-
-    def set_editing_enabled(self, on, reason=""):
-        """Turn off the controls that rewrite the audio - the recording view
-        does this for a multi-mic take, where a cut would desync the mic files.
-
-        Greyed rather than hidden. A control that vanishes reads as an app that
-        changes shape for no reason, and takes the only place the reason could
-        have been printed with it. Selecting and playing stay on: they read the
-        take without touching it.
-        """
-        self._editing_allowed = on
-        self.delete_btn.setEnabled(on)
-        self.delete_btn.setToolTip(reason if not on else self._delete_tip)
-        self.refresh_history_buttons()
 
     def is_busy(self):
         return self.worker is not None
@@ -253,7 +238,7 @@ class ClipEditorWidget(QWidget):
     # ---- delete ---------------------------------------------------------
 
     def delete_selection(self):
-        if self.worker or not self.wav_path or not self._editing_allowed:
+        if self.worker or not self.wav_path:
             return
         sel = self.preview.current_selection()
         if not sel or sel[1] - sel[0] <= 0:
@@ -322,16 +307,17 @@ class ClipEditorWidget(QWidget):
         self.status.emit(f"{self._cut_note}  Space to hear the join, "
                          f"Ctrl+Z to undo.")
 
-    def _on_trim_failed(self, message):
-        """A trim can fail after the audio is already cut (the rewrite lands,
-        re-detection doesn't). Keep the checkpoint in that case or Ctrl+Z would
-        no longer reach a change that really happened."""
+    def _on_trim_failed(self, message, changed=False):
+        """A trim can fail after audio is already written (the rewrite lands,
+        re-detection doesn't; or one mic file of several is done). Keep the
+        checkpoint whenever anything was written, or Ctrl+Z would no longer
+        reach a change that really happened."""
         self._finish_worker()
-        if not self._cut_applied:
+        if not self._cut_applied and not changed:
             self.history.discard_last_checkpoint()
         self.set_busy(False)
         self.history_changed.emit()
-        if self._cut_applied:
+        if self._cut_applied or changed:
             self.edited.emit()
             self.status.emit(f"{self._cut_note}  Detection is out of date.")
             QMessageBox.warning(self, "Couldn't re-detect",
@@ -343,7 +329,7 @@ class ClipEditorWidget(QWidget):
     # ---- undo / redo ----------------------------------------------------
 
     def refresh_history_buttons(self):
-        allowed = self._editing_allowed and not self.worker
+        allowed = not self.worker
         self.undo_btn.setEnabled(allowed and self.history.can_undo())
         self.redo_btn.setEnabled(allowed and self.history.can_redo())
 
