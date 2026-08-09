@@ -42,6 +42,12 @@ def _ellipsis_left(text, limit):
     return text if len(text) <= limit else "..." + text[-(limit - 3):]
 
 
+def _counts(sounds, models):
+    """What a data tree holds, worded the same in every list that shows one."""
+    return (f"{sounds} sound{'' if sounds == 1 else 's'}, "
+            f"{models} model{'' if models == 1 else 's'}")
+
+
 class _ScanWorker(QThread):
     """Walks folders the user asked for. Streams hits so the list fills as
     it goes, and stops the moment the dialog asks it to."""
@@ -74,20 +80,26 @@ class _ScanWorker(QThread):
 
 
 class ImportSetupDialog(QDialog):
-    """Bring an outside Parrot.py setup in as a profile, by copy.
+    """Bring an outside Parrot.py setup in, by copy.
 
     A checkout can be anywhere and nothing records where it went, so
     pointing at the folder is the main action and no search runs unasked.
     The source folder is only ever read.
+
+    Two picks: what to copy, and where it lands. The destination is a real
+    choice because the app already sends someone here from inside a profile
+    they just made, and an import that can only ever make another profile
+    is a dead end there.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Bring in an existing setup")
-        self.resize(660, 470)
+        self.resize(660, 500)
         self._worker = None
         self._folder_scan = None
-        self.imported = None  # profile name on success
+        self._dest_labels = {}  # data dir -> the name shown for it
+        self.imported = None  # destination name on success
 
         t = theme.colors()
         layout = QVBoxLayout(self)
@@ -95,8 +107,8 @@ class ImportSetupDialog(QDialog):
         layout.setSpacing(12)
 
         note = QLabel(
-            "Copy sounds and models of an existing install in as a profile. "
-            "Original folder is not changed.")
+            "Copy the sounds and models of an existing install in. "
+            "The original folder is not changed.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(note)
@@ -140,22 +152,71 @@ class ImportSetupDialog(QDialog):
         layout.addWidget(self.list, stretch=1)
 
         row = QHBoxLayout()
+        row.addWidget(QLabel("Copy into:"))
+        self.dest_combo = QComboBox()
+        self.dest_combo.setToolTip(
+            "Where the copy lands. Whatever is already there is kept.")
+        row.addWidget(self.dest_combo)
         row.addStretch()
         self.status_label = QLabel("")
         self.status_label.setStyleSheet(f"color: {t['text_dim']};")
         row.addWidget(self.status_label)
         self.import_btn = QPushButton("Import")
         self.import_btn.setToolTip(
-            "Copies the sounds and models into a new profile here. "
+            "Copies the sounds and models in. "
             "The folder you picked is not touched.")
         self.import_btn.setEnabled(False)
         self.import_btn.clicked.connect(self._on_import)
         row.addWidget(self.import_btn)
         layout.addLayout(row)
 
+        self._fill_destinations()
+
+    # ---- where the copy lands ---------------------------------------------
+
+    def _fill_destinations(self):
+        """Every data tree that can take the copy, plus a new profile.
+
+        Sorted the way the Profiles list is, so the two read alike. The tree
+        the app is running on is marked, and is the default when it is still
+        empty: someone who just made a profile and came here means this one.
+        A root with content in it defaults to a new profile instead, so the
+        safe answer stays the one you get by pressing Enter.
+        """
+        here = os.path.abspath(profiles.current_data_dir())
+        entries = [("Main", os.path.abspath(profiles.MAIN_DATA_DIR))]
+        entries += [(n, os.path.abspath(profiles.profile_data_dir(n)))
+                    for n in profiles.list_profiles()]
+        if all(d != here for _label, d in entries):
+            # PARROT_DATA_DIR can point at a tree that is neither. Name it
+            # after the folder holding it, since every one of them ends "data".
+            named = os.path.basename(here)
+            if named in ("", "data"):
+                named = os.path.basename(os.path.dirname(here)) or "Here"
+            entries.insert(0, (named, here))
+
+        default = None
+        for index, (label, data_dir) in enumerate(entries):
+            self._dest_labels[data_dir] = label
+            sounds, models = profiles.stats(data_dir)
+            has = _counts(sounds, models) if sounds or models else "empty"
+            text = f"{label} ({has})"
+            if data_dir == here:
+                text += "    (current)"
+                if not (sounds or models):
+                    default = index
+            self.dest_combo.addItem(text, data_dir)
+            self.dest_combo.setItemData(index, data_dir,
+                                        Qt.ItemDataRole.ToolTipRole)
+        self.dest_combo.addItem("New profile...", None)
+        self.dest_combo.setCurrentIndex(
+            self.dest_combo.count() - 1 if default is None else default)
+
+    def _is_here(self, data_dir):
+        return data_dir == os.path.abspath(profiles.current_data_dir())
+
     def _add_candidate(self, setup, select=False):
-        text = (f"{setup['label']}    "
-                f"{setup['sounds']} sounds, {setup['models']} models")
+        text = f"{setup['label']}    {_counts(setup['sounds'], setup['models'])}"
         item = QListWidgetItem(text)
         item.setData(Qt.ItemDataRole.UserRole, setup)
         self.list.addItem(item)
@@ -244,73 +305,91 @@ class ImportSetupDialog(QDialog):
         super().done(code)
 
     def _update_buttons(self):
+        busy = self._worker is not None
         self.import_btn.setEnabled(
-            self._worker is None and self.list.currentItem() is not None)
+            not busy and self.list.currentItem() is not None)
+        self.dest_combo.setEnabled(not busy)
 
     def _on_import(self):
         item = self.list.currentItem()
         if item is None or self._worker is not None:
             return
         setup = item.data(Qt.ItemDataRole.UserRole)
-        data_dir = setup["data_dir"]
+        source = setup["data_dir"]
+        dest_dir = self.dest_combo.currentData()
 
-        # Nothing here yet: this is their setup, not a second one alongside it.
-        if profiles.current_profile() is None and profiles.main_is_empty():
-            answer = QMessageBox.question(
-                self, "Bring it in",
-                f"Copy {setup['sounds']} sounds and {setup['models']} models "
-                "into this setup?\n\nParrot restarts afterwards.")
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-            self.status_label.setText("Copying...")
-            self._worker = _OpWorker(
-                lambda: profiles.import_into_main(data_dir), self)
-            self._worker.done.connect(self._on_main_import_done)
-            self._update_buttons()
-            self._worker.start()
+        if dest_dir is None:
+            self._import_as_new_profile(setup)
             return
 
+        label = self._dest_labels[dest_dir]
+        sounds, models = profiles.stats(dest_dir)
+        lines = [f"Copy {_counts(setup['sounds'], setup['models'])} "
+                 f"into {label}?"]
+        if sounds or models:
+            lines.append(f"{label} keeps what it has. A sound or model of the "
+                         "same name is replaced.")
+        if self._is_here(dest_dir):
+            lines.append("Parrot restarts afterwards.")
+        answer = QMessageBox.question(self, "Bring it in", "\n\n".join(lines))
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._start(lambda: profiles.import_into(dest_dir, source),
+                    label, dest_dir)
+
+    def _import_as_new_profile(self, setup):
+        source = setup["data_dir"]
         default = os.path.basename(setup["root"]) or "imported"
         name, ok = QInputDialog.getText(
             self, "Import as profile", "Profile name:", text=default)
         name = name.strip() if ok and name.strip() else None
         if not name:
             return
+        self._start(lambda: profiles.duplicate(source, name), name,
+                    os.path.abspath(profiles.profile_data_dir(name)))
+
+    def _start(self, fn, label, dest_dir):
         self.status_label.setText("Copying...")
-        self._worker = _OpWorker(
-            lambda: profiles.duplicate(data_dir, name), self)
+        self._worker = _OpWorker(fn, self)
         self._worker.done.connect(
-            lambda error: self._on_import_done(name, error))
+            lambda error: self._on_import_done(label, dest_dir, error))
         self._update_buttons()
         self._worker.start()
 
-    def _on_main_import_done(self, error):
+    def _on_import_done(self, label, dest_dir, error):
         self._worker = None
         self.status_label.setText("")
         if error:
             QMessageBox.warning(self, "Import failed", error)
             self._update_buttons()
             return
-        profiles.spawn_into(None)
-        QTimer.singleShot(0, QApplication.instance().quit)
-        self.accept()
-
-    def _on_import_done(self, name, error):
-        self._worker = None
-        self.status_label.setText("")
-        if error:
-            QMessageBox.warning(self, "Import failed", error)
-            self._update_buttons()
+        self.imported = label
+        if self._is_here(dest_dir):
+            # this process has the tree we just wrote into open in its caches
+            self._relaunch_into(dest_dir)
+            self.accept()
             return
-        self.imported = name
         answer = QMessageBox.question(
             self, "Imported",
-            f"{name} is ready. Switch to it now? Parrot restarts, "
+            f"{label} is ready. Switch to it now? Parrot restarts, "
             "about a second.")
         if answer == QMessageBox.StandardButton.Yes:
-            profiles.spawn_into(name)
-            QTimer.singleShot(0, QApplication.instance().quit)
+            self._relaunch_into(dest_dir)
         self.accept()
+
+    def _relaunch_into(self, data_dir):
+        """Restart on the tree just imported into.
+
+        spawn_into() knows Main and profiles by name. A root that is neither
+        got here through PARROT_DATA_DIR, so the env it already has is the
+        only thing that points back at it.
+        """
+        name = profiles.profile_name_of(data_dir)
+        if name is None and data_dir != os.path.abspath(profiles.MAIN_DATA_DIR):
+            profiles.relaunch()
+        else:
+            profiles.spawn_into(name)
+        QTimer.singleShot(0, QApplication.instance().quit)
 
 
 class ProfilesDialog(QDialog):
@@ -416,7 +495,7 @@ class ProfilesDialog(QDialog):
         for name, data_dir in entries:
             sounds, models = profiles.stats(data_dir)
             label = name if name is not None else "Main"
-            text = f"{label}    {sounds} sounds, {models} models"
+            text = f"{label}    {_counts(sounds, models)}"
             if name == current:
                 text += "    (current)"
             item = QListWidgetItem(text)

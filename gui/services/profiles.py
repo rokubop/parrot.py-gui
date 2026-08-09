@@ -54,13 +54,26 @@ def debug_enabled():
     return not getattr(sys, "frozen", False) and DATA_ROOT == ""
 
 
-def current_profile():
-    """Name of the active profile, or None when running on the real data/."""
-    root = os.path.normpath(DATA_DIR)
-    parent, name = os.path.split(root)
-    if os.path.normpath(parent) == os.path.normpath(PROFILES_DIR):
+def profile_name_of(data_dir):
+    """The profile a data tree belongs to, or None when it is not one.
+
+    None covers Main and also a PARROT_DATA_DIR pointed somewhere else
+    entirely, so a caller that needs to tell those apart compares the path.
+    """
+    parent, name = os.path.split(os.path.abspath(data_dir))
+    if os.path.normcase(parent) == os.path.normcase(os.path.abspath(PROFILES_DIR)):
         return name
     return None
+
+
+def current_profile():
+    """Name of the active profile, or None when running on the real data/."""
+    return profile_name_of(DATA_DIR)
+
+
+def current_data_dir():
+    """The data tree this process is running on, whatever chose it."""
+    return DATA_DIR
 
 
 def profile_data_dir(name):
@@ -142,19 +155,26 @@ def duplicate(source_data_dir, name, talon="real"):
     freeze(name)
 
 
-def main_is_empty():
-    return stats(MAIN_DATA_DIR) == (0, 0)
+def import_into(dest_data_dir, source_data_dir):
+    """Copy a data tree into one that already exists.
 
-
-def import_into_main(source_data_dir):
-    """A fresh install has nothing to protect, so an import belongs in Main
-    rather than in a profile nobody asked for."""
+    Whatever is already there stays; a file of the same name is replaced.
+    An empty profile is refrozen afterwards, because its baseline is the
+    empty tree and Reset would otherwise throw the import straight away. A
+    profile with content in it keeps the baseline it has.
+    """
     if not os.path.isdir(source_data_dir):
         raise ProfileError(f"Nothing to copy at {source_data_dir}")
-    os.makedirs(MAIN_DATA_DIR, exist_ok=True)
-    shutil.copytree(source_data_dir, MAIN_DATA_DIR,
+    if os.path.realpath(source_data_dir) == os.path.realpath(dest_data_dir):
+        raise ProfileError("That is the folder you are copying into")
+    was_empty = stats(dest_data_dir) == (0, 0)
+    os.makedirs(dest_data_dir, exist_ok=True)
+    shutil.copytree(source_data_dir, dest_data_dir,
                     ignore=shutil.ignore_patterns(*_NON_DATA),
                     dirs_exist_ok=True)
+    name = profile_name_of(dest_data_dir)
+    if name is not None and was_empty:
+        freeze(name)
 
 
 def freeze(name):
@@ -240,7 +260,8 @@ def export_copy(source_data_dir, dest_parent):
 # ---- bringing in an outside setup -------------------------------------
 #
 # CLI veterans have a year-old checkout somewhere on disk. Importing copies
-# its data tree in as a profile via duplicate(); the original folder is
+# its data tree into a root the user picks: the one they are on via
+# import_into(), or a fresh profile via duplicate(). The original folder is
 # never touched. The Home card offering this is dismissible per data root.
 
 IMPORT_CARD_MARKER = ".import-card-dismissed"
