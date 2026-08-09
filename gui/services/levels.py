@@ -1,20 +1,13 @@
-"""Frame-by-frame dBFS for a saved wav, framed the way detection frames it.
+"""Frame-by-frame dBFS for a saved wav, on the grid detection uses.
 
-The threshold control is in dBFS and nothing on screen was, so a number had to
-be applied before you could see what it did. A lane drawn from this carries the
-threshold as a line over the level, which is the same question answered before
-the re-detect instead of after it.
+Two things it deliberately does not do:
 
-Two things this deliberately does not do:
-
-* It does not compute its own decibels. ``determine_dBFS`` reads the samples as
-  4-byte ints and divides by 32767 squared, which is not textbook dBFS - but it
-  is what the detector compares its threshold against, so the lane has to agree
-  with it rather than with a formula.
-* It does not re-frame. A detection frame is the last ``SLIDING_WINDOW_AMOUNT``
-  blocks, advancing one block at a time, and the srt places frame *j* at
-  ``j * ms_per_frame``. Same grid here, so a peak in the lane sits under the
-  blue band it produced.
+- No decibels of its own. ``determine_dBFS`` reads samples as 4-byte ints over
+  32767 squared. Not textbook dBFS, but it is what the threshold is compared
+  against, so a formula here would draw the line in the wrong place.
+- No re-framing. A frame is the last ``SLIDING_WINDOW_AMOUNT`` blocks, one block
+  apart, and the srt places frame j at ``j * ms_per_frame``. Same grid, so a
+  peak sits under the band it produced.
 """
 import wave
 import numpy as np
@@ -22,8 +15,7 @@ import numpy as np
 from config.config import RATE, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from lib.signal_processing import determine_dBFS
 
-# 16-bit silence bottoms out around here, and it is the low end of every
-# threshold control in the app.
+# Where 16-bit silence bottoms out, and the low end of every threshold control.
 FLOOR_DBFS = -96.0
 
 
@@ -35,9 +27,8 @@ def hop_samples(sample_rate=None):
 def frame_dbfs(wav_path):
     """``(times, values)`` - one dBFS reading per detection frame.
 
-    ``times`` are the frame start times in seconds, on the same grid the srt
-    uses. Returns two empty arrays for anything unreadable or shorter than one
-    frame; callers draw nothing rather than special-casing.
+    Times are frame starts in seconds, the grid the srt uses. Empty arrays for
+    anything unreadable or shorter than a frame, so callers just draw nothing.
     """
     try:
         wf = wave.open(wav_path, "rb")
@@ -57,8 +48,7 @@ def frame_dbfs(wav_path):
     if hop <= 0 or len(data) < window:
         return np.zeros(0), np.zeros(0)
 
-    # Frame j covers blocks j-1 and j, so the window starting at s belongs to
-    # the frame one hop later.
+    # Frame j covers blocks j-1 and j, so a window at s belongs one hop later.
     starts = np.arange(0, len(data) - window + 1, hop)
     values = np.empty(len(starts), dtype=np.float32)
     for i, s in enumerate(starts):

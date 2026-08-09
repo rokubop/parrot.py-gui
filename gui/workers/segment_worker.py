@@ -152,18 +152,15 @@ class ResetWorker(QThread):
 class TrimWorker(QThread):
     """Remove time ranges from a take, then re-detect. Destructive.
 
-    Every microphone's file gets the same ranges cut. They are one take
-    recorded in parallel, so trimming only the one on screen leaves the others
-    a different length and the take no longer lines up with itself.
+    Every mic's file gets the same cut. Trimming one of them leaves the take a
+    different length in each, and no longer lined up with itself.
 
-    All the audio is rewritten before any of it is re-detected: a failure part
-    way through detection leaves a take whose audio is still consistent, and a
-    wrong srt is recoverable in a way a half-trimmed take is not.
+    All the audio first, then all the detection: a failure part way through
+    detection leaves audio that still lines up, and a wrong srt is recoverable
+    in a way a half-trimmed take is not.
 
     Two results, because they take wildly different times: rewriting a wav is a
-    mask and a write, while re-detection reprocesses the whole clip. ``trimmed``
-    fires once the audio is cut so the waveform can update at once, and
-    ``finished_ok`` follows with the srt for the overlay.
+    mask and a write, re-detection reprocesses the whole clip.
     """
     trimmed = pyqtSignal(float, float, float)  # cut start, removed, new duration
     finished_ok = pyqtSignal(str)

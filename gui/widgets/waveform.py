@@ -32,11 +32,9 @@ class WaveformWidget(QWidget):
         # recorder flagged the frame as sound, from a recycled pool of
         # LinearRegionItems.
         #
-        # Provisional in two ways at once, which the caption below says and the
-        # styling deliberately does not: each band is the online estimator's
-        # answer at the moment that frame arrived and is never revised, and
-        # Pause re-judges the whole take from 0:00 with settled thresholds.
-        # Hatching them was tried and read as broken.
+        # Provisional twice over, which the caption says and the styling does
+        # not: never revised once drawn, and Pause re-judges the whole take from
+        # 0:00 anyway. Hatching them was tried and read as broken.
         self._det_brush = QColor(90, 175, 245); self._det_brush.setAlpha(55)
         self._det_pen = pg.mkPen(QColor(90, 175, 245, 90))
         self._det_regions = []
@@ -78,10 +76,8 @@ class WaveformWidget(QWidget):
         self._reset_live()
 
     def _reset_live(self):
-        # Live audio always arrives at the recorder's rate. Without this a take
-        # started after a wav had been loaded kept that file's rate, and a fresh
-        # one kept the constructor's - the time axis ran three times fast and
-        # the ten second window held thirty.
+        # Live audio always arrives at RATE. Without this a fresh take kept the
+        # constructor's 48000: the axis ran 3x fast, ten seconds held thirty.
         self._sample_rate = RATE
         # Growable int16 buffer (amortized doubling) so appending a frame is O(1)
         # and we never rebuild an array from a growing Python list per frame.
@@ -202,10 +198,9 @@ class WaveformWidget(QWidget):
                 ts, te = time_axis[s], time_axis[min(e, n - 1)]
                 if te > ts:
                     runs.append((ts, te))
-        # Merge runs closer together than a pixel. They cannot be told apart on
-        # screen, and spending an item on each is what pushed a dense take past
-        # the cap below, which drops the tail of the window silently: measured
-        # at 80 bands painting 23% of a window that was 43% detected.
+        # Merge runs under a pixel apart. An item each pushed dense takes past
+        # the cap, which drops the tail silently: 80 bands painted 23% of a
+        # window that was 43% detected.
         if runs:
             span = time_axis[-1] - time_axis[0] if len(time_axis) > 1 else 0.0
             min_gap = span / max(1, self.plot_widget.width())
@@ -231,7 +226,7 @@ class WaveformWidget(QWidget):
             self._det_regions[i].setVisible(True)
         for j in range(len(runs), len(self._det_regions)):
             self._det_regions[j].setVisible(False)
-        # The caption earns its space only once there is something to caption.
+        # Only once there is something to caption.
         self.provisional.setVisible(bool(runs))
         if runs:
             x0 = self._vb.viewRange()[0][0]

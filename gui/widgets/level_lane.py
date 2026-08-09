@@ -1,20 +1,17 @@
 """A dBFS lane with the detection threshold drawn on it.
 
 The waveform above answers "what did I record". This answers "what is that
-number doing", which the threshold control could not: drag the line and the
-bumps that clear it are the ones that will end up blue.
+number doing": drag the line, and the bumps that clear it end up blue.
 
-It is a strip, not a second chart. It shares the X axis of the plot above it
-(``link_x``), its left axis is padded to the same width so the two grids line
-up, and its own mouse does nothing except move the threshold - panning and
-zooming stay with the waveform, where the selection lives.
+A strip, not a second chart. Shares the X axis of the plot above (``link_x``),
+same left-axis width so the grids line up, and its mouse moves the threshold and
+nothing else. Panning and zooming stay with the waveform, where selection lives.
 
 Two modes:
 
-* **manual** - the line is the value being applied. Draggable, amber.
-* **auto** - the line is what detection settled on. Dim, dashed, inert. It is
-  the floor of a threshold that moves per sound, not a fixed cutoff, so it is
-  drawn differently from a value you chose.
+- **manual** - the value being applied. Draggable, amber.
+- **auto** - what detection settled on. Dashed, blue, inert. It is the floor of
+  a threshold that moves per sound, not a cutoff you chose.
 """
 import numpy as np
 import pyqtgraph as pg
@@ -25,15 +22,13 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from gui import theme
 from gui.services.levels import FLOOR_DBFS
 
-# Applied to the plot above too, so the two left axes end at the same pixel and
-# the lane's time positions can be read straight off the waveform. Sized for the
-# widest thing either axis prints, which is the live trace's "-15000".
+# Applied to the plot above too, so both left axes end at the same pixel. Sized
+# for the widest thing either prints, the live trace's "-15000".
 AXIS_WIDTH = 64
 LANE_HEIGHT = 132
 
-# Live: keep only what the scrolling window can show. The take can run for
-# minutes; redrawing all of it every frame cannot.
-LIVE_POINTS = 1600      # ~24 s of frames, comfortably past the 10 s window
+# Live: only what the scrolling window can show. A take runs for minutes.
+LIVE_POINTS = 1600      # ~24 s of frames, past the 10 s window
 LIVE_REDRAW_EVERY = 2
 
 
@@ -71,25 +66,21 @@ class LevelLane(QWidget):
         left.setTicks([[(v, str(v)) for v in (0, -20, -40, -60, -80, -96)]])
         self.plot.setLabel("left", "dBFS")
         self._vb = self.plot.getViewBox()
-        # A little air top and bottom, or the 0 and -96 ticks are printed half
-        # outside the plot and read as -20 and -80 being the ends of the scale.
+        # Air top and bottom, or the 0 and -96 ticks print half outside.
         self._vb.setYRange(FLOOR_DBFS - 12, 12, padding=0)
         self._vb.setLimits(yMin=FLOOR_DBFS - 12, yMax=12)
         layout.addWidget(self.plot)
 
-        # Level, filled to the floor: the shape reads as loudness even at a
-        # glance, and the fill is what the threshold line cuts through.
+        # Filled to the floor: the fill is what the threshold line cuts through.
         self.curve = self.plot.plot(
             pen=pg.mkPen(QColor(*t["wave"]), width=1),
             fillLevel=FLOOR_DBFS, brush=QColor(*t["wave_fill"]))
-        # A six-minute take is ~25k frames. Peak downsampling keeps the spikes
-        # (the whole point of the lane) while drawing a fraction of the points.
+        # A six-minute take is ~25k frames. Peak downsampling keeps the spikes.
         self.curve.setDownsampling(auto=True, method="peak")
         self.curve.setClipToView(True)
 
-        # Everything under the line is ignored by detection. Drawn *over* the
-        # level rather than behind it, so the part that will not count is faded
-        # out - a tint behind the fill is invisible under a dense trace.
+        # Under the line is ignored by detection. Drawn over the level, not
+        # behind it: a tint behind the fill is invisible under a dense trace.
         self.below = pg.LinearRegionItem(values=[FLOOR_DBFS - 12, self._value],
                                          orientation="horizontal", movable=False,
                                          brush=self._below_brush(True),
@@ -125,13 +116,11 @@ class LevelLane(QWidget):
     # ---- the plot above -------------------------------------------------
 
     def link_x(self, plot_widget):
-        """Follow another plot's time axis, and pad that plot's left axis to
-        match ours so the two grids agree."""
+        """Follow another plot's time axis, and pad its left axis to match."""
         item = plot_widget.getPlotItem() if hasattr(plot_widget, "getPlotItem") \
             else plot_widget
         item.getAxis("left").setWidth(AXIS_WIDTH)
-        # The lane carries the time axis for the pair - it is the lower of the
-        # two, and two identical axes stacked reads as a mistake.
+        # The lane carries the time axis: two stacked axes read as a mistake.
         item.showAxis("bottom", False)
         self.plot.setXLink(item)
 
@@ -158,9 +147,7 @@ class LevelLane(QWidget):
         self._mode = mode
         t = self._colors
         manual = mode == "manual"
-        # Amber for a value someone chose, blue for one the app found. Neither
-        # is the green the level is drawn in, which is what a line has to
-        # survive being drawn over.
+        # Amber chosen, blue found. Neither is the green the level is drawn in.
         color = t["warn"] if manual else t["info"]
         style = Qt.PenStyle.SolidLine if manual else Qt.PenStyle.DashLine
         self.line.setPen(pg.mkPen(QColor(color), width=2, style=style))
@@ -170,16 +157,15 @@ class LevelLane(QWidget):
         self.line.label.setFormat(
             "{value:0.0f} dBFS" if manual else "auto  {value:0.0f} dBFS")
         self.line.label.setColor(QColor(color))
-        # setFormat stores the string and waits for the next move to use it,
-        # and switching mode does not move the line.
+        # setFormat waits for the next move, and a mode switch is not one.
         self.line.label.valueChanged()
         self.below.setBrush(self._below_brush(manual))
         self.below.update()
         self._refresh_tooltip()
 
     def set_editable(self, editable):
-        """Whether the line answers the mouse. Off where nothing is wired to
-        act on a new value - a line that moves and changes nothing is a lie."""
+        """Off where nothing acts on a new value. A line that moves and changes
+        nothing is a lie."""
         self._editable = editable
         self.line.setMovable(self._mode == "manual" and editable)
         self._refresh_tooltip()
@@ -196,27 +182,24 @@ class LevelLane(QWidget):
                                  "Set one yourself to move it.")
 
     def _below_brush(self, manual):
-        """Fades the sub-threshold half towards the plot background. Stronger
-        for a manual value: that one is exactly what you are judging."""
+        """Fades the sub-threshold half towards the background. Stronger for a
+        manual value, which is the one being judged."""
         color = QColor(self._colors["plot_bg"])
         color.setAlpha(150 if manual else 105)
         return color
 
     def set_line_visible(self, visible):
-        """Hidden while auto detection has not settled on anything yet - a line
-        at 0 would read as a threshold nothing can clear."""
+        """Hidden until auto settles: a line at 0 reads as unclearable."""
         self.line.setVisible(visible)
         self.below.setVisible(visible)
         if visible:
-            # The label skips reformatting while it is hidden, so a value or a
-            # mode set during that time only lands now.
+            # The label skips reformatting while hidden; it lands now.
             self.line.label.valueChanged()
 
     def _on_dragged(self):
         if self._setting_line:
             return
-        # Whole decibels: the control it feeds is integer, and a line that
-        # lands on -40.3 cannot be matched by typing.
+        # Whole decibels: the control it feeds is integer.
         value = round(self.line.value())
         self.set_threshold(value)
         self.threshold_moved.emit(self._value)

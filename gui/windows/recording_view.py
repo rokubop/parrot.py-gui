@@ -70,13 +70,12 @@ class RecordingView(QWidget):
         self._pending_action = None     # 'pause' | 'done' while a segment stops
         self._state = "idle"
         self._last_status_draw = 0.0
-        # Sounds so far. Counted live off the detection flag, then replaced at
-        # Pause by what the re-judge of the whole take actually produced.
+        # Counted live off the detection flag, replaced at Pause by the
+        # re-judge of the whole take.
         self._live_sounds = 0
         self._was_detected = False
-        # Loudest frame since the panel last drew. A pop is two or three
-        # frames, so a readout that samples one frame per redraw mostly shows
-        # the silence between them.
+        # Loudest frame since the panel drew. Sampling one frame per redraw
+        # mostly shows the silence between two-frame pops.
         self._peak_dbfs = None
 
         self._setup_ui()
@@ -168,16 +167,14 @@ class RecordingView(QWidget):
         left = QVBoxLayout()
         self.waveform = WaveformWidget()
         left.addWidget(self.waveform)
-        # Level in dBFS under the live trace, with the threshold on it. The
-        # trace says what was recorded; this says what detection is going to
-        # call sound, while there is still time to change it.
+        # The trace says what was recorded. This says what detection will call
+        # sound, while there is still time to change it.
         self.level_lane = LevelLane()
         self.level_lane.link_x(self.waveform.get_plot_widget())
         self.level_lane.threshold_moved.connect(self._on_threshold_moved)
         left.addWidget(self.level_lane)
         left.addWidget(self._build_threshold_row())
-        # The take keeps its level lane after Pause. Losing it at the moment
-        # the recording ends is the moment you most want to look at it.
+        # Kept after Pause: that is when you most want to look at it.
         self.editor = ClipEditorWidget(self.history, noun="take", show_levels=True)
         self.editor.setVisible(False)
         self.editor.srt_provider = lambda: self._srt_for(self._take_wav)
@@ -292,11 +289,9 @@ class RecordingView(QWidget):
     def _build_threshold_row(self):
         """Automatic or a threshold you set, beside the lane that draws it.
 
-        Automatic is not one number: detection picks a threshold per sound and
-        only settles on a floor once ten onsets have been seen, so the line is
-        dim and dashed and there is nothing to drag. Manual pins it, live -
-        useful for a sound the automatic pass keeps missing, where the
-        alternative is finishing the take and finding out afterwards.
+        Automatic is not one number: it moves per sound and only settles on a
+        floor after ten onsets, so there is nothing to drag. Manual pins it
+        live, for a sound the automatic pass keeps missing.
         """
         row = QWidget()
         layout = QHBoxLayout(row)
@@ -331,8 +326,7 @@ class RecordingView(QWidget):
             self.thr_note.setText(f"{round(self._manual_dbfs)} dBFS - drag the "
                                   f"line to move it")
         else:
-            # Nothing to draw until the automatic threshold settles; _on_status
-            # brings the line back when it does.
+            # Nothing to draw until it settles; _on_status brings it back.
             lane.set_line_visible(False)
             self.thr_note.setText("detection picks its own")
         self._push_threshold()
@@ -348,8 +342,8 @@ class RecordingView(QWidget):
         self._peak_dbfs = dbfs if self._peak_dbfs is None else max(self._peak_dbfs, dbfs)
 
     def _count_sound(self, _frame, detected):
-        """One more sound on the rising edge of the detection flag. Provisional,
-        like the bands it counts: Pause re-judges the take and overwrites it."""
+        """Rising edge of the detection flag. Provisional like the bands it
+        counts: Pause re-judges the take and overwrites it."""
         if detected and not self._was_detected:
             self._live_sounds += 1
             self.v_sounds.setText(str(self._live_sounds))
@@ -358,10 +352,8 @@ class RecordingView(QWidget):
     def _take_summary(self):
         """``(sounds, ms)`` in the take's srt, or None.
 
-        The live counters are the online estimator's running total, and Pause
-        throws that away: the whole take is re-judged from 0:00 with settled
-        thresholds. Left alone the panel keeps showing a number that nothing on
-        screen agrees with any more.
+        Pause throws the live running total away and re-judges from 0:00, so
+        left alone the panel shows a number nothing on screen agrees with.
         """
         if not self._take_srt or not os.path.isfile(self._take_srt):
             return None
@@ -383,7 +375,7 @@ class RecordingView(QWidget):
         return sounds, total
 
     def _show_take_summary(self):
-        """Replace the live counters with what the re-judge actually produced."""
+        """Replace the live counters with what the re-judge produced."""
         summary = self._take_summary()
         if summary is None:
             return
@@ -398,10 +390,9 @@ class RecordingView(QWidget):
     def _sync_review_lane(self):
         """Carry the threshold onto the take's own lane after Pause.
 
-        Not draggable: nothing on this screen re-detects, and the edit view is
-        where a recorded take's detection gets changed. Manual comes from what
-        was in effect; automatic comes from the thresholds file the recorder
-        just wrote, which is what it settled on.
+        Not draggable: nothing here re-detects, and the edit view is where a
+        recorded take's detection gets changed. Manual is what was in effect,
+        automatic is what the recorder just wrote to the thresholds file.
         """
         lane = self.editor.lane
         if lane is None or not self._take_wav:
@@ -419,8 +410,7 @@ class RecordingView(QWidget):
         lane.set_line_visible(settled is not None and settled < 0)
 
     def _push_threshold(self):
-        """Every live mic, not just the one driving the view - the extras are
-        writing their own srt files against the same take."""
+        """Every live mic. The extras write their own srt for the same take."""
         value = self._threshold_override()
         for worker in ([self.worker] if self.worker else []) + self._extra_workers:
             worker.set_threshold(value)
@@ -827,8 +817,8 @@ class RecordingView(QWidget):
             return
         self._last_status_draw = now
 
-        # Automatic has no threshold to show until calibration engages (it
-        # needs ten onset valleys), and 0 is how "not yet" is expressed.
+        # Automatic has nothing to show until calibration engages, and 0 is
+        # how it says "not yet".
         if self.thr_mode.currentData() != "manual":
             settled = state.upper_bound_dBFS_threshold or 0
             if settled < 0:
@@ -843,9 +833,7 @@ class RecordingView(QWidget):
         quality, color = _quality_from_snr(state.expected_snr, state.ms_recorded)
         self.v_quality.setText(quality)
         self.v_quality.setStyleSheet(f"color: {color}; font-weight: bold;")
-        # The loudest frame since the last draw, not whichever one this tick
-        # landed on. state.latest_dBFS is refreshed every 15 frames, so it
-        # showed the gaps between sharp sounds far more often than the sounds.
+        # Loudest since the last draw, not whichever frame this tick landed on.
         peak, self._peak_dbfs = self._peak_dbfs, None
         if peak is None:
             pass

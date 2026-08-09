@@ -133,9 +133,7 @@ class EditRecordingView(QWidget):
         det_group = QGroupBox("Detection (the blue overlay)")
         det = QHBoxLayout(det_group)
         det.addWidget(QLabel("Threshold:"))
-        # The lane under the waveform carries the same value as a line you can
-        # drag. Releasing it re-detects, so the slider is not the only way in
-        # and neither one has to be guessed at.
+        # Same value as a line you can drag. Releasing it re-detects.
         self.editor.lane.threshold_moved.connect(self._on_lane_moved)
         self.editor.lane.threshold_committed.connect(self._on_lane_committed)
         self.slider = ClickSlider(Qt.Orientation.Horizontal)
@@ -179,8 +177,8 @@ class EditRecordingView(QWidget):
     def _update_slider_label(self, *_):
         v = self.slider.value()
         self.slider_label.setText(f"{v} dBFS")
-        # Touching the slider is choosing a value, so the lane stops describing
-        # what detection found and starts showing what is about to be applied.
+        # Touching the slider is choosing, so the lane stops reporting what
+        # detection found and starts showing what is about to be applied.
         lane = self.editor.lane
         lane.set_threshold(v)
         lane.set_mode("manual")
@@ -210,9 +208,8 @@ class EditRecordingView(QWidget):
         lane = self.editor.lane
         lane.set_threshold(v)
         lane.set_mode("manual" if manual else "auto")
-        # A settled auto threshold of 0 means calibration never engaged (it
-        # needs ten onset valleys). Drawing a line at 0 would claim a cutoff
-        # nothing can clear.
+        # A settled 0 means calibration never engaged: it needs ten onset
+        # valleys. A line at 0 would claim a cutoff nothing can clear.
         lane.set_line_visible(manual or (existing is not None and existing < 0))
 
     # ---- detection edits ----------------------------------------------

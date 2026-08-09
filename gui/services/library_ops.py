@@ -169,15 +169,11 @@ def recording_sibling_files(wav_path):
 
 
 def take_group(wav_path):
-    """Every microphone's wav for one take, the given one first.
+    """Every mic's wav for one take, the given one first.
 
-    Simultaneous mics write ``mici_<index>__<time_string>.wav`` into one source
-    dir, and the shared time_string is the only thing tying them together - the
-    sidecars name the device, not the take. A single-mic take returns just
-    itself, so callers can always treat a take as a group.
-
-    Anything that rewrites a take's audio has to cover all of these or the mic
-    files end up different lengths.
+    The shared time_string in ``mici_<n>__<time_string>.wav`` is the only link.
+    Single-mic takes return themselves, so a take is always a group. Rewriting a
+    take's audio must cover all of them or the files end up different lengths.
     """
     base = recording_base(wav_path)
     source = os.path.dirname(wav_path)

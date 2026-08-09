@@ -39,9 +39,8 @@ class UndoHistory:
             self._root = tempfile.mkdtemp(prefix="parrot_undo_")
 
     def _files(self):
-        """Every file the take owns, across every microphone it was recorded
-        with. A cut applies to all of them, so an undo that restored only the
-        one on screen would leave exactly the desync the cut avoided."""
+        """Every file the take owns, across every mic. Restoring only the one on
+        screen would leave the desync the cut avoided."""
         files = []
         for wav in library_ops.take_group(self.wav_path):
             files.extend(library_ops.recording_sibling_files(wav))

@@ -43,9 +43,8 @@ class ClipEditorWidget(QWidget):
         super().__init__(parent)
         self.history = history
         self.noun = noun
-        # A dBFS lane under the waveform. Only the screen that owns a threshold
-        # control asks for it; everywhere else it would be a strip of chart
-        # nothing on the page can act on.
+        # Asked for by screens that own a threshold control. Elsewhere it is a
+        # strip of chart nothing on the page can act on.
         self.lane = None
         self._show_levels = show_levels
         # Where to look up the clip's srt after an undo restores it. The two
@@ -166,8 +165,8 @@ class ClipEditorWidget(QWidget):
         self.refresh_history_buttons()
 
     def refresh_levels(self):
-        """Recompute the dBFS lane from the clip on disk. Cheap next to a
-        re-detect, and the audio can have changed under it (a trim, an undo)."""
+        """Recompute the lane from disk. Cheap next to a re-detect, and a trim
+        or an undo changes the audio under it."""
         if self.lane is None:
             return
         if not self.wav_path:
@@ -308,10 +307,9 @@ class ClipEditorWidget(QWidget):
                          f"Ctrl+Z to undo.")
 
     def _on_trim_failed(self, message, changed=False):
-        """A trim can fail after audio is already written (the rewrite lands,
-        re-detection doesn't; or one mic file of several is done). Keep the
-        checkpoint whenever anything was written, or Ctrl+Z would no longer
-        reach a change that really happened."""
+        """A trim can fail after audio is written: re-detection dies, or one mic
+        file of several is done. Keep the checkpoint whenever anything was
+        written, or Ctrl+Z stops reaching a change that happened."""
         self._finish_worker()
         if not self._cut_applied and not changed:
             self.history.discard_last_checkpoint()
@@ -437,8 +435,7 @@ class ClipEditorWidget(QWidget):
 
     def cleanup(self):
         self.stop_playback()
-        # Unlink before either plot is torn down, or pyqtgraph paints one
-        # ViewBox from another that has already gone.
+        # Unlink first, or pyqtgraph paints a ViewBox that has already gone.
         if self.lane is not None:
             self.lane.cleanup()
         self.preview.cleanup()
