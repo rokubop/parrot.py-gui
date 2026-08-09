@@ -142,7 +142,14 @@ class ResetWorker(QThread):
 
 
 class TrimWorker(QThread):
-    """Remove time ranges from the source WAV, then re-detect. Destructive."""
+    """Remove time ranges from the source WAV, then re-detect. Destructive.
+
+    Two results, because they take wildly different times: rewriting the wav is
+    a mask and a write, while re-detection reprocesses the whole clip. ``trimmed``
+    fires the moment the audio is cut so the waveform can update at once, and
+    ``finished_ok`` follows with the srt for the overlay.
+    """
+    trimmed = pyqtSignal(float, float, float)  # cut start, removed, new duration
     finished_ok = pyqtSignal(str)
     failed = pyqtSignal(str)
 
@@ -154,7 +161,9 @@ class TrimWorker(QThread):
 
     def run(self):
         try:
-            self._trim_wav()
+            removed, new_duration = self._trim_wav()
+            cut_start = min((r[0] for r in self.ranges), default=0.0)
+            self.trimmed.emit(cut_start, removed, new_duration)
             self.finished_ok.emit(redetect(self.wav_path, self.label))
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -186,6 +195,12 @@ class TrimWorker(QThread):
         out.setframerate(fr)
         out.writeframes(trimmed.tobytes())
         out.close()
+
+        # Measured off the mask, not the requested range: what was asked for is
+        # clamped to the clip and rounded to whole frames.
+        kept = int(keep.sum())
+        removed = (total - kept) / fr if fr else 0.0
+        return removed, (kept / fr if fr else 0.0)
 
 
 class AppendWorker(QThread):
