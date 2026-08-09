@@ -204,6 +204,12 @@ def freeze(name):
     os.rename(staging, baseline)
 
 
+def baseline_stats(name):
+    """What Reset would put back. Empty for a profile made empty, the copied
+    tree for one made by duplicate or import."""
+    return stats(os.path.join(profile_data_dir(name), BASELINE_DIR))
+
+
 def reset(name):
     """Throw away everything since the baseline was frozen."""
     root = profile_data_dir(name)

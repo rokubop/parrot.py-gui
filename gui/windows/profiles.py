@@ -531,6 +531,53 @@ class _NameDialog(QDialog):
         return self.edit.text().strip()
 
 
+class _ConfirmDialog(QDialog):
+    """A destructive act that asks you to type the name.
+
+    Reset and Delete both end months of recording, and a Yes/No box is one
+    misclick. Cancel is the default, so Enter backs out.
+
+    Message lines are split by hand rather than word-wrapped: a wrapped
+    QLabel reports a one-line sizeHint and gets clipped here.
+    """
+
+    def __init__(self, parent, title, message, expect, action):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self._expect = expect
+        t = theme.colors()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        layout.addWidget(QLabel(message))
+
+        row = QHBoxLayout()
+        label = QLabel(f"Type {expect} to confirm:")
+        label.setStyleSheet(f"color: {t['text_dim']};")
+        row.addWidget(label)
+        self.edit = QLineEdit()
+        self.edit.textChanged.connect(lambda *_: self._update())
+        row.addWidget(self.edit, stretch=1)
+        layout.addLayout(row)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setDefault(True)
+        cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(cancel_btn)
+        self.ok_btn = QPushButton(action)
+        self.ok_btn.clicked.connect(self.accept)
+        buttons.addWidget(self.ok_btn)
+        layout.addLayout(buttons)
+
+        self._update()
+
+    def _update(self):
+        self.ok_btn.setEnabled(self.edit.text().strip() == self._expect)
+
+
 class NewProfileDialog(QDialog):
     """Name it, and say what it starts from.
 
@@ -911,11 +958,15 @@ class ProfilesDialog(QDialog):
         name = self._selected()
         if name is None:
             return
-        answer = QMessageBox.question(
-            self, "Reset profile",
-            f"Put {name} back to how it started? Everything recorded or "
-            "trained since then is deleted.")
-        if answer != QMessageBox.StandardButton.Yes:
+        sounds, models = profiles.baseline_stats(name)
+        started = _counts(sounds, models) if sounds or models else "empty"
+        dialog = _ConfirmDialog(
+            self, f"Reset {name}",
+            f"{name} goes back to how it started: {started}.\n"
+            "Everything recorded or trained since then is deleted.\n"
+            "This cannot be undone.",
+            name, "Reset")
+        if not dialog.exec():
             return
         if name == profiles.current_profile():
             # The running app has this profile's files open in caches; restart
@@ -930,10 +981,14 @@ class ProfilesDialog(QDialog):
         name = self._selected()
         if name is None:
             return
-        answer = QMessageBox.question(
-            self, "Delete profile",
-            f"Delete {name} and everything in it?")
-        if answer == QMessageBox.StandardButton.Yes:
+        sounds, models = profiles.stats(profiles.profile_data_dir(name))
+        holds = _counts(sounds, models) if sounds or models else "empty"
+        dialog = _ConfirmDialog(
+            self, f"Delete {name}",
+            f"{name} and everything in it: {holds}.\n"
+            "This cannot be undone.",
+            name, "Delete")
+        if dialog.exec():
             self._run(lambda: profiles.delete(name), "Deleting...")
 
     def _on_switch(self):
