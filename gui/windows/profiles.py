@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QGroupBox, QComboBox, QInputDialog, QMessageBox,
-    QApplication, QFileDialog
+    QApplication, QFileDialog, QWidget, QRadioButton, QLineEdit
 )
 
 from gui import theme
@@ -89,17 +89,24 @@ class ImportSetupDialog(QDialog):
     Two picks: what to copy, and where it lands. The destination is a real
     choice because the app already sends someone here from inside a profile
     they just made, and an import that can only ever make another profile
-    is a dead end there.
+    is a dead end there. It hides itself when there is nothing to choose.
+
+    pick_only borrows the top half as a folder picker: NewProfileDialog
+    needs the same "choose or search for it" machinery and should not own a
+    second copy of it.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, pick_only=False):
         super().__init__(parent)
-        self.setWindowTitle("Bring in an existing setup")
+        self._pick_only = pick_only
+        self.setWindowTitle("Find an existing setup" if pick_only
+                            else "Bring in an existing setup")
         self.resize(660, 500)
         self._worker = None
         self._folder_scan = None
         self._dest_labels = {}  # data dir -> the name shown for it
         self.imported = None  # destination name on success
+        self.picked = None  # the setup chosen, when pick_only
 
         t = theme.colors()
         layout = QVBoxLayout(self)
@@ -107,6 +114,8 @@ class ImportSetupDialog(QDialog):
         layout.setSpacing(12)
 
         note = QLabel(
+            "Point at an install you already have. Nothing in it is changed."
+            if pick_only else
             "Copy the sounds and models of an existing install in. "
             "The original folder is not changed.")
         note.setWordWrap(True)
@@ -118,7 +127,7 @@ class ImportSetupDialog(QDialog):
         choose_btn.clicked.connect(self._on_choose)
         layout.addWidget(choose_btn)
 
-        hint = QLabel("The parrot.py folder itself, wherever you keep it.")
+        hint = QLabel("The parrot.py folder itself, or the data folder in it.")
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color: {t['text_dim']};")
         layout.addWidget(hint)
@@ -152,17 +161,24 @@ class ImportSetupDialog(QDialog):
         layout.addWidget(self.list, stretch=1)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel("Copy into:"))
+        self.dest_widget = QWidget()
+        dest_row = QHBoxLayout(self.dest_widget)
+        dest_row.setContentsMargins(0, 0, 0, 0)
+        dest_row.addWidget(QLabel("Copy into:"))
         self.dest_combo = QComboBox()
         self.dest_combo.setToolTip(
             "Where the copy lands. Whatever is already there is kept.")
-        row.addWidget(self.dest_combo)
+        dest_row.addWidget(self.dest_combo)
+        row.addWidget(self.dest_widget)
         row.addStretch()
         self.status_label = QLabel("")
         self.status_label.setStyleSheet(f"color: {t['text_dim']};")
         row.addWidget(self.status_label)
-        self.import_btn = QPushButton("Import")
+        self.import_btn = QPushButton("Use this folder" if pick_only
+                                      else "Import")
         self.import_btn.setToolTip(
+            "Nothing is copied yet; this dialog closes with it chosen."
+            if pick_only else
             "Copies the sounds and models in. "
             "The folder you picked is not touched.")
         self.import_btn.setEnabled(False)
@@ -182,6 +198,11 @@ class ImportSetupDialog(QDialog):
         empty: someone who just made a profile and came here means this one.
         A root with content in it defaults to a new profile instead, so the
         safe answer stays the one you get by pressing Enter.
+
+        The whole row hides when there is nothing to choose between, which
+        is every first launch. "New profile" names a concept that person has
+        not met, and offering it as their only alternative teaches it at the
+        worst moment.
         """
         here = os.path.abspath(profiles.current_data_dir())
         entries = [("Main", os.path.abspath(profiles.MAIN_DATA_DIR))]
@@ -211,6 +232,9 @@ class ImportSetupDialog(QDialog):
         self.dest_combo.addItem("New profile...", None)
         self.dest_combo.setCurrentIndex(
             self.dest_combo.count() - 1 if default is None else default)
+        # one tree, empty, and it is the one we are on: no choice to offer
+        only_here = len(entries) == 1 and default == 0
+        self.dest_widget.setVisible(not (self._pick_only or only_here))
 
     def _is_here(self, data_dir):
         return data_dir == os.path.abspath(profiles.current_data_dir())
@@ -315,6 +339,10 @@ class ImportSetupDialog(QDialog):
         if item is None or self._worker is not None:
             return
         setup = item.data(Qt.ItemDataRole.UserRole)
+        if self._pick_only:
+            self.picked = setup
+            self.accept()
+            return
         source = setup["data_dir"]
         dest_dir = self.dest_combo.currentData()
 
@@ -392,6 +420,164 @@ class ImportSetupDialog(QDialog):
         QTimer.singleShot(0, QApplication.instance().quit)
 
 
+class NewProfileDialog(QDialog):
+    """Name it, and say what it starts from.
+
+    One dialog in place of three buttons (New empty, Duplicate, Import),
+    which were one act with three sources. Splitting them across the row
+    meant guessing which one hid "my old install", and the answer was the
+    one word that did not sound like a source.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("New profile")
+        self.resize(560, 320)
+        self._worker = None
+        self._setup = None  # what the folder source resolved to
+        self.created = None  # profile name on success
+
+        t = theme.colors()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Name"))
+        self.name_edit = QLineEdit()
+        self.name_edit.textChanged.connect(lambda *_: self._update_buttons())
+        name_row.addWidget(self.name_edit, stretch=1)
+        layout.addLayout(name_row)
+
+        layout.addSpacing(4)
+        layout.addWidget(QLabel("Start from"))
+
+        empty_row = QHBoxLayout()
+        self.empty_radio = QRadioButton("Empty")
+        self.empty_radio.setChecked(True)
+        self.empty_radio.toggled.connect(lambda *_: self._update_buttons())
+        empty_row.addWidget(self.empty_radio)
+        empty_hint = QLabel("like a first launch")
+        empty_hint.setStyleSheet(f"color: {t['text_dim']};")
+        empty_row.addWidget(empty_hint)
+        empty_row.addStretch()
+        layout.addLayout(empty_row)
+
+        copy_row = QHBoxLayout()
+        self.copy_radio = QRadioButton("A copy of")
+        self.copy_radio.toggled.connect(lambda *_: self._update_buttons())
+        copy_row.addWidget(self.copy_radio)
+        self.copy_combo = QComboBox()
+        for label, data_dir in self._sources():
+            sounds, models = profiles.stats(data_dir)
+            has = _counts(sounds, models) if sounds or models else "empty"
+            self.copy_combo.addItem(f"{label} ({has})", data_dir)
+        # touching the combo is the same as saying you meant this row
+        self.copy_combo.activated.connect(
+            lambda *_: self.copy_radio.setChecked(True))
+        copy_row.addWidget(self.copy_combo)
+        copy_row.addStretch()
+        layout.addLayout(copy_row)
+
+        self.folder_radio = QRadioButton("A folder on this machine")
+        self.folder_radio.toggled.connect(lambda *_: self._update_buttons())
+        layout.addWidget(self.folder_radio)
+
+        folder_row = QHBoxLayout()
+        folder_row.addSpacing(26)
+        self.choose_btn = QPushButton("Choose...")
+        self.choose_btn.clicked.connect(self._on_choose)
+        folder_row.addWidget(self.choose_btn)
+        self.folder_label = QLabel("your parrot.py folder, or the data in it")
+        self.folder_label.setStyleSheet(f"color: {t['text_dim']};")
+        folder_row.addWidget(self.folder_label, stretch=1)
+        layout.addLayout(folder_row)
+
+        layout.addStretch()
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet(f"color: {t['text_dim']};")
+        buttons.addWidget(self.status_label)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(cancel_btn)
+        self.create_btn = QPushButton("Create")
+        self.create_btn.setDefault(True)
+        self.create_btn.clicked.connect(self._on_create)
+        buttons.addWidget(self.create_btn)
+        layout.addLayout(buttons)
+
+        self._update_buttons()
+
+    def _sources(self):
+        entries = [("Main", profiles.MAIN_DATA_DIR)]
+        entries += [(n, profiles.profile_data_dir(n))
+                    for n in profiles.list_profiles()]
+        return entries
+
+    def _update_buttons(self):
+        busy = self._worker is not None
+        ready = bool(self.name_edit.text().strip())
+        if self.folder_radio.isChecked() and self._setup is None:
+            ready = False
+        self.create_btn.setEnabled(ready and not busy)
+        self.choose_btn.setEnabled(not busy)
+        self.name_edit.setEnabled(not busy)
+
+    def _on_choose(self):
+        dialog = ImportSetupDialog(self, pick_only=True)
+        dialog.exec()
+        if dialog.picked is not None:
+            self._setup = dialog.picked
+            self.folder_label.setText(
+                f"{self._setup['label']}    "
+                f"{_counts(self._setup['sounds'], self._setup['models'])}")
+            self.folder_radio.setChecked(True)
+            if not self.name_edit.text().strip():
+                self.name_edit.setText(os.path.basename(self._setup["root"]))
+        self._update_buttons()
+
+    def _on_create(self):
+        name = self.name_edit.text().strip()
+        if not name or self._worker is not None:
+            return
+        if self.copy_radio.isChecked():
+            source = self.copy_combo.currentData()
+            src_name = profiles.profile_name_of(source)
+            talon = ("real" if src_name is None
+                     else profiles.read_meta(src_name).get("talon", "real"))
+            fn = lambda: profiles.duplicate(source, name, talon)
+        elif self.folder_radio.isChecked():
+            source = self._setup["data_dir"]
+            fn = lambda: profiles.duplicate(source, name)
+        else:
+            fn = lambda: profiles.create_empty(name)
+        self.status_label.setText("Creating...")
+        self._worker = _OpWorker(fn, self)
+        self._worker.done.connect(lambda error: self._on_created(name, error))
+        self._update_buttons()
+        self._worker.start()
+
+    def _on_created(self, name, error):
+        self._worker = None
+        self.status_label.setText("")
+        if error:
+            QMessageBox.warning(self, "Could not create it", error)
+            self._update_buttons()
+            return
+        self.created = name
+        answer = QMessageBox.question(
+            self, "Created",
+            f"{name} is ready. Switch to it now? Parrot restarts, "
+            "about a second.")
+        if answer == QMessageBox.StandardButton.Yes:
+            profiles.spawn_into(name)
+            QTimer.singleShot(0, QApplication.instance().quit)
+        self.accept()
+
+
 class ProfilesDialog(QDialog):
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -425,28 +611,21 @@ class ProfilesDialog(QDialog):
         self.switch_btn.clicked.connect(self._on_switch)
         actions.addWidget(self.switch_btn)
 
-        self.new_btn = QPushButton("New empty")
-        self.new_btn.setToolTip("A profile with nothing in it yet, like a first launch")
+        self.new_btn = QPushButton("New profile...")
+        self.new_btn.setToolTip(
+            "Empty, a copy of one here, or a parrot.py folder on this machine")
         self.new_btn.clicked.connect(self._on_new)
         actions.addWidget(self.new_btn)
 
-        self.dup_btn = QPushButton("Duplicate")
-        self.dup_btn.setToolTip("A new profile copied from the selected one")
-        self.dup_btn.clicked.connect(self._on_duplicate)
-        actions.addWidget(self.dup_btn)
-
-        self.import_btn = QPushButton("Import...")
-        self.import_btn.setToolTip("Copy in the setup of another Parrot.py on this machine")
+        self.import_btn = QPushButton("Import into...")
+        self.import_btn.setToolTip(
+            "Add another Parrot.py's sounds and models to a profile that "
+            "already exists")
         self.import_btn.clicked.connect(self._on_import)
         actions.addWidget(self.import_btn)
 
-        self.freeze_btn = QPushButton("Freeze")
-        self.freeze_btn.setToolTip("Save the profile as it is now; Reset returns here")
-        self.freeze_btn.clicked.connect(self._on_freeze)
-        actions.addWidget(self.freeze_btn)
-
         self.reset_btn = QPushButton("Reset")
-        self.reset_btn.setToolTip("Back to how the profile was when last frozen")
+        self.reset_btn.setToolTip("Back to how this profile started")
         self.reset_btn.clicked.connect(self._on_reset)
         actions.addWidget(self.reset_btn)
 
@@ -518,9 +697,7 @@ class ProfilesDialog(QDialog):
         is_profile = name is not None
         self.switch_btn.setEnabled(not busy and name != current)
         self.new_btn.setEnabled(not busy)
-        self.dup_btn.setEnabled(not busy)
         self.import_btn.setEnabled(not busy)
-        self.freeze_btn.setEnabled(not busy and is_profile)
         self.reset_btn.setEnabled(not busy and is_profile)
         self.delete_btn.setEnabled(not busy and is_profile and name != current)
         self.open_btn.setEnabled(self.list.currentItem() is not None)
@@ -552,29 +729,13 @@ class ProfilesDialog(QDialog):
             QMessageBox.warning(self, "Profile operation failed", error)
         self._refresh()
 
-    def _ask_name(self, title):
-        name, ok = QInputDialog.getText(self, title, "Name:")
-        return name.strip() if ok and name.strip() else None
-
     def _data_dir_of(self, name):
         return (profiles.MAIN_DATA_DIR if name is None
                 else profiles.profile_data_dir(name))
 
     def _on_new(self):
-        name = self._ask_name("New empty profile")
-        if name:
-            self._run(lambda: profiles.create_empty(name), "Creating...")
-
-    def _on_duplicate(self):
-        src = self._selected()
-        src_label = "Main" if src is None else src
-        name = self._ask_name(f"Duplicate {src_label}")
-        if name:
-            talon = ("real" if src is None
-                     else profiles.read_meta(src).get("talon", "real"))
-            src_dir = self._data_dir_of(src)
-            self._run(lambda: profiles.duplicate(src_dir, name, talon),
-                      "Copying...")
+        NewProfileDialog(self).exec()
+        self._refresh()
 
     def _on_create_test_profiles(self):
         from gui.services import mock_states
@@ -611,18 +772,13 @@ class ProfilesDialog(QDialog):
         dialog.exec()
         self._refresh()
 
-    def _on_freeze(self):
-        name = self._selected()
-        if name is not None:
-            self._run(lambda: profiles.freeze(name), "Freezing...")
-
     def _on_reset(self):
         name = self._selected()
         if name is None:
             return
         answer = QMessageBox.question(
             self, "Reset profile",
-            f"Put {name} back to its frozen baseline? Everything recorded or "
+            f"Put {name} back to how it started? Everything recorded or "
             "trained since then is deleted.")
         if answer != QMessageBox.StandardButton.Yes:
             return

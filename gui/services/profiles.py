@@ -178,7 +178,12 @@ def import_into(dest_data_dir, source_data_dir):
 
 
 def freeze(name):
-    """Save the profile as it is now; Reset returns here."""
+    """Mark the profile as it is now; Reset returns here.
+
+    Not a button any more. Every path that makes a profile ends with one of
+    these, so the mark is always "how it started" and there is nothing to
+    explain: create_empty, duplicate, and import_into on an empty one.
+    """
     root = profile_data_dir(name)
     if not os.path.isdir(root):
         raise ProfileError(f"No profile named {name}")
