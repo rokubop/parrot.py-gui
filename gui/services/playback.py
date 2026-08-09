@@ -27,6 +27,7 @@ class _Player:
         self._lock = threading.Lock()
         self._stream = None
         self._token = None   # identity of the current play() request
+        self._thread = None  # the writer, so shutdown() can wait for it
 
     def play(self, samples, sample_rate):
         """Start playing mono float32 `samples`; returns immediately.
@@ -47,11 +48,13 @@ class _Player:
         except Exception:
             return 0.0
         token = object()
+        worker = threading.Thread(target=self._run, args=(samples, stream, token),
+                                  daemon=True)
         with self._lock:
             self._token = token
             self._stream = stream
-        threading.Thread(target=self._run, args=(samples, stream, token),
-                         daemon=True).start()
+            self._thread = worker
+        worker.start()
         return float(stream.latency)
 
     def stop(self):
@@ -64,6 +67,19 @@ class _Player:
         # here could pull it out from under a write() already in flight.
         if stream is not None:
             stream.abort(ignore_errors=True)
+
+    def shutdown(self):
+        """Stop, and wait for the writer to leave PortAudio. Call before quitting.
+
+        The writer is a daemon thread, so quitting mid-playback tore the
+        interpreter down while it was inside stream.write() - a segfault on
+        roughly one quit in three. stop() only asks; this waits.
+        """
+        self.stop()
+        with self._lock:
+            worker = self._thread
+        if worker is not None:
+            worker.join(timeout=2.0)
 
     def _run(self, samples, stream, token):
         try:
@@ -90,3 +106,4 @@ _player = _Player()
 
 play = _player.play
 stop = _player.stop
+shutdown = _player.shutdown
