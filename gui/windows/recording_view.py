@@ -24,7 +24,7 @@ from gui.widgets.level_lane import LevelLane
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets.mic_picker import MicPicker
 from gui.workers.audio_worker import AudioWorker
-from gui.workers.segment_worker import AppendWorker
+from gui.workers.segment_worker import AppendWorker, read_min_dbfs
 from gui.services import library_ops, strategies
 from gui.services.undo import UndoHistory
 from lib.srt import ms_to_srt_timestring
@@ -166,7 +166,9 @@ class RecordingView(QWidget):
         self.level_lane.threshold_moved.connect(self._on_threshold_moved)
         left.addWidget(self.level_lane)
         left.addWidget(self._build_threshold_row())
-        self.editor = ClipEditorWidget(self.history, noun="take")
+        # The take keeps its level lane after Pause. Losing it at the moment
+        # the recording ends is the moment you most want to look at it.
+        self.editor = ClipEditorWidget(self.history, noun="take", show_levels=True)
         self.editor.setVisible(False)
         self.editor.srt_provider = lambda: self._srt_for(self._take_wav)
         self.editor.whole_clip_hint = "Start over deletes it."
@@ -328,6 +330,29 @@ class RecordingView(QWidget):
         self.thr_note.setText(f"{round(value)} dBFS - drag the line to move it")
         self._push_threshold()
 
+    def _sync_review_lane(self):
+        """Carry the threshold onto the take's own lane after Pause.
+
+        Not draggable: nothing on this screen re-detects, and the edit view is
+        where a recorded take's detection gets changed. Manual comes from what
+        was in effect; automatic comes from the thresholds file the recorder
+        just wrote, which is what it settled on.
+        """
+        lane = self.editor.lane
+        if lane is None or not self._take_wav:
+            return
+        lane.set_editable(False)
+        if self.thr_mode.currentData() == "manual":
+            lane.set_mode("manual")
+            lane.set_threshold(self._manual_dbfs)
+            lane.set_line_visible(True)
+            return
+        lane.set_mode("auto")
+        settled = read_min_dbfs(self._take_wav)
+        if settled is not None and settled < 0:
+            lane.set_threshold(settled)
+        lane.set_line_visible(settled is not None and settled < 0)
+
     def _push_threshold(self):
         """Every live mic, not just the one driving the view - the extras are
         writing their own srt files against the same take."""
@@ -368,6 +393,7 @@ class RecordingView(QWidget):
             w.setText("-")
         if take:
             self.editor.open(take, self._take_srt, self._label)
+            self._sync_review_lane()
             self._set_state("review")
             self.hint.setText(self._review_hint("Resume to add more."))
         else:
@@ -712,6 +738,7 @@ class RecordingView(QWidget):
             return
         self._take_srt = self._srt_for(self._take_wav) or self._take_srt
         self.editor.open(self._take_wav, self._take_srt, self._label)
+        self._sync_review_lane()
         self._set_state("review")
         self.hint.setText(self._review_hint("Resume to add more, Done to finish."))
 

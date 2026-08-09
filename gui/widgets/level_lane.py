@@ -33,7 +33,7 @@ LANE_HEIGHT = 132
 
 # Live: keep only what the scrolling window can show. The take can run for
 # minutes; redrawing all of it every frame cannot.
-LIVE_POINTS = 1000
+LIVE_POINTS = 1600      # ~24 s of frames, comfortably past the 10 s window
 LIVE_REDRAW_EVERY = 2
 
 
@@ -48,6 +48,7 @@ class LevelLane(QWidget):
         t = theme.colors()
         self._colors = t
         self._mode = None       # set_mode below is the first real one
+        self._editable = True
         self._value = -40.0
         self._setting_line = False
         self._live_t = []
@@ -165,7 +166,7 @@ class LevelLane(QWidget):
         self.line.setPen(pg.mkPen(QColor(color), width=2, style=style))
         self.line.setHoverPen(pg.mkPen(QColor(color), width=4 if manual else 2,
                                        style=style))
-        self.line.setMovable(manual)
+        self.line.setMovable(manual and self._editable)
         self.line.label.setFormat(
             "{value:0.0f} dBFS" if manual else "auto  {value:0.0f} dBFS")
         self.line.label.setColor(QColor(color))
@@ -174,10 +175,25 @@ class LevelLane(QWidget):
         self.line.label.valueChanged()
         self.below.setBrush(self._below_brush(manual))
         self.below.update()
-        self.plot.setToolTip(
-            "Drag the line to change the threshold. Anything under it is not "
-            "detected." if manual else
-            "The threshold detection settled on. Set one yourself to move it.")
+        self._refresh_tooltip()
+
+    def set_editable(self, editable):
+        """Whether the line answers the mouse. Off where nothing is wired to
+        act on a new value - a line that moves and changes nothing is a lie."""
+        self._editable = editable
+        self.line.setMovable(self._mode == "manual" and editable)
+        self._refresh_tooltip()
+
+    def _refresh_tooltip(self):
+        if not self._editable:
+            self.plot.setToolTip("The threshold this take was detected at. "
+                                 "Anything under it is not detected.")
+        elif self._mode == "manual":
+            self.plot.setToolTip("Drag the line to change the threshold. "
+                                 "Anything under it is not detected.")
+        else:
+            self.plot.setToolTip("The threshold detection settled on. "
+                                 "Set one yourself to move it.")
 
     def _below_brush(self, manual):
         """Fades the sub-threshold half towards the plot background. Stronger
