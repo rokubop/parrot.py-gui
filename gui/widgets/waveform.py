@@ -3,7 +3,7 @@ import wave
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor
+from PyQt6.QtGui import QColor
 
 from config.config import RATE
 
@@ -32,18 +32,15 @@ class WaveformWidget(QWidget):
         # recorder flagged the frame as sound, from a recycled pool of
         # LinearRegionItems.
         #
-        # Hatched and faint, and captioned, because they are provisional in two
-        # ways at once. Each band is the online estimator's answer at the moment
-        # that frame arrived and is never revised, so the early ones stay wrong
-        # while the threshold is still settling under them. And Pause re-judges
-        # the whole take from 0:00 with settled thresholds, which is a different
-        # computation, not a continuation. Drawn like the final overlay, the
-        # swap reads as detection getting worse rather than a draft being
-        # replaced.
-        self._det_brush = QBrush(QColor(90, 175, 245, 70), Qt.BrushStyle.FDiagPattern)
-        self._det_pen = pg.mkPen(QColor(90, 175, 245, 80), style=Qt.PenStyle.DashLine)
+        # Provisional in two ways at once, which the caption below says and the
+        # styling deliberately does not: each band is the online estimator's
+        # answer at the moment that frame arrived and is never revised, and
+        # Pause re-judges the whole take from 0:00 with settled thresholds.
+        # Hatching them was tried and read as broken.
+        self._det_brush = QColor(90, 175, 245); self._det_brush.setAlpha(55)
+        self._det_pen = pg.mkPen(QColor(90, 175, 245, 90))
         self._det_regions = []
-        self.MAX_DET_REGIONS = 80
+        self.MAX_DET_REGIONS = 160
 
         self.provisional = pg.TextItem(color=QColor(90, 175, 245, 210), anchor=(0, 0))
         self.provisional.setText("provisional, re-detected when you pause")
@@ -205,6 +202,20 @@ class WaveformWidget(QWidget):
                 ts, te = time_axis[s], time_axis[min(e, n - 1)]
                 if te > ts:
                     runs.append((ts, te))
+        # Merge runs closer together than a pixel. They cannot be told apart on
+        # screen, and spending an item on each is what pushed a dense take past
+        # the cap below, which drops the tail of the window silently: measured
+        # at 80 bands painting 23% of a window that was 43% detected.
+        if runs:
+            span = time_axis[-1] - time_axis[0] if len(time_axis) > 1 else 0.0
+            min_gap = span / max(1, self.plot_widget.width())
+            merged = [list(runs[0])]
+            for ts, te in runs[1:]:
+                if ts - merged[-1][1] <= min_gap:
+                    merged[-1][1] = te
+                else:
+                    merged.append([ts, te])
+            runs = merged
         runs = runs[:self.MAX_DET_REGIONS]
         for i, (ts, te) in enumerate(runs):
             if i >= len(self._det_regions):
