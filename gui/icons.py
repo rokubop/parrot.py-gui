@@ -80,9 +80,121 @@ def _draw_note(painter, colour):
         painter.drawLine(QPointF(0.32, y), QPointF(0.68, y))
 
 
+def _button_icon(draw, size=14, dpr=None):
+    """Push-button icon: resting on `button`, hover on `button_hover`, and a
+    greyed pixmap so a disabled control does not keep a full-strength glyph."""
+    t = theme.colors()
+    icon = QIcon()
+    for colour, mode in ((t["text"], QIcon.Mode.Normal),
+                         (t["text_bright"], QIcon.Mode.Active),
+                         (t["disabled_text"], QIcon.Mode.Disabled)):
+        icon.addPixmap(_render(draw, colour, size, dpr), mode, QIcon.State.Off)
+    return icon
+
+
+def _fixed_icon(draw, colour, size=14, dpr=None):
+    """One colour for every state, for a button painting its own fill."""
+    icon = QIcon()
+    icon.addPixmap(_render(draw, colour, size, dpr))
+    return icon
+
+
+def _icon(draw, size, dpr, colour):
+    return (_fixed_icon(draw, colour, size, dpr) if colour
+            else _button_icon(draw, size, dpr))
+
+
+# ---- transport ----------------------------------------------------------
+
+def _draw_play(painter, colour):
+    """Filled triangle, nudged right: centred on the box it reads left-heavy."""
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(colour)
+    path = QPainterPath()
+    path.moveTo(0.30, 0.18)
+    path.lineTo(0.82, 0.50)
+    path.lineTo(0.30, 0.82)
+    path.closeSubpath()
+    painter.drawPath(path)
+
+
+def _draw_stop(painter, colour):
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(colour)
+    painter.drawRoundedRect(QRectF(0.24, 0.24, 0.52, 0.52), 0.06, 0.06)
+
+
+def _draw_pause(painter, colour):
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(colour)
+    for x in (0.26, 0.58):
+        painter.drawRoundedRect(QRectF(x, 0.20, 0.16, 0.60), 0.05, 0.05)
+
+
+def _draw_record(painter, colour):
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(colour)
+    painter.drawEllipse(QRectF(0.26, 0.26, 0.48, 0.48))
+
+
+def _draw_restart(painter, colour):
+    """Open ring plus a head. The gap is what says "again" and not "loading"."""
+    pen = QPen(colour, 0.13)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    # Qt angles: 0 at 3 o'clock, counter-clockwise, sixteenths of a degree.
+    painter.drawArc(QRectF(0.22, 0.22, 0.56, 0.56), 90 * 16, 300 * 16)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(colour)
+    head = QPainterPath()
+    head.moveTo(0.50, 0.06)
+    head.lineTo(0.50, 0.32)
+    head.lineTo(0.74, 0.19)
+    head.closeSubpath()
+    painter.drawPath(head)
+
+
+def _draw_check(painter, colour):
+    pen = QPen(colour, 0.14)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    path = QPainterPath()
+    path.moveTo(0.20, 0.52)
+    path.lineTo(0.41, 0.73)
+    path.lineTo(0.80, 0.27)
+    painter.drawPath(path)
+
+
 def person(size=16, dpr=None):
     return _toolbar_icon(_draw_person, size, dpr)
 
 
 def note(size=16, dpr=None):
     return _toolbar_icon(_draw_note, size, dpr)
+
+
+def play(size=14, dpr=None, colour=None):
+    return _icon(_draw_play, size, dpr, colour)
+
+
+def stop(size=14, dpr=None, colour=None):
+    return _icon(_draw_stop, size, dpr, colour)
+
+
+def pause(size=14, dpr=None, colour=None):
+    return _icon(_draw_pause, size, dpr, colour)
+
+
+def record(size=14, dpr=None, colour=None):
+    return _icon(_draw_record, size, dpr, colour)
+
+
+def restart(size=14, dpr=None, colour=None):
+    return _icon(_draw_restart, size, dpr, colour)
+
+
+def check(size=14, dpr=None, colour=None):
+    return _icon(_draw_check, size, dpr, colour)

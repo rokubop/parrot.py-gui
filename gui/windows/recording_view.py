@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.config import RATE
-from gui import components, theme
+from gui import components, icons, theme
 from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.clip_editor import ClipEditorWidget
@@ -171,16 +171,16 @@ class RecordingView(QWidget):
 
         # Controls
         controls = QHBoxLayout()
-        self.record_btn = QPushButton("● Record")
-        # Same trap as Play/Stop, and worse: ❚❚ is two glyphs wide. A minimum
-        # width alone would still let Pause push Start over along.
-        components.lock_width(self.record_btn, "● Record", "❚❚ Pause",
-                              "● Resume", floor=150)
+        self.record_btn = QPushButton("Record")
+        # Pinned across all three labels, or Pause shoves Start over along.
+        components.lock_width(self.record_btn, "Record", "Pause", "Resume",
+                              floor=150)
         self.record_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.record_btn.clicked.connect(self._on_primary)
         controls.addWidget(self.record_btn)
-        self.start_over_btn = QPushButton("↻ Start over")
+        self.start_over_btn = QPushButton("Start over")
         self.start_over_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.start_over_btn.setIcon(icons.restart())
         self.start_over_btn.setToolTip("Delete this whole take and start again")
         self.start_over_btn.clicked.connect(self._on_start_over)
         controls.addWidget(self.start_over_btn)
@@ -193,9 +193,10 @@ class RecordingView(QWidget):
         controls.addWidget(self.hint)
         controls.addSpacing(16)
         # Finish is the way out, set apart from the take-editing controls.
-        self.finish_btn = QPushButton("Finish ✓")
+        self.finish_btn = QPushButton("Finish")
         self.finish_btn.setMinimumWidth(130)
         self.finish_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.finish_btn.setIcon(icons.check(colour="#ffffff"))
         self.finish_btn.setToolTip("Done - the take is already saved to the sound")
         self.finish_btn.setStyleSheet(
             f"QPushButton {{ background-color: {theme.colors()['accent']}; "
@@ -321,16 +322,23 @@ class RecordingView(QWidget):
     # None resolves to the theme's dim text; the rest are state colors, not
     # text tiers, so they stay literal.
     _STATES = {
-        "idle":      ("● Record", "#c0463f", "● Ready",     None,      (90, 230, 150)),
-        "recording": ("❚❚ Pause", None,      "● Recording", "#e0534f", (224, 83, 79)),
-        "review":    ("● Resume", "#3a8f55", "❚❚ Paused",  "#e0b020", (224, 176, 32)),
+        "idle":      ("Record", "#c0463f", "● Ready",     None,      (90, 230, 150)),
+        "recording": ("Pause",  None,      "● Recording", "#e0534f", (224, 83, 79)),
+        "review":    ("Resume", "#3a8f55", "● Paused",   "#e0b020", (224, 176, 32)),
     }
+
+    # Record and Resume paint their own red/green fill, so their icon is white
+    # rather than a theme text colour.
+    _STATE_ICONS = {"idle": icons.record, "recording": icons.pause,
+                    "review": icons.record}
 
     def _set_state(self, state):
         self._state = state
         text, color, ind_text, ind_color, trace = self._STATES[state]
         ind_color = ind_color or theme.colors()["text_dim"]
         self.record_btn.setText(text)
+        self.record_btn.setIcon(
+            self._STATE_ICONS[state](colour="#ffffff" if color else None))
         self.record_btn.setStyleSheet(
             (f"QPushButton {{ background-color: {color}; color: #ffffff; "
              f"font-weight: bold; border: none; }}"
@@ -390,7 +398,7 @@ class RecordingView(QWidget):
             return "Space / R  pause and review"
         if self._state == "review":
             return "R resume recording  ·  " + self.editor.keybinding_hint()
-        return "R (or ● Record) to start  ·  name the sound first for a new one"
+        return "R (or Record) to start  ·  name the sound first for a new one"
 
     # ---- recording lifecycle ------------------------------------------
 
@@ -709,3 +717,5 @@ class RecordingView(QWidget):
 
     def refresh_theme(self):
         self.editor.refresh_theme()
+        self.start_over_btn.setIcon(icons.restart())
+        self._set_state(self._state)

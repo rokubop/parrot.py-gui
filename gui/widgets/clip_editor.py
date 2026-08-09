@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QFrame, QMessageBox
 )
 
-from gui import components, theme
+from gui import components, icons, theme
 from gui.services import playback
 from gui.widgets.audio_preview import AudioPreviewWidget, view_after_cut
 from gui.workers.segment_worker import TrimWorker
@@ -102,13 +102,12 @@ class ClipEditorWidget(QWidget):
             return btn
 
         # transport
-        self.play_btn = button("▶ Play", self.toggle_play,
+        self.play_btn = button("Play", self.toggle_play,
                                "Play, or play the selection - Space")
-        # Pinned, or the whole row shifts sideways the moment playback starts.
-        # The floor leaves room for ▶ landing on a colour-emoji glyph, which
-        # paints wider than it measures.
-        self._play_labels = ("▶ Play", "■ Stop")
-        components.lock_width(self.play_btn, *self._play_labels, floor=130)
+        self.play_btn.setIcon(icons.play())
+        # Pinned, or the row shifts sideways the moment playback starts.
+        self._play_labels = ("Play", "Stop")
+        components.lock_width(self.play_btn, *self._play_labels, floor=110)
         self.fit_btn = button("Fit", self.fit,
                               f"Zoom to the selection, or the whole {self.noun} - F")
         row.addWidget(_separator())
@@ -388,6 +387,7 @@ class ClipEditorWidget(QWidget):
         self._latency = playback.play(self._audio[start:end], self._sr)
         self._playing = True
         self.play_btn.setText(self._play_labels[1])
+        self.play_btn.setIcon(icons.stop())
         self.preview.set_playhead(self._play_from)
         self._clock.restart()
         self._timer.start()
@@ -398,6 +398,7 @@ class ClipEditorWidget(QWidget):
         self._playing = False
         self._timer.stop()
         self.play_btn.setText(self._play_labels[0])
+        self.play_btn.setIcon(icons.play())
 
     def _heard_position(self):
         """Where playback has actually reached, in seconds. Audio leaves the
@@ -415,8 +416,10 @@ class ClipEditorWidget(QWidget):
         self.preview.set_playhead(pos)
 
     def refresh_theme(self):
-        """A new theme can bring a new font, so the locked width is re-measured."""
-        components.lock_width(self.play_btn, *self._play_labels, floor=130)
+        """Icons take their colour from the theme, and a new font changes the
+        width the label needs, so both are rebuilt."""
+        self.play_btn.setIcon(icons.stop() if self._playing else icons.play())
+        components.lock_width(self.play_btn, *self._play_labels, floor=110)
 
     def cleanup(self):
         self.stop_playback()

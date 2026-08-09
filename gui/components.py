@@ -159,13 +159,12 @@ def lock_width(button, *texts, floor=0):
 
     * ``setMinimumWidth`` stops a button shrinking, not growing, so a wider
       label still shoves the row along.
-    * The labels start with symbols (▶ ■ ❚❚) that Windows resolves through font
-      fallback, and a colour-emoji glyph paints wider than ``QFontMetrics``
-      reports. Measuring alone cannot be trusted, hence ``floor``.
+    * Measuring ``sizeHint`` per label does nothing: QPushButton caches it, and
+      the cache does not always drop on ``setText``, so every label comes back
+      the same width.
 
-    Setting ``sizeHint`` per label does not work either: QPushButton caches it,
-    and the cache does not always drop on ``setText`` - every label measures the
-    same, so a hint-based version silently does nothing.
+    ``floor`` sets a comfortable minimum for a button worth hitting quickly, and
+    covers any label whose glyphs paint wider than they measure.
     """
     fm = button.fontMetrics()
     # Padding/border come from the stylesheet, so read them off rather than
