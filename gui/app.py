@@ -43,6 +43,11 @@ def create_app(argv):
     theme.apply(app, theme.current_name())
     wheel_guard.install(app)
 
+    # Playback writes to PortAudio on a background thread. Quitting without
+    # waiting for it tears the interpreter down mid-write, which segfaults.
+    from gui.services import playback
+    app.aboutToQuit.connect(playback.shutdown)
+
     window = MainWindow()
     window.show()
     # Strong reference: `window` is only a local, and once create_app() returns

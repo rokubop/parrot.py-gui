@@ -3,11 +3,18 @@
 Primary mic is the combo; a "+" menu checks extra mics for simultaneous
 multi-mic recording (each records to its own file). Selections persist via
 audio_devices, so the live test dialogs follow the same primary mic.
+
+The rescan button is the only way a mic plugged in after launch appears -
+`refresh()` re-reads a list PortAudio froze at startup. See
+`audio_devices.rescan()`.
 """
 import sounddevice as sd
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QComboBox, QPushButton, QMenu
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QCursor
+from PyQt6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QComboBox,
+                             QPushButton, QMenu)
 
+from gui import icons
 from gui.services import audio_devices
 
 
@@ -31,6 +38,15 @@ class MicPicker(QWidget):
         self.extras_btn.setMaximumWidth(48)
         self.extras_btn.clicked.connect(self._show_extras_menu)
         h.addWidget(self.extras_btn)
+
+        self.rescan_btn = QPushButton()
+        self.rescan_btn.setIcon(icons.restart())
+        self.rescan_btn.setToolTip(
+            "Scan for microphones plugged in since Parrot.py started")
+        self.rescan_btn.setMaximumWidth(48)
+        self.rescan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.rescan_btn.clicked.connect(self.rescan)
+        h.addWidget(self.rescan_btn)
 
         self._populate()
         self._update_extras_button()
@@ -60,9 +76,34 @@ class MicPicker(QWidget):
         self.input_combo.blockSignals(False)
 
     def refresh(self):
-        """Re-enumerate devices - indices shift when hardware changes."""
+        """Re-read the device list - indices shift when hardware changes.
+
+        Cheap, and blind to anything plugged in since launch. `rescan()` is what
+        finds new hardware.
+        """
         self._populate()
         self._update_extras_button()
+
+    def rescan(self):
+        """Ask PortAudio for the hardware again, then relist.
+
+        Synchronous and slow enough to see (~340 ms), so the button says so
+        while it runs. Never call this while recording - audio_devices.rescan()
+        takes PortAudio down and back up.
+        """
+        was = audio_devices.input_index
+        self.rescan_btn.setEnabled(False)
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.BusyCursor))
+        try:
+            audio_devices.rescan()
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.rescan_btn.setEnabled(True)
+        self.refresh()
+        if audio_devices.input_index != was:
+            # The pick survived by name at a new index, or its device is gone.
+            self.input_changed.emit(audio_devices.input_index)
+            self.extras_changed.emit(list(audio_devices.extra_input_indices))
 
     # ---- extras ----------------------------------------------------------
 

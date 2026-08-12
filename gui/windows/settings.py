@@ -8,6 +8,7 @@ they're live.
 import os
 import sounddevice as sd
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox,
     QPushButton, QGroupBox, QScrollArea, QFrame, QMessageBox, QApplication
@@ -17,7 +18,7 @@ from config.config import (
     THRESHOLD_DETECTION, TWO_PASS_DETECTION,
     RECORDINGS_FOLDER, CLASSIFIER_FOLDER,
 )
-from gui import components, content, theme
+from gui import components, content, icons, theme
 from gui.services import (user_config, strategies, library_ops, audio_devices,
                           ui_prefs, profiles)
 from gui.content import program as program_content
@@ -133,7 +134,17 @@ class SettingsPage(QWidget):
                                      "immediately, no save needed")
         self._populate_output_devices()
         self.output_combo.currentIndexChanged.connect(self._on_output_changed)
-        model_form.addRow("Output device:", self.output_combo)
+        out_row = QHBoxLayout()
+        out_row.addWidget(self.output_combo, 1)
+        self.rescan_btn = QPushButton()
+        self.rescan_btn.setIcon(icons.restart())
+        self.rescan_btn.setToolTip(
+            "Scan for devices plugged in since Parrot.py started")
+        self.rescan_btn.setMaximumWidth(48)
+        self.rescan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.rescan_btn.clicked.connect(self._on_rescan)
+        out_row.addWidget(self.rescan_btn)
+        model_form.addRow("Output device:", out_row)
         self.model_combo = QComboBox()
         self._populate_models()
         model_form.addRow("Default model:", self.model_combo)
@@ -308,6 +319,18 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.output_combo.setCurrentIndex(idx)
         self.output_combo.blockSignals(False)
+
+    def _on_rescan(self):
+        """Re-enumerate the hardware, then relist. Also picks up new mics - the
+        scan is global, so the recording view's picker sees them too."""
+        self.rescan_btn.setEnabled(False)
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.BusyCursor))
+        try:
+            audio_devices.rescan()
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.rescan_btn.setEnabled(True)
+        self._populate_output_devices()
 
     def _on_output_changed(self, _index):
         device = self.output_combo.currentData()
