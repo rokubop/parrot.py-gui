@@ -12,11 +12,6 @@ Two modes:
 - **manual** - the value being applied. Draggable, amber.
 - **auto** - what detection settled on. Dashed, blue, inert. It is the floor of
   a threshold that moves per sound, not a cutoff you chose.
-
-The clip's own noise floor is drawn under both, dotted and dim. Aiming below it
-does not detect more, it detects nothing: the whole take reads as one sound and
-the pass comes back with an empty srt. Measured, not guessed - on a test clip
-with a -62 dBFS floor, -50 found 32 sounds, -65 found 18 blobs, -70 found none.
 """
 import numpy as np
 import pyqtgraph as pg
@@ -40,11 +35,6 @@ LANE_MIN_HEIGHT = 90
 LIVE_POINTS = 1600      # ~24 s of frames, past the 10 s window
 LIVE_REDRAW_EVERY = 2
 
-# "As quiet as this clip ever gets". A low percentile rather than the median,
-# which is only the noise floor when the take is mostly silence - true for a
-# discrete sound, false for a continuous one held for most of the recording.
-NOISE_PERCENTILE = 10
-
 
 class LevelLane(QWidget):
     """Level over time in dBFS, with a threshold line."""
@@ -64,7 +54,6 @@ class LevelLane(QWidget):
         self._live_v = []
         self._live_since_draw = 0
         self._linked_item = None
-        self._noise_floor = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -118,21 +107,6 @@ class LevelLane(QWidget):
             labelOpts={"position": 0.02, "anchors": [(0, 0), (0, 1)],
                        "color": t["warn"], "fill": QColor(t["plot_bg"]),
                        "movable": False})
-        # The clip's own floor, as a reference the threshold is read against.
-        # Under the threshold line and under the tint, because it is context.
-        self.floor_line = pg.InfiniteLine(
-            pos=FLOOR_DBFS, angle=0, movable=False,
-            pen=pg.mkPen(QColor(t["text_dim"]), width=1,
-                         style=Qt.PenStyle.DotLine),
-            label="noise floor",
-            labelOpts={"position": 0.99, "anchors": [(1, 1), (1, 0)],
-                       "color": t["text_dim"], "fill": QColor(t["plot_bg"]),
-                       "movable": False})
-        self.floor_line.setVisible(False)
-        self.floor_line.setZValue(8)
-        self.floor_line.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-        self.plot.addItem(self.floor_line)
-
         self.line.setHoverPen(pg.mkPen(QColor(t["warn"]), width=4))
         self.line.setBounds([FLOOR_DBFS, 0])
         self.line.setZValue(20)
@@ -262,24 +236,8 @@ class LevelLane(QWidget):
         self._live_t, self._live_v = [], []
         if times is None or len(times) == 0:
             self.curve.setData([], [])
-            self._set_noise_floor(None)
             return
         self.curve.setData(np.asarray(times), np.asarray(values))
-        self._set_noise_floor(float(np.percentile(np.asarray(values),
-                                                  NOISE_PERCENTILE)))
-
-    def noise_floor(self):
-        """The clip's own floor in dBFS, or None while nothing is loaded."""
-        return self._noise_floor
-
-    def _set_noise_floor(self, value):
-        self._noise_floor = value
-        # Hidden at the very bottom: a floor drawn on the axis edge is a line
-        # about the chart, not about the recording.
-        show = value is not None and FLOOR_DBFS + 3 < value < 0
-        if show:
-            self.floor_line.setPos(value)
-        self.floor_line.setVisible(show)
 
     # ---- a live take ----------------------------------------------------
 
@@ -287,7 +245,6 @@ class LevelLane(QWidget):
         """Start a live trace. ``offset_seconds`` is where the take already
         reaches, so a resumed segment continues the same time axis."""
         self._live_t, self._live_v = [], []
-        self._set_noise_floor(None)   # nothing recorded yet to measure one from
         self._live_offset = offset_seconds
         self._live_since_draw = 0
         self.curve.setData([], [])
@@ -315,7 +272,6 @@ class LevelLane(QWidget):
         self._live_timer.stop()
         self._live_t, self._live_v = [], []
         self.curve.setData([], [])
-        self._set_noise_floor(None)
 
     def cleanup(self):
         self._live_timer.stop()

@@ -16,11 +16,9 @@ with the srt that comes back.
 """
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QComboBox, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QPushButton,
-    QVBoxLayout
+    QComboBox, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QPushButton
 )
 
-from gui import theme
 from gui.widgets.click_slider import ClickSlider, slider_qss
 from gui.workers.segment_worker import (
     ReSegmentWorker, ResetWorker, has_manual_override, read_override
@@ -59,10 +57,7 @@ class DetectionPanel(QGroupBox):
     # ---- ui ------------------------------------------------------------
 
     def _setup_ui(self):
-        root = QVBoxLayout(self)
-        root.setSpacing(6)
-        row = QHBoxLayout()
-        root.addLayout(row)
+        row = QHBoxLayout(self)
         row.addWidget(QLabel("Threshold:"))
         self.slider = ClickSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(-96, 0)
@@ -94,24 +89,6 @@ class DetectionPanel(QGroupBox):
         self.reset_btn.clicked.connect(self.reset)
         row.addWidget(self.reset_btn)
 
-        # Warn, do not fence. The floor is per clip, and a quiet recording can
-        # legitimately want a value this one would call too low.
-        self.warning = QLabel("")
-        self.warning.setStyleSheet(f"color: {theme.colors()['warn']};")
-        self.warning.setVisible(False)
-        root.addWidget(self.warning)
-
-    def _check_noise_floor(self):
-        """Under the clip's own floor, detection does not find more, it finds
-        nothing: every frame reads as sound and the pass writes an empty srt."""
-        floor = self.lane.noise_floor() if self.lane is not None else None
-        under = floor is not None and self.slider.value() < floor
-        if under:
-            self.warning.setText(
-                f"Under this clip's noise floor ({round(floor)} dBFS). "
-                f"Detection finds nothing down here.")
-        self.warning.setVisible(under)
-
     def attach_lane(self, lane):
         """Wire the clip's dBFS lane to the slider. The line and the number are
         the same value, so only one of them may be the source of truth: the line
@@ -122,7 +99,6 @@ class DetectionPanel(QGroupBox):
 
     def refresh_theme(self):
         self.slider.setStyleSheet(slider_qss())
-        self.warning.setStyleSheet(f"color: {theme.colors()['warn']};")
 
     # ---- binding a clip -------------------------------------------------
 
@@ -148,7 +124,6 @@ class DetectionPanel(QGroupBox):
     def clear(self):
         self.wav_path = None
         self.label = None
-        self.warning.setVisible(False)
         self._apply_timer.stop()
         self._last_applied = None
 
@@ -187,7 +162,6 @@ class DetectionPanel(QGroupBox):
         self.slider.setValue(int(round(value)))
         self.slider.blockSignals(False)
         self.slider_label.setText(f"{self.slider.value()} dBFS")
-        self._check_noise_floor()
 
     def _set_type(self, duration_type):
         index = self.duration_combo.findData(duration_type or "")
@@ -205,7 +179,6 @@ class DetectionPanel(QGroupBox):
 
     def _on_slider(self, *_):
         self.slider_label.setText(f"{self.slider.value()} dBFS")
-        self._check_noise_floor()
         # Touching the slider is choosing, so the lane stops reporting what
         # detection found and starts showing what is about to be applied.
         self._show_on_lane("manual")
