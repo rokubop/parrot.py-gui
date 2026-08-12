@@ -340,6 +340,10 @@ class RecordingView(QWidget):
         manual = self.thr_mode.currentData() == "manual"
         lane = self.level_lane
         lane.set_mode("manual" if manual else "auto")
+        # Live, Automatic owns the number and rewrites it every frame, so the
+        # line is a readout. The take's own lane (in review) is draggable in
+        # either mode, because there a drag is how you take the value over.
+        lane.set_editable(manual)
         if manual:
             lane.set_threshold(self._manual_dbfs)
             lane.set_line_visible(True)

@@ -7,11 +7,17 @@ A strip, not a second chart. Shares the X axis of the plot above (``link_x``),
 same left-axis width so the grids line up, and its mouse moves the threshold and
 nothing else. Panning and zooming stay with the waveform, where selection lives.
 
-Two modes:
+Two modes, which say where the number came from and nothing about whether you
+can move it:
 
-- **manual** - the value being applied. Draggable, amber.
-- **auto** - what detection settled on. Dashed, blue, inert. It is the floor of
-  a threshold that moves per sound, not a cutoff you chose.
+- **manual** - a value someone chose. Solid, amber.
+- **auto** - what detection settled on. Dashed, blue. It is the floor of a
+  threshold that moves per sound, not a cutoff you chose.
+
+Whether the line answers the mouse is ``set_editable``, the host's call. A saved
+clip says yes in both modes: dragging the auto line is how you take the value
+over. A live take says no while it is in Automatic, where the estimator would
+overwrite anything you set on the next frame.
 """
 import numpy as np
 import pyqtgraph as pg
@@ -40,7 +46,6 @@ class LevelLane(QWidget):
     """Level over time in dBFS, with a threshold line."""
 
     threshold_moved = pyqtSignal(float)      # during a drag, every step
-    threshold_committed = pyqtSignal(float)  # on release
 
     def __init__(self, flexible=False, parent=None):
         super().__init__(parent)
@@ -111,7 +116,6 @@ class LevelLane(QWidget):
         self.line.setBounds([FLOOR_DBFS, 0])
         self.line.setZValue(20)
         self.line.sigDragged.connect(self._on_dragged)
-        self.line.sigPositionChangeFinished.connect(self._on_released)
         self.plot.addItem(self.line)
 
         # Live redraws are throttled the same way the waveform's are.
@@ -173,7 +177,6 @@ class LevelLane(QWidget):
         self.line.setPen(pg.mkPen(QColor(color), width=2, style=style))
         self.line.setHoverPen(pg.mkPen(QColor(color), width=4 if manual else 2,
                                        style=style))
-        self.line.setMovable(manual and self._editable)
         self.line.label.setFormat(
             "{value:0.0f} dBFS" if manual else "auto  {value:0.0f} dBFS")
         self.line.label.setColor(QColor(color))
@@ -184,18 +187,24 @@ class LevelLane(QWidget):
         self._refresh_tooltip()
 
     def set_editable(self, editable):
-        """Off where nothing acts on a new value. A line that moves and changes
-        nothing is a lie."""
+        """Whether the line answers the mouse. The host's call, not the mode's.
+
+        A saved clip is draggable in either mode: grabbing the auto line is how
+        you take the value over, the same as touching the slider. A live take is
+        not, because in Automatic there is nothing a new value would reach - the
+        estimator overwrites it on the next frame, and a line that moves and
+        changes nothing is a lie.
+        """
         self._editable = editable
-        self.line.setMovable(self._mode == "manual" and editable)
+        self.line.setMovable(editable)
         self._refresh_tooltip()
 
     def _refresh_tooltip(self):
-        if not self._editable:
-            self.plot.setToolTip("The threshold this take was detected at. "
+        if self._editable:
+            self.plot.setToolTip("Drag the line to change the threshold. "
                                  "Anything under it is not detected.")
         elif self._mode == "manual":
-            self.plot.setToolTip("Drag the line to change the threshold. "
+            self.plot.setToolTip("The threshold this take was detected at. "
                                  "Anything under it is not detected.")
         else:
             self.plot.setToolTip("The threshold detection settled on. "
@@ -223,11 +232,6 @@ class LevelLane(QWidget):
         value = round(self.line.value())
         self.set_threshold(value)
         self.threshold_moved.emit(self._value)
-
-    def _on_released(self):
-        if self._setting_line:
-            return
-        self.threshold_committed.emit(self._value)
 
     # ---- a saved clip ---------------------------------------------------
 
@@ -279,7 +283,6 @@ class LevelLane(QWidget):
         self._linked_item = None
         try:
             self.line.sigDragged.disconnect()
-            self.line.sigPositionChangeFinished.disconnect()
         except (TypeError, RuntimeError):
             pass
         self.plot.clear()

@@ -51,8 +51,7 @@ class DetectionPanel(QGroupBox):
         # than "this button exists".
         self._on_disk = None
 
-        # Debounce live threshold drags: re-detect once the line settles instead
-        # of on every intermediate value.
+        # Retry an Apply that arrived while something else was writing.
         self._apply_timer = QTimer(self)
         self._apply_timer.setSingleShot(True)
         self._apply_timer.setInterval(350)
@@ -97,12 +96,18 @@ class DetectionPanel(QGroupBox):
         row.addWidget(self.reset_btn)
 
     def attach_lane(self, lane):
-        """Wire the clip's dBFS lane to the slider. The line and the number are
-        the same value, so only one of them may be the source of truth: the line
-        pushes into the slider, never the reverse."""
+        """Wire the clip's dBFS lane to the slider.
+
+        Two grips on one control, not two flows. The line used to re-detect on
+        release while the slider waited for Apply, so the same number committed
+        differently depending on which end you grabbed. Now both only move the
+        value and light Apply.
+
+        The line pushes into the slider, never the reverse: one of them has to
+        be the source of truth.
+        """
         self.lane = lane
         lane.threshold_moved.connect(self._on_lane_moved)
-        lane.threshold_committed.connect(lambda _v: self._apply_timer.start())
 
     def refresh_theme(self):
         self.slider.setStyleSheet(slider_qss())
