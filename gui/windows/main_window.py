@@ -303,6 +303,10 @@ class MainWindow(QMainWindow):
             losses.append("a recording in progress")
         if self.edit_view is not None and self.edit_view.history.is_dirty():
             losses.append(f"unsaved edits to “{self.edit_view.label}”")
+        for view in (self.edit_view, self.recording_view):
+            if view is not None and view.detection.has_pending():
+                losses.append(f"an unapplied threshold "
+                              f"({view.detection.pending_summary()})")
         return losses
 
     def confirm_closing(self, title, verb, restart_reason=None):

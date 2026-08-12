@@ -32,6 +32,7 @@ class DetectionPanel(QGroupBox):
     status = pyqtSignal(str)            # a line for the host's status/hint label
     busy_changed = pyqtSignal(bool, str)  # a pass started/finished, with a caption
     changed = pyqtSignal(str)           # a new srt was written
+    finished = pyqtSignal(bool)         # a pass ended; True if it succeeded
 
     def __init__(self, history, parent=None):
         super().__init__("Detection (the blue overlay)", parent)
@@ -177,15 +178,25 @@ class DetectionPanel(QGroupBox):
         self._on_disk = self._current_params()
         self._refresh_apply()
 
-    def _refresh_apply(self, *_):
-        """Green means there is something to apply.
+    def has_pending(self):
+        """A threshold or type the controls show and the files do not.
 
         Measured against what was last read off disk, not against the last
         Apply: an undo moves disk under us without touching either control.
         """
-        components.set_primary(self.apply_btn, bool(self.wav_path)
-                               and self._on_disk is not None
-                               and self._current_params() != self._on_disk)
+        return (bool(self.wav_path) and self._on_disk is not None
+                and self._current_params() != self._on_disk)
+
+    def pending_summary(self):
+        """The unapplied change, named, for a host asking about it on the way out."""
+        bits = [f"{self.slider.value()} dBFS"]
+        if self.duration_combo.currentData():
+            bits.append(self.duration_combo.currentText().lower())
+        return " / ".join(bits)
+
+    def _refresh_apply(self, *_):
+        """Green means there is something to apply."""
+        components.set_primary(self.apply_btn, self.has_pending())
 
     def _set_slider(self, value):
         self.slider.blockSignals(True)
@@ -279,6 +290,9 @@ class DetectionPanel(QGroupBox):
         self.busy_changed.emit(False, "")
         self.changed.emit(srt_path)
         self.status.emit("Detection updated.")
+        # Last, so a host that leaves the screen on this does it with every
+        # other slot already run.
+        self.finished.emit(True)
 
     def _on_failed(self, message, wrote_files):
         self._finish_worker()
@@ -295,6 +309,7 @@ class DetectionPanel(QGroupBox):
         self.busy_changed.emit(False, "")
         self.status.emit("")
         QMessageBox.warning(self, "Couldn't update detection", message)
+        self.finished.emit(False)
 
     def cleanup(self):
         self._apply_timer.stop()

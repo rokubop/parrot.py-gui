@@ -75,6 +75,7 @@ class RecordingView(QWidget):
         self._extra_takes = {}          # mic index -> {"wav": ..., "srt": ...}
         self._extra_seg_workers = []    # AppendWorkers stitching extra takes
         self._pending_action = None     # 'pause' | 'done' while a segment stops
+        self._exit_after_apply = False  # leaving, once the re-detect we asked for lands
         self._state = "idle"
         self._last_status_draw = 0.0
         # Counted live off the detection flag, replaced at Pause by the
@@ -200,6 +201,7 @@ class RecordingView(QWidget):
         self.detection.status.connect(self.hint_text)
         self.detection.busy_changed.connect(self._on_detection_busy)
         self.detection.changed.connect(self._on_detection_changed)
+        self.detection.finished.connect(self._on_detection_finished)
         # An undo or a trim rewrites the files the panel is reporting on.
         self.editor.history_changed.connect(self.detection.resync)
         left.addWidget(self.detection)
@@ -466,6 +468,7 @@ class RecordingView(QWidget):
         self._take_wav = take
         self._take_srt = self._srt_for(take) if take else None
         self._pending_action = None
+        self._exit_after_apply = False
         self._session_mics = None
         self._extra_takes = {}
         self.mic_picker.refresh()   # indices shift when hardware changes
@@ -708,7 +711,7 @@ class RecordingView(QWidget):
             return      # don't leave while a cut is still being written
         if self._state == "recording":
             self._stop_segment("done")
-        else:
+        elif self._settle_pending():
             self._leave()
 
     def _on_start_over(self):
@@ -913,9 +916,51 @@ class RecordingView(QWidget):
     def _on_back(self):
         if self._busy():
             return      # don't leave while the take is being rewritten
-        self._leave()
+        if self._settle_pending():
+            self._leave()
+
+    def _settle_pending(self):
+        """Ask about a threshold that was dialled in but never applied.
+
+        True to carry on leaving. False when the answer was Cancel, or when a
+        pass is now running and ``_on_detection_finished`` will leave for us.
+
+        Nothing here is held back until a Save, so Apply is the only way the
+        change survives the trip - which is exactly why it cannot be dropped in
+        silence with its button still lit.
+        """
+        if not self.detection.has_pending():
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Before you go")
+        box.setText(f"Detection is set to {self.detection.pending_summary()} but "
+                    f"has not been applied.")
+        apply_btn = box.addButton("Apply", QMessageBox.ButtonRole.AcceptRole)
+        discard_btn = box.addButton("Discard",
+                                    QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(apply_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is discard_btn:
+            return True
+        if clicked is apply_btn:
+            self._exit_after_apply = True
+            self.detection.apply()
+        return False
+
+    def _on_detection_finished(self, ok):
+        """A pass ended. Leave if Back or Finish was waiting on it; stay put on
+        a failure, where the panel has already said what went wrong."""
+        if not self._exit_after_apply:
+            return
+        self._exit_after_apply = False
+        if ok:
+            self._leave()
 
     def _leave(self):
+        self._exit_after_apply = False
         self.stop_worker()
         self.stop_playback()
         self.history.clear()

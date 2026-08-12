@@ -31,6 +31,8 @@ class EditRecordingView(QWidget):
         self.wav_path = None
         self.label = None
         self.history = UndoHistory()
+        # Back is waiting on a re-detect it asked for.
+        self._exit_after_apply = False
 
         self._setup_ui()
 
@@ -42,6 +44,7 @@ class EditRecordingView(QWidget):
         self.history.bind(wav_path)   # resets history when switching clips
         # Snapshot the saved state: every edit from here is reverted unless saved.
         self.history.begin_baseline()
+        self._exit_after_apply = False
         self._base = library_ops.recording_base(wav_path)
         self._update_title()
         self.editor.open(wav_path, self._current_srt(), self.label)
@@ -117,6 +120,7 @@ class EditRecordingView(QWidget):
         self.detection.status.connect(self.status_text)
         self.detection.busy_changed.connect(self._on_detection_busy)
         self.detection.changed.connect(self._on_detection_changed)
+        self.detection.finished.connect(self._on_detection_finished)
         # An undo or a trim rewrites the files the panel is reporting on.
         self.editor.history_changed.connect(self.detection.resync)
         root.addWidget(self.detection)
@@ -176,26 +180,79 @@ class EditRecordingView(QWidget):
     # ---- navigation ----------------------------------------------------
 
     def _on_back(self):
+        """Leaving must account for both kinds of unfinished work.
+
+        A threshold that has been applied is an edit, held by the baseline until
+        Save. A threshold that has only been dialled in is not on disk at all,
+        and used to be dropped without a word - so the green button was the one
+        that vanished silently and the dark one was the one that stopped you.
+        """
         if self._busy():
             return  # don't leave mid-edit
         self.editor.stop_playback()
-        if self.history.is_dirty():
-            choice = QMessageBox.question(
-                self, "Unsaved edits",
-                f"You have unsaved edits to “{self.label}”. Save them?",
-                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Save)
-            if choice == QMessageBox.StandardButton.Cancel:
+        pending = self.detection.has_pending()
+        dirty = self.history.is_dirty()
+        if pending or dirty:
+            choice = self._ask_before_leaving(pending, dirty)
+            if choice == "cancel":
                 return
-            if choice == QMessageBox.StandardButton.Save:
+            if choice == "discard":
+                if dirty:
+                    self.history.revert_to_baseline()
+                    self.app_state.recordings_changed.emit()
+            elif pending:
+                # Runs the pass first; _on_detection_finished leaves after it.
+                self._exit_after_apply = True
+                self.detection.apply()
+                return
+            else:
                 self.history.commit_baseline()
-            else:  # Discard
-                self.history.revert_to_baseline()
-                self.app_state.recordings_changed.emit()
+        self._finish_leaving()
+
+    def _ask_before_leaving(self, pending, dirty):
+        """One dialog, whichever combination is true. Two in a row for one Back
+        is worse than a sentence with two clauses in it."""
+        if pending and dirty:
+            body = (f"Detection is set to {self.detection.pending_summary()} but "
+                    f"has not been applied, and you have unsaved edits to "
+                    f"“{self.label}”.")
+            keep = "Apply and save"
+        elif pending:
+            body = (f"Detection is set to {self.detection.pending_summary()} but "
+                    f"has not been applied.")
+            keep = "Apply"
+        else:
+            body = f"You have unsaved edits to “{self.label}”."
+            keep = "Save"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Before you go")
+        box.setText(body)
+        keep_btn = box.addButton(keep, QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(keep_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is cancel_btn:
+            return "cancel"
+        return "keep" if clicked is keep_btn else "discard"
+
+    def _on_detection_finished(self, ok):
+        """A pass ended. If Back is waiting on it, finish leaving - or stay put
+        and let the panel's own warning stand."""
+        if not self._exit_after_apply:
+            return
+        self._exit_after_apply = False
+        if ok:
+            self.history.commit_baseline()
+            self._finish_leaving()
+
+    def _finish_leaving(self):
         self.history.clear()   # undo history is per-editing-session
         self.editor.clear()
         self.detection.clear()
+        self._exit_after_apply = False
         self.done.emit(self.label or "")
 
     def stop_playback(self):
