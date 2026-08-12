@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 from gui import components, icons, theme
 from gui.services import levels, playback
 from gui.widgets.audio_preview import AudioPreviewWidget, view_after_cut
-from gui.widgets.level_lane import LevelLane
+from gui.widgets.level_lane import LaneSplitter, LevelLane
 from gui.workers.segment_worker import TrimWorker
 
 
@@ -46,6 +46,7 @@ class ClipEditorWidget(QWidget):
         # Asked for by screens that own a threshold control. Elsewhere it is a
         # strip of chart nothing on the page can act on.
         self.lane = None
+        self.split = None
         self._show_levels = show_levels
         # Where to look up the clip's srt after an undo restores it. The two
         # views resolve it differently, so the host supplies it.
@@ -57,6 +58,10 @@ class ClipEditorWidget(QWidget):
         self.wav_path = None
         self.label = None
         self.worker = None
+        # Host work that rewrites the same files (a re-detect). The buttons grey
+        # out for it, but the keyboard reaches every slot directly, so the state
+        # has to be readable and not just drawn.
+        self._locked = False
 
         # view toggles (mirror AudioPreviewWidget defaults)
         self._norm = False
@@ -91,12 +96,14 @@ class ClipEditorWidget(QWidget):
 
         self.preview = AudioPreviewWidget()
         self.preview.seeked.connect(self.on_seek)
-        root.addWidget(self.preview, 1)
 
         if self._show_levels:
-            self.lane = LevelLane()
+            self.lane = LevelLane(flexible=True)
             self.lane.link_x(self.preview.plot)
-            root.addWidget(self.lane)
+            self.split = LaneSplitter(self.preview, self.lane, "clip")
+            root.addWidget(self.split, 1)
+        else:
+            root.addWidget(self.preview, 1)
 
         row = QHBoxLayout()
         row.setSpacing(6)
@@ -135,6 +142,15 @@ class ClipEditorWidget(QWidget):
         self.spec_btn = button("Spectrum", self.toggle_spectrum,
                                "Show frequencies instead of the waveform - S",
                                checkable=True)
+        # Levels is the optional pane, so it is the one with a switch. Giving it
+        # everything is the other end of the same handle.
+        self.levels_btn = None
+        if self._show_levels:
+            self.levels_btn = button(
+                "Levels", self.toggle_levels,
+                "Show the dBFS lane and its threshold - L. Drag the divider to "
+                "resize it", checkable=True)
+            self.levels_btn.setChecked(self.split.lane_visible())
         row.addWidget(_separator())
 
         # history
@@ -183,6 +199,7 @@ class ClipEditorWidget(QWidget):
         self.wav_path = None
         self._audio = None
         self._cut_note = ""
+        self._locked = False
         self.preview.set_busy(False)
         if self.lane is not None:
             self.lane.clear()
@@ -192,6 +209,7 @@ class ClipEditorWidget(QWidget):
     def set_busy(self, busy, message=""):
         """Host work that reprocesses the clip (re-detection) uses this too, so
         the plot is inert for the whole of it and not just for our own edits."""
+        self._locked = busy
         self.preview.set_busy(busy, message)
         if self.lane is not None:
             self.lane.setEnabled(not busy)
@@ -205,7 +223,9 @@ class ClipEditorWidget(QWidget):
             self.refresh_history_buttons()
 
     def is_busy(self):
-        return self.worker is not None
+        """Our own trim, or a host pass over the same files. Either way nothing
+        may start a second write - X and Ctrl+Z do not go through the buttons."""
+        return self.worker is not None or self._locked
 
     # ---- view toggles ---------------------------------------------------
 
@@ -229,15 +249,23 @@ class ClipEditorWidget(QWidget):
         self.spec_btn.setChecked(self._mode == "spectrogram")
         self.preview.set_mode(self._mode)
 
+    def toggle_levels(self):
+        """Collapse the lane out of the way, or bring it back where you left it."""
+        if self.split is None:
+            return
+        self.split.toggle_lane()
+        self.levels_btn.setChecked(self.split.lane_visible())
+
     def keybinding_hint(self):
+        levels = "  ·  L levels" if self._show_levels else ""
         return ("Space play  ·  click to seek  ·  X delete selection  ·  "
-                "F fit (selection/all)  ·  A normalize  ·  S spectrum  ·  "
-                "D deselect/start  ·  Ctrl+Z/Y undo")
+                "F fit (selection/all)  ·  A normalize  ·  S spectrum" + levels +
+                "  ·  D deselect/start  ·  Ctrl+Z/Y undo")
 
     # ---- delete ---------------------------------------------------------
 
     def delete_selection(self):
-        if self.worker or not self.wav_path:
+        if self.is_busy() or not self.wav_path:
             return
         sel = self.preview.current_selection()
         if not sel or sel[1] - sel[0] <= 0:
@@ -327,19 +355,19 @@ class ClipEditorWidget(QWidget):
     # ---- undo / redo ----------------------------------------------------
 
     def refresh_history_buttons(self):
-        allowed = not self.worker
+        allowed = not self.is_busy()
         self.undo_btn.setEnabled(allowed and self.history.can_undo())
         self.redo_btn.setEnabled(allowed and self.history.can_redo())
 
     def undo(self):
-        if self.worker or not self.history.can_undo():
+        if self.is_busy() or not self.history.can_undo():
             return
         self.stop_playback()
         self.history.undo()
         self._reload_after_history("Undone.")
 
     def redo(self):
-        if self.worker or not self.history.can_redo():
+        if self.is_busy() or not self.history.can_redo():
             return
         self.stop_playback()
         self.history.redo()
@@ -377,7 +405,7 @@ class ClipEditorWidget(QWidget):
             self.play()
 
     def toggle_play(self):
-        if self.worker:
+        if self.is_busy():
             return      # the samples are being rewritten under us
         if self._playing:
             self.stop_playback()

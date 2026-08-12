@@ -4,25 +4,22 @@ Edits touch the files immediately (so the preview is truthful) but are
 non-destructive until Save: entry snapshots the last-saved state
 (``UndoHistory.begin_baseline``), and Back's Discard reverts to it.
 
-Playing, zooming, selecting, deleting and undo all live in ``ClipEditorWidget``,
-shared with the recording view. What is left here is what only this screen does:
-re-running detection at a chosen threshold, and the save/discard contract.
+Playing, zooming, selecting, deleting and undo all live in ``ClipEditorWidget``;
+re-detecting at a chosen threshold lives in ``DetectionPanel``. Both are shared
+with the recording view. What is left here is what only this screen does: the
+save/discard contract.
 """
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QComboBox,
-    QGroupBox, QMessageBox
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QMessageBox
 )
 
 from gui import components, theme
 from gui.widgets.clip_editor import ClipEditorWidget
-from gui.widgets.click_slider import ClickSlider, slider_qss
+from gui.widgets.detection_panel import DetectionPanel
 from gui.services import library_ops
 from gui.services.undo import UndoHistory
-from gui.workers.segment_worker import (
-    ReSegmentWorker, ResetWorker, has_manual_override, read_min_dbfs
-)
 
 
 class EditRecordingView(QWidget):
@@ -33,17 +30,7 @@ class EditRecordingView(QWidget):
         self.app_state = app_state
         self.wav_path = None
         self.label = None
-        self.worker = None             # detection only; the editor owns trims
         self.history = UndoHistory()
-        # (min_dbfs, duration_type) of the last detect, to skip redundant re-runs
-        self._last_applied = None
-
-        # Debounce live threshold drags: re-detect once the slider settles
-        # instead of on every intermediate value.
-        self._apply_timer = QTimer(self)
-        self._apply_timer.setSingleShot(True)
-        self._apply_timer.setInterval(350)
-        self._apply_timer.timeout.connect(self._on_apply)
 
         self._setup_ui()
 
@@ -55,15 +42,10 @@ class EditRecordingView(QWidget):
         self.history.bind(wav_path)   # resets history when switching clips
         # Snapshot the saved state: every edit from here is reverted unless saved.
         self.history.begin_baseline()
-        self._last_applied = None
         self._base = library_ops.recording_base(wav_path)
         self._update_title()
         self.editor.open(wav_path, self._current_srt(), self.label)
-        # Initialize the threshold slider from any existing override.
-        self._sync_slider_from_file()
-        self.duration_combo.blockSignals(True)
-        self.duration_combo.setCurrentIndex(0)
-        self.duration_combo.blockSignals(False)
+        self.detection.bind(wav_path, self.label)
         self._set_busy(False)
         self.status.setText("")
         self.setFocus()   # so hotkeys work immediately on entering the view
@@ -123,49 +105,21 @@ class EditRecordingView(QWidget):
                 ("X", self.editor.delete_selection),
                 ("Del", self.editor.delete_selection),
                 ("Backspace", self.editor.delete_selection),
+                ("L", self.editor.toggle_levels),
                 ("F", self.editor.fit)):
             sc = QShortcut(QKeySequence(seq), self)
             sc.setContext(Qt.ShortcutContext.WindowShortcut)
             sc.activated.connect(slot)
 
-        # Re-detection reprocesses the whole clip, so the threshold applies via
-        # the button, not live on every drag.
-        det_group = QGroupBox("Detection (the blue overlay)")
-        det = QHBoxLayout(det_group)
-        det.addWidget(QLabel("Threshold:"))
-        # Same value as a line you can drag. Releasing it re-detects.
-        self.editor.lane.threshold_moved.connect(self._on_lane_moved)
-        self.editor.lane.threshold_committed.connect(self._on_lane_committed)
-        self.slider = ClickSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(-96, 0)
-        self.slider.setValue(-40)
-        self.slider.setMinimumWidth(220)
-        self.slider.setMinimumHeight(24)
-        self.slider.valueChanged.connect(self._update_slider_label)
-        self.slider.setStyleSheet(slider_qss())
-        det.addWidget(self.slider, 1)
-        self.slider_label = QLabel("-40 dBFS")
-        self.slider_label.setMinimumWidth(80)
-        det.addWidget(self.slider_label)
-        det.addWidget(QLabel("Type:"))
-        self.duration_combo = QComboBox()
-        self.duration_combo.addItem("Auto", "")
-        self.duration_combo.addItem("Discrete", "discrete")
-        self.duration_combo.addItem("Continuous", "continuous")
-        det.addWidget(self.duration_combo)
-        self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.apply_btn.setToolTip("Re-detect at this threshold / type")
-        self.apply_btn.clicked.connect(self._on_apply)
-        det.addWidget(self.apply_btn)
-        self.reset_btn = QPushButton("Auto-detect")
-        self.reset_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.reset_btn.setToolTip("Let detection find the threshold automatically "
-                                  "(drops the manual override); the slider then "
-                                  "shows what it picked")
-        self.reset_btn.clicked.connect(self._on_reset)
-        det.addWidget(self.reset_btn)
-        root.addWidget(det_group)
+        self.detection = DetectionPanel(self.history)
+        self.detection.attach_lane(self.editor.lane)
+        self.detection.host_busy = self.editor.is_busy
+        self.detection.status.connect(self.status_text)
+        self.detection.busy_changed.connect(self._on_detection_busy)
+        self.detection.changed.connect(self._on_detection_changed)
+        # An undo or a trim rewrites the files the panel is reporting on.
+        self.editor.history_changed.connect(self.detection.resync)
+        root.addWidget(self.detection)
 
         self.status = QLabel("")
         self.status.setStyleSheet(f"color: {theme.colors()['accent']};")
@@ -174,125 +128,38 @@ class EditRecordingView(QWidget):
     def status_text(self, text):
         self.status.setText(text)
 
-    def _update_slider_label(self, *_):
-        v = self.slider.value()
-        self.slider_label.setText(f"{v} dBFS")
-        # Touching the slider is choosing, so the lane stops reporting what
-        # detection found and starts showing what is about to be applied.
-        lane = self.editor.lane
-        lane.set_threshold(v)
-        lane.set_mode("manual")
-        lane.set_line_visible(True)
-
-    def _on_lane_moved(self, value):
-        """Dragging the line moves the slider, not the other way round."""
-        self.slider.setValue(int(round(value)))
-
-    def _on_lane_committed(self, _value):
-        self._apply_timer.start()
-
-    def _sync_slider_from_file(self):
-        """Move the slider to whatever threshold is on disk - so after Auto-detect
-        it shows the value detection picked.
-
-        The lane follows, and says which of the two it is: a value someone set,
-        or the floor detection settled on for a threshold that moves per sound.
-        """
-        existing = read_min_dbfs(self.wav_path)
-        manual = has_manual_override(self.wav_path)
-        self.slider.blockSignals(True)
-        self.slider.setValue(int(existing) if existing is not None else -40)
-        self.slider.blockSignals(False)
-        v = self.slider.value()
-        self.slider_label.setText(f"{v} dBFS")
-        lane = self.editor.lane
-        lane.set_threshold(v)
-        lane.set_mode("manual" if manual else "auto")
-        # A settled 0 means calibration never engaged: it needs ten onset
-        # valleys. A line at 0 would claim a cutoff nothing can clear.
-        lane.set_line_visible(manual or (existing is not None and existing < 0))
-
     # ---- detection edits ----------------------------------------------
 
     def _set_busy(self, busy, message=""):
-        for w in (self.apply_btn, self.reset_btn, self.slider,
-                  self.duration_combo, self.save_btn):
-            w.setEnabled(not busy)
+        self.detection.set_busy(busy)
+        self.save_btn.setEnabled(not busy)
         self.editor.set_busy(busy, message)
         if not busy:
             self._update_title()
 
-    def _finish_worker(self):
-        """Tear a finished detection thread down safely. The result signal fires
-        before run() returns, so wait() before dropping the reference or a
-        still-running QThread gets deleted (a hard crash)."""
-        w = self.worker
-        self.worker = None
-        if w is not None:
-            w.wait()
-            w.deleteLater()
+    def _on_detection_busy(self, busy, message):
+        if busy:
+            self.editor.stop_playback()
+        self._set_busy(busy, message)
 
-    def _on_apply(self):
-        if self.worker or self.editor.is_busy():
-            # A detect is still running; retry once it's free so the latest
-            # threshold the user landed on is the one that sticks.
-            self._apply_timer.start()
-            return
-        params = (self.slider.value(), self.duration_combo.currentData())
-        if params == self._last_applied:
-            self.status.setText("No change to apply.")
-            return  # nothing changed since the last detect - skip the expensive work
-        self.editor.stop_playback()
-        self.history.checkpoint()
-        self._last_applied = params
-        self._set_busy(True, "Re-detecting…")
-        self.status.setText("Re-detecting…")
-        self.worker = ReSegmentWorker(self.wav_path, self.label, params[0], params[1])
-        self.worker.finished_ok.connect(self._on_segment_done)
-        self.worker.failed.connect(self._on_segment_failed)
-        self.worker.start()
-
-    def _on_reset(self):
-        if self.worker or self.editor.is_busy():
-            return
-        self.editor.stop_playback()
-        self.history.checkpoint()
-        self._last_applied = None   # auto state - let the next threshold apply
-        self._set_busy(True, "Auto-detecting…")
-        self.status.setText("Resetting to automatic detection…")
-        self.worker = ResetWorker(self.wav_path, self.label)
-        self.worker.finished_ok.connect(self._on_segment_done)
-        self.worker.failed.connect(self._on_segment_failed)
-        self.worker.start()
-
-    def _on_segment_done(self, srt_path):
-        self._finish_worker()
+    def _on_detection_changed(self, srt_path):
         # Only the overlay changed, so the waveform, zoom and playhead all stay.
-        self.editor.set_regions(srt_path)
-        self._sync_slider_from_file()
+        # An empty path means the pass died part way and disk is the only truth.
+        self.editor.set_regions(srt_path or self._current_srt())
         self.app_state.recordings_changed.emit()
-        self._set_busy(False)
-        self.status.setText("Detection updated.")
-
-    def _on_segment_failed(self, message):
-        self._finish_worker()
-        self._last_applied = None   # let the user retry the same threshold
-        # The op didn't change anything, so drop the checkpoint we took for it.
-        self.history.discard_last_checkpoint()
-        self._set_busy(False)
-        self.status.setText("")
-        QMessageBox.warning(self, "Couldn't update detection", message)
 
     # ---- save / dirty state --------------------------------------------
 
     def _update_title(self):
         star = " *" if self.history.is_dirty() else ""
         self.title.setText(f"Edit:  {self.label}  /  {getattr(self, '_base', '')}{star}")
-        self.save_btn.setEnabled(self.history.is_dirty() and not self.worker
-                                 and not self.editor.is_busy())
+        self.save_btn.setEnabled(self.history.is_dirty() and not self._busy())
+
+    def _busy(self):
+        return self.detection.is_busy() or self.editor.is_busy()
 
     def _on_save(self):
-        if self.worker or self.editor.is_busy() or not self.history.is_dirty():
+        if self._busy() or not self.history.is_dirty():
             return
         self.history.commit_baseline()
         self.editor.refresh_history_buttons()
@@ -306,7 +173,7 @@ class EditRecordingView(QWidget):
     # ---- navigation ----------------------------------------------------
 
     def _on_back(self):
-        if self.worker or self.editor.is_busy():
+        if self._busy():
             return  # don't leave mid-edit
         self.editor.stop_playback()
         if self.history.is_dirty():
@@ -325,6 +192,7 @@ class EditRecordingView(QWidget):
                 self.app_state.recordings_changed.emit()
         self.history.clear()   # undo history is per-editing-session
         self.editor.clear()
+        self.detection.clear()
         self.done.emit(self.label or "")
 
     def stop_playback(self):
@@ -332,3 +200,4 @@ class EditRecordingView(QWidget):
 
     def refresh_theme(self):
         self.editor.refresh_theme()
+        self.detection.refresh_theme()

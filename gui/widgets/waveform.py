@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 
 from config.config import RATE
+from gui import theme
 
 
 class WaveformWidget(QWidget):
@@ -22,10 +23,12 @@ class WaveformWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.plot_widget = pg.PlotWidget()
+        # Same ground as every other plot. It used to take pyqtgraph's default
+        # black, which read as a hole once the lane below it grew to match.
+        self.plot_widget = pg.PlotWidget(background=theme.colors()["plot_bg"])
         self.plot_widget.setLabel('left', 'Amplitude')
         self.plot_widget.setLabel('bottom', 'Time', units='s')
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_widget.showGrid(x=True, y=True, alpha=theme.colors()["grid_alpha"])
         layout.addWidget(self.plot_widget)
 
         # Live detection (the "blue overlay"): full-height bands where the
@@ -242,6 +245,12 @@ class WaveformWidget(QWidget):
     def set_trace_color(self, color):
         """Recolor the live trace (used to signal recording / paused / idle)."""
         self.plot_item.setPen(pg.mkPen(color=color, width=1))
+
+    def refresh_theme(self):
+        """The trace colour is the caller's (it means recording / paused), so
+        only the ground under it moves with the theme."""
+        self.plot_widget.setBackground(theme.colors()["plot_bg"])
+        self.plot_widget.showGrid(x=True, y=True, alpha=theme.colors()["grid_alpha"])
 
     def seed_live(self, samples, sample_rate):
         """Pre-fill the live buffer with already-recorded audio so a *resumed*

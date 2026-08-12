@@ -47,15 +47,26 @@ def scale():
     return value if value in SCALES else 1.0
 
 
-def set_scale(value):
+def get(key, default=None):
+    """Any other screen preference. A pane you sized on a laptop should not
+    travel to a 4K monitor, which is the same reason `scale` lives here."""
+    value = read().get(key)
+    return default if value is None else value
+
+
+def set_value(key, value):
     data = read()
-    data["scale"] = float(value)
+    data[key] = value
     target = path()
     os.makedirs(os.path.dirname(target), exist_ok=True)
     tmp = target + ".incoming"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, target)
+
+
+def set_scale(value):
+    set_value("scale", float(value))
 
 
 def apply_scale_env():

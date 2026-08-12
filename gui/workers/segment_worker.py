@@ -1,6 +1,6 @@
 """Background workers for re-segmenting and trimming a recording.
 
-All three run ``process_wav_file`` (slow) off the UI thread:
+All of them run ``process_wav_file`` (slow) off the UI thread:
 
 * ReSegmentWorker - write a manual dBFS/duration-type override and re-detect,
   producing a ``.MANUAL.srt`` that takes precedence (the "blue overlay" redo).
@@ -9,6 +9,11 @@ All three run ``process_wav_file`` (slow) off the UI thread:
 * TrimWorker - rewrite the source WAV with selected time ranges removed
   (destructive), then re-detect. The waveform and detection both update because
   both are derived from the rewritten file.
+
+All three cover every mic file of a take (``library_ops.take_group``), not just
+the one on screen. A take whose mics disagree about where the sounds are trains
+on contradictions, and nothing downstream would show you which file is the odd
+one out.
 """
 import os
 import wave
@@ -43,23 +48,39 @@ def _comparison(seg, base):
     return os.path.join(seg, base + "_comparison.wav")
 
 
-def read_min_dbfs(wav_path):
-    """Current override min_dbfs for a recording (from its thresholds file), or
-    None if there's no manual override yet."""
+def read_override(wav_path):
+    """``(min_dbfs, duration_type)`` from a recording's thresholds file.
+
+    Either may be None. Automatic detection writes this file too, with what it
+    settled on - so a duration_type here is only a value someone *chose* when
+    ``has_manual_override`` also holds.
+    """
     base, _label, seg = _paths(wav_path)
     path = _thresholds(seg, base)
     if not os.path.isfile(path):
-        return None
+        return None, None
+    min_dbfs = duration_type = None
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
-                if "=" in line:
-                    key, value = line.strip().split("=", 1)
-                    if key.endswith("_min_dbfs"):
-                        return float(value)
-    except (OSError, ValueError):
-        return None
-    return None
+                if "=" not in line:
+                    continue
+                key, value = line.strip().split("=", 1)
+                if key.endswith("_min_dbfs"):
+                    try:
+                        min_dbfs = float(value)
+                    except ValueError:
+                        pass
+                elif key.endswith("_duration_type") and value:
+                    duration_type = value
+    except OSError:
+        return None, None
+    return min_dbfs, duration_type
+
+
+def read_min_dbfs(wav_path):
+    """Current override min_dbfs for a recording, or None."""
+    return read_override(wav_path)[0]
 
 
 def has_manual_override(wav_path):
@@ -88,65 +109,98 @@ def redetect(wav_path, label):
     return srt
 
 
-class ReSegmentWorker(QThread):
-    """Re-run detection with a manual threshold override -> MANUAL.srt."""
-    finished_ok = pyqtSignal(str)   # srt path
-    failed = pyqtSignal(str)
+def resegment(wav_path, label, min_dbfs, duration_type):
+    """Pin a threshold on one wav and re-detect it -> MANUAL.srt."""
+    base, _label, seg = _paths(wav_path)
+    override_path = _thresholds(seg, base)
+    lines = []
+    # min_dBFS is only honored when negative; clamp 0 to a tiny negative.
+    value = min_dbfs if min_dbfs < 0 else -0.01
+    if duration_type in ("discrete", "continuous"):
+        lines.append(f"{label.lower()}_duration_type={duration_type}")
+    lines.append(f"{label.lower()}_min_dbfs={value}")
+    with open(override_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
-    def __init__(self, wav_path, label, min_dbfs, duration_type, parent=None):
-        super().__init__(parent)
-        self.wav_path = wav_path
-        self.label = label
-        self.min_dbfs = min_dbfs
-        self.duration_type = duration_type  # "", "discrete", or "continuous"
-
-    def run(self):
-        try:
-            base, _label, seg = _paths(self.wav_path)
-            override_path = _thresholds(seg, base)
-            lines = []
-            # min_dBFS is only honored when negative; clamp 0 to a tiny negative.
-            value = self.min_dbfs if self.min_dbfs < 0 else -0.01
-            if self.duration_type in ("discrete", "continuous"):
-                lines.append(f"{self.label.lower()}_duration_type={self.duration_type}")
-            lines.append(f"{self.label.lower()}_min_dbfs={value}")
-            with open(override_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
-
-            srt = _manual_srt(seg, base)
-            # thresholds_file=None so post_processing doesn't overwrite the
-            # override we just wrote; override_file feeds it back in.
-            process_wav_file(self.wav_path, srt, _comparison(seg, base), None,
-                             [self.label], override_file=override_path,
-                             strategy=library_ops.take_strategy(self.wav_path))
-            self.finished_ok.emit(srt)
-        except Exception as exc:
-            self.failed.emit(str(exc))
+    srt = _manual_srt(seg, base)
+    # thresholds_file=None so post_processing doesn't overwrite the override we
+    # just wrote; override_file feeds it back in.
+    process_wav_file(wav_path, srt, _comparison(seg, base), None, [label],
+                     override_file=override_path,
+                     strategy=library_ops.take_strategy(wav_path))
+    return srt
 
 
-class ResetWorker(QThread):
-    """Discard manual overrides and regenerate the automatic segmentation."""
-    finished_ok = pyqtSignal(str)
-    failed = pyqtSignal(str)
+def reset_detection(wav_path, label):
+    """Drop one wav's manual override and regenerate its automatic srt."""
+    base, _label, seg = _paths(wav_path)
+    for path in (_manual_srt(seg, base), _thresholds(seg, base)):
+        if os.path.isfile(path):
+            os.remove(path)
+    srt = _auto_srt(seg, base)
+    process_wav_file(wav_path, srt, _comparison(seg, base),
+                     _thresholds(seg, base), [label],
+                     strategy=library_ops.take_strategy(wav_path))
+    return srt
+
+
+class _GroupDetectWorker(QThread):
+    """Re-detect every mic file of a take, the one on screen first.
+
+    Detection is per-file, so a multi-mic take needs the pass run once per mic
+    or the extras keep the old overlay. Undo already snapshots the whole group,
+    so a half-finished run is recoverable in one keystroke.
+    """
+    finished_ok = pyqtSignal(str)     # srt path of the wav that was asked for
+    failed = pyqtSignal(str, bool)    # message, files already changed
 
     def __init__(self, wav_path, label, parent=None):
         super().__init__(parent)
         self.wav_path = wav_path
         self.label = label
+        self.group = library_ops.take_group(wav_path)
+
+    def _one(self, wav_path):
+        raise NotImplementedError
 
     def run(self):
+        srt = None
+        changed = False
         try:
-            base, _label, seg = _paths(self.wav_path)
-            for path in (_manual_srt(seg, base), _thresholds(seg, base)):
-                if os.path.isfile(path):
-                    os.remove(path)
-            srt = _auto_srt(seg, base)
-            process_wav_file(self.wav_path, srt, _comparison(seg, base),
-                             _thresholds(seg, base), [self.label],
-                             strategy=library_ops.take_strategy(self.wav_path))
+            for index, wav in enumerate(self.group):
+                # Set before the call: both passes rewrite files before they can
+                # fail, so an attempt is a change whether or not it returned.
+                changed = True
+                result = self._one(wav)
+                if index == 0:
+                    srt = result
             self.finished_ok.emit(srt)
         except Exception as exc:
-            self.failed.emit(str(exc))
+            extra = ""
+            if changed and len(self.group) > 1:
+                extra = (f"\n\nThis take has {len(self.group)} microphone files "
+                         f"and their detection may no longer match. Undo "
+                         f"restores all of them.")
+            self.failed.emit(str(exc) + extra, changed)
+
+
+class ReSegmentWorker(_GroupDetectWorker):
+    """Re-run detection with a manual threshold override -> MANUAL.srt."""
+
+    def __init__(self, wav_path, label, min_dbfs, duration_type, parent=None):
+        super().__init__(wav_path, label, parent)
+        self.min_dbfs = min_dbfs
+        self.duration_type = duration_type  # "", "discrete", or "continuous"
+
+    def _one(self, wav_path):
+        return resegment(wav_path, self.label, self.min_dbfs, self.duration_type)
+
+
+class ResetWorker(_GroupDetectWorker):
+    """Discard manual overrides and regenerate the automatic segmentation."""
+
+    def _one(self, wav_path):
+        return reset_detection(wav_path, self.label)
 
 
 class TrimWorker(QThread):

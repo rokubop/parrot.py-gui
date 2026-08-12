@@ -5,6 +5,12 @@ first becomes the take, later ones are appended onto it (AppendWorker). While
 paused the whole take shows in the interactive preview, so play/scrub/Delete
 (TrimWorker) operate on a static file - no mid-stream splicing. The take lives
 in the sound from the first segment on, so it's always saved.
+
+Pausing swaps the live monitor for the same two widgets Sounds -> Edit uses: a
+``ClipEditorWidget`` and a ``DetectionPanel``. So the threshold survives the
+switch as one idea - a capture setting while the mic is open, an edit that
+rewrites the take's srt once it is not - instead of going read-only until you
+find your way to another screen.
 """
 import math
 import os
@@ -22,11 +28,12 @@ from gui import components, icons, theme
 from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.clip_editor import ClipEditorWidget
-from gui.widgets.level_lane import LevelLane
+from gui.widgets.detection_panel import DetectionPanel
+from gui.widgets.level_lane import LaneSplitter, LevelLane
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets.mic_picker import MicPicker
 from gui.workers.audio_worker import AudioWorker
-from gui.workers.segment_worker import AppendWorker, read_min_dbfs
+from gui.workers.segment_worker import AppendWorker
 from gui.services import library_ops, strategies
 from gui.services.undo import UndoHistory
 from lib.srt import ms_to_srt_timestring, parse_srt_file
@@ -166,13 +173,13 @@ class RecordingView(QWidget):
         center = QHBoxLayout()
         left = QVBoxLayout()
         self.waveform = WaveformWidget()
-        left.addWidget(self.waveform)
         # The trace says what was recorded. This says what detection will call
         # sound, while there is still time to change it.
-        self.level_lane = LevelLane()
+        self.level_lane = LevelLane(flexible=True)
         self.level_lane.link_x(self.waveform.get_plot_widget())
         self.level_lane.threshold_moved.connect(self._on_threshold_moved)
-        left.addWidget(self.level_lane)
+        self.live = LaneSplitter(self.waveform, self.level_lane, "live")
+        left.addWidget(self.live, 1)
         left.addWidget(self._build_threshold_row())
         # Kept after Pause: that is when you most want to look at it.
         self.editor = ClipEditorWidget(self.history, noun="take", show_levels=True)
@@ -182,7 +189,20 @@ class RecordingView(QWidget):
         self.editor.status.connect(self.hint_text)
         self.editor.edited.connect(self._on_editor_edited)
         self.editor.history_changed.connect(self.keybindings_changed.emit)
-        left.addWidget(self.editor)
+        left.addWidget(self.editor, 1)
+        # The same panel Sounds -> Edit uses. Pause is when you can still see
+        # what detection missed and record it again, so it belongs here too.
+        self.detection = DetectionPanel(self.history)
+        self.detection.attach_lane(self.editor.lane)
+        self.detection.host_busy = lambda: (self._seg_worker is not None
+                                            or self.editor.is_busy())
+        self.detection.setVisible(False)
+        self.detection.status.connect(self.hint_text)
+        self.detection.busy_changed.connect(self._on_detection_busy)
+        self.detection.changed.connect(self._on_detection_changed)
+        # An undo or a trim rewrites the files the panel is reporting on.
+        self.editor.history_changed.connect(self.detection.resync)
+        left.addWidget(self.detection)
         center.addLayout(left, 3)
         center.addWidget(self._build_status_panel(), 1)
         root.addLayout(center, 1)
@@ -238,6 +258,7 @@ class RecordingView(QWidget):
                 ("Backspace", in_review(self.editor.delete_selection)),
                 ("A", in_review(self.editor.toggle_normalize)),
                 ("S", in_review(self.editor.toggle_spectrum)),
+                ("L", self._toggle_levels),
                 ("D", in_review(self.editor.deselect_or_start)),
                 ("Esc", in_review(self.editor.deselect_or_start)),
                 ("F", in_review(self.editor.fit)),
@@ -387,27 +408,41 @@ class RecordingView(QWidget):
         tail = f" ({round(pct)}% → {nxt})" if nxt else ""
         self.v_quantity.setText(quantity + tail)
 
-    def _sync_review_lane(self):
-        """Carry the threshold onto the take's own lane after Pause.
+    def _bind_review_detection(self):
+        """Hand the take to the detection panel after Pause.
 
-        Not draggable: nothing here re-detects, and the edit view is where a
-        recorded take's detection gets changed. Manual is what was in effect,
-        automatic is what the recorder just wrote to the thresholds file.
+        The threshold stays the same number across the switch, but stops being a
+        capture setting and becomes an edit: live it was pushed into the running
+        workers, here it rewrites the take's srt.
+
+        A threshold pinned live leaves no ``.MANUAL.srt`` behind, so disk alone
+        would report the take as automatic - the value is passed through instead.
+        An automatic take reads the floor the recorder settled on out of its own
+        thresholds file.
         """
-        lane = self.editor.lane
-        if lane is None or not self._take_wav:
+        if not self._take_wav:
             return
-        lane.set_editable(False)
-        if self.thr_mode.currentData() == "manual":
-            lane.set_mode("manual")
-            lane.set_threshold(self._manual_dbfs)
-            lane.set_line_visible(True)
-            return
-        lane.set_mode("auto")
-        settled = read_min_dbfs(self._take_wav)
-        if settled is not None and settled < 0:
-            lane.set_threshold(settled)
-        lane.set_line_visible(settled is not None and settled < 0)
+        manual = self.thr_mode.currentData() == "manual"
+        self.detection.bind(self._take_wav, self._label,
+                            threshold=self._manual_dbfs if manual else None)
+
+    def _on_detection_busy(self, busy, message):
+        if busy:
+            self.stop_playback()
+        self.editor.set_busy(busy, message)
+        # Resuming or deleting mid-pass would race the files being rewritten.
+        self.record_btn.setEnabled(not busy)
+        self.start_over_btn.setEnabled(not busy)
+        self.finish_btn.setEnabled(not busy)
+        self.keybindings_changed.emit()
+
+    def _on_detection_changed(self, srt_path):
+        """A new srt for the take. The audio did not move, so the zoom and the
+        playhead stay where they were."""
+        self.app_state.recordings_changed.emit()
+        self._take_srt = srt_path or self._srt_for(self._take_wav)
+        self.editor.set_regions(self._take_srt)
+        self._show_take_summary()
 
     def _push_threshold(self):
         """Every live mic. The extras write their own srt for the same take."""
@@ -451,12 +486,13 @@ class RecordingView(QWidget):
         self._was_detected = False
         if take:
             self.editor.open(take, self._take_srt, self._label)
-            self._sync_review_lane()
+            self._bind_review_detection()
             self._show_take_summary()
             self._set_state("review")
             self.hint.setText(self._review_hint("Resume to add more."))
         else:
             self.editor.clear()
+            self.detection.clear()
             self.waveform.clear_display()
             self.level_lane.clear()
             self._set_state("idle")
@@ -504,10 +540,13 @@ class RecordingView(QWidget):
 
         recording = state == "recording"
         reviewing = state == "review"
-        self.waveform.setVisible(not reviewing)
-        self.level_lane.setVisible(not reviewing)
+        self.live.setVisible(not reviewing)
+        # Live, the threshold is a capture setting pushed into the running
+        # workers. Paused, it is an edit that rewrites the take's srt, so the
+        # row hands over to the panel that does that.
         self._threshold_row.setVisible(not reviewing)
         self.editor.setVisible(reviewing)
+        self.detection.setVisible(reviewing)
         # Start over only makes sense once a take exists; you can finish anytime.
         self.start_over_btn.setVisible(self._take_wav is not None)
         self.start_over_btn.setEnabled(reviewing)
@@ -524,6 +563,14 @@ class RecordingView(QWidget):
 
     def hint_text(self, text):
         self.hint.setText(text)
+
+    def _toggle_levels(self):
+        """One key, whichever lane is on screen: the live one while recording,
+        the take's while reviewing."""
+        if self._state == "review":
+            self.editor.toggle_levels()
+        else:
+            self.live.toggle_lane()
 
     def _multi_mic(self):
         return bool(self._extra_takes) or (
@@ -544,7 +591,7 @@ class RecordingView(QWidget):
 
     def keybinding_hint(self):
         if self._state == "recording":
-            return "Space / R  pause and review"
+            return "Space / R  pause and review  ·  L levels"
         if self._state == "review":
             return "R resume recording  ·  " + self.editor.keybinding_hint()
         return "R (or Record) to start  ·  name the sound first for a new one"
@@ -568,9 +615,14 @@ class RecordingView(QWidget):
             return label
         return self._label
 
+    def _busy(self):
+        """A cut, a stitch or a re-detect is still rewriting the take."""
+        return bool(self._seg_worker) or self.editor.is_busy() \
+            or self.detection.is_busy()
+
     def _on_primary(self):
-        if self._seg_worker or self.editor.is_busy():
-            return      # a cut or a stitch is still rewriting the take
+        if self._busy():
+            return
         if self._state in ("idle", "review"):
             self._start_segment()
         elif self._state == "recording":
@@ -648,7 +700,7 @@ class RecordingView(QWidget):
         self._stop_segment("pause")
 
     def _on_done(self):
-        if self.editor.is_busy():
+        if self.editor.is_busy() or self.detection.is_busy():
             return      # don't leave while a cut is still being written
         if self._state == "recording":
             self._stop_segment("done")
@@ -656,8 +708,7 @@ class RecordingView(QWidget):
             self._leave()
 
     def _on_start_over(self):
-        if (self._state != "review" or not self._take_wav
-                or self._seg_worker or self.editor.is_busy()):
+        if self._state != "review" or not self._take_wav or self._busy():
             return
         self.stop_playback()
         name = library_ops.recording_base(self._take_wav)
@@ -793,7 +844,7 @@ class RecordingView(QWidget):
             return
         self._take_srt = self._srt_for(self._take_wav) or self._take_srt
         self.editor.open(self._take_wav, self._take_srt, self._label)
-        self._sync_review_lane()
+        self._bind_review_detection()
         self._show_take_summary()
         self._set_state("review")
         self.hint.setText(self._review_hint("Resume to add more, Done to finish."))
@@ -856,6 +907,8 @@ class RecordingView(QWidget):
     # ---- navigation ----------------------------------------------------
 
     def _on_back(self):
+        if self._busy():
+            return      # don't leave while the take is being rewritten
         self._leave()
 
     def _leave(self):
@@ -892,5 +945,7 @@ class RecordingView(QWidget):
 
     def refresh_theme(self):
         self.editor.refresh_theme()
+        self.detection.refresh_theme()
+        self.waveform.refresh_theme()
         self.start_over_btn.setIcon(icons.restart())
         self._set_state(self._state)
