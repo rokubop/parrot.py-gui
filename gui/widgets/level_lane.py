@@ -308,10 +308,13 @@ class LaneSplitter(QSplitter):
         self.addWidget(lane)
         self.setStretchFactor(0, 1)
         self.setStretchFactor(1, 1)
-        # The last split with both panes open, so un-collapsing lands where you
-        # left it rather than back at even.
-        self._open = self._stored("open", [1, 1])
-        self.setSizes(self._stored("sizes", [1, 1]))
+        # Two keys, not one pair of sizes. A single stored [n, 0] cannot say
+        # whether the lane was collapsed on purpose or squeezed out by a layout
+        # nobody asked for, and guessing wrong hides the lane on every launch
+        # after - which reads as the chart having eaten the screen.
+        self._open = self._stored_open()
+        collapsed = ui_prefs.get(self._key + ".collapsed", False) is True
+        self.setSizes([1, 0] if collapsed else list(self._open))
         # splitterMoved fires for every pixel of a drag; one write per drag.
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -319,22 +322,29 @@ class LaneSplitter(QSplitter):
         self._save_timer.timeout.connect(self._save)
         self.splitterMoved.connect(self._on_moved)
 
-    def _stored(self, suffix, default):
-        value = ui_prefs.get(f"{self._key}.{suffix}")
-        # any(): a stored [0, 0] would open with both panes gone and no handle
-        # wide enough to find.
+    def _stored_open(self):
+        value = ui_prefs.get(self._key + ".open")
         if (isinstance(value, list) and len(value) == 2
-                and all(isinstance(v, int) and v >= 0 for v in value)
-                and any(value)):
+                and all(isinstance(v, int) and v > 0 for v in value)):
             return value
-        return default
+        return [1, 1]
 
     def _save(self):
+        """Only what the handle was actually dragged to.
+
+        ``splitterMoved`` also fires for layout the user never asked for: a
+        hide, a show at a different size, a parent that has not been laid out
+        yet. Those all report a zero for one pane.
+        """
+        if not self.isVisible():
+            return
         sizes = self.sizes()
-        ui_prefs.set_value(self._key + ".sizes", sizes)
+        if sum(sizes) <= LANE_MIN_HEIGHT:
+            return      # no room for both, so this says nothing about intent
         if all(sizes):
             self._open = sizes
             ui_prefs.set_value(self._key + ".open", sizes)
+        ui_prefs.set_value(self._key + ".collapsed", sizes[1] == 0)
 
     def _on_moved(self, *_):
         if all(self.sizes()):

@@ -151,9 +151,12 @@ class EditRecordingView(QWidget):
     # ---- save / dirty state --------------------------------------------
 
     def _update_title(self):
-        star = " *" if self.history.is_dirty() else ""
+        dirty = self.history.is_dirty()
+        star = " *" if dirty else ""
         self.title.setText(f"Edit:  {self.label}  /  {getattr(self, '_base', '')}{star}")
-        self.save_btn.setEnabled(self.history.is_dirty() and not self._busy())
+        self.save_btn.setEnabled(dirty and not self._busy())
+        # Same rule as Apply: the accent marks the thing left to do.
+        components.set_primary(self.save_btn, dirty)
 
     def _busy(self):
         return self.detection.is_busy() or self.editor.is_busy()
@@ -201,3 +204,4 @@ class EditRecordingView(QWidget):
     def refresh_theme(self):
         self.editor.refresh_theme()
         self.detection.refresh_theme()
+        components.refresh_primary(self.save_btn)

@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QPushButton
 )
 
+from gui import components
 from gui.widgets.click_slider import ClickSlider, slider_qss
 from gui.workers.segment_worker import (
     ReSegmentWorker, ResetWorker, has_manual_override, read_override
@@ -44,6 +45,10 @@ class DetectionPanel(QGroupBox):
         self.host_busy = lambda: False
         # (min_dbfs, duration_type) of the last detect, to skip redundant re-runs
         self._last_applied = None
+        # The same pair as it stands on disk. Apply goes green when the controls
+        # leave it, so the accent means "there is something to apply" rather
+        # than "this button exists".
+        self._on_disk = None
 
         # Debounce live threshold drags: re-detect once the line settles instead
         # of on every intermediate value.
@@ -75,6 +80,7 @@ class DetectionPanel(QGroupBox):
         self.duration_combo.addItem("Auto", "")
         self.duration_combo.addItem("Discrete", "discrete")
         self.duration_combo.addItem("Continuous", "continuous")
+        self.duration_combo.currentIndexChanged.connect(self._refresh_apply)
         row.addWidget(self.duration_combo)
         self.apply_btn = QPushButton("Apply")
         self.apply_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -99,6 +105,7 @@ class DetectionPanel(QGroupBox):
 
     def refresh_theme(self):
         self.slider.setStyleSheet(slider_qss())
+        components.refresh_primary(self.apply_btn)
 
     # ---- binding a clip -------------------------------------------------
 
@@ -119,6 +126,8 @@ class DetectionPanel(QGroupBox):
             self._set_slider(threshold)
             self._set_type("")
             self._show_on_lane("manual")
+            # Arriving is not changing. The accent waits for the first move.
+            self._settle()
         self.set_busy(False)
 
     def clear(self):
@@ -126,6 +135,8 @@ class DetectionPanel(QGroupBox):
         self.label = None
         self._apply_timer.stop()
         self._last_applied = None
+        self._on_disk = None
+        self._refresh_apply()
 
     def resync(self):
         """The files moved under us - an undo, a redo, a trim.
@@ -156,6 +167,25 @@ class DetectionPanel(QGroupBox):
         # valleys. A line at 0 would claim a cutoff nothing can clear.
         self._show_on_lane("manual" if manual else "auto",
                            visible=manual or (existing is not None and existing < 0))
+        self._settle()
+
+    def _current_params(self):
+        return (self.slider.value(), self.duration_combo.currentData())
+
+    def _settle(self):
+        """The controls now match disk. Nothing to apply until one of them moves."""
+        self._on_disk = self._current_params()
+        self._refresh_apply()
+
+    def _refresh_apply(self, *_):
+        """Green means there is something to apply.
+
+        Measured against what was last read off disk, not against the last
+        Apply: an undo moves disk under us without touching either control.
+        """
+        components.set_primary(self.apply_btn, bool(self.wav_path)
+                               and self._on_disk is not None
+                               and self._current_params() != self._on_disk)
 
     def _set_slider(self, value):
         self.slider.blockSignals(True)
@@ -179,6 +209,7 @@ class DetectionPanel(QGroupBox):
 
     def _on_slider(self, *_):
         self.slider_label.setText(f"{self.slider.value()} dBFS")
+        self._refresh_apply()
         # Touching the slider is choosing, so the lane stops reporting what
         # detection found and starts showing what is about to be applied.
         self._show_on_lane("manual")

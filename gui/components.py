@@ -148,6 +148,30 @@ def primary_button(text, slot=None, height=34):
     return btn
 
 
+def set_primary(button, primary=True):
+    """Make, or unmake, a button the screen's call to action.
+
+    The accent follows the next thing to do, so a button wears it only while it
+    is that thing: Apply once the threshold has moved, Save once there are edits,
+    Finish once there is a take. A button that is always green says nothing.
+
+    objectName rather than a dynamic property, because Qt only re-evaluates
+    property selectors after unpolish/polish, and that round trip drops other
+    state on the way through.
+    """
+    primary = bool(primary)
+    if (button.objectName() == "primaryAction") == primary:
+        return      # called on every slider step; restyling is not free
+    button.setObjectName("primaryAction" if primary else "")
+    button.setStyleSheet(primary_button_style() if primary else "")
+
+
+def refresh_primary(button):
+    """Re-apply the accent after a theme switch, for a button that has it."""
+    if button.objectName() == "primaryAction":
+        button.setStyleSheet(primary_button_style())
+
+
 def lock_width(button, *texts, floor=0):
     """Pin a button to one width for every label it will ever show.
 

@@ -230,15 +230,12 @@ class RecordingView(QWidget):
         self.hint.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         controls.addWidget(self.hint)
         controls.addSpacing(16)
-        # Finish is the way out, set apart from the take-editing controls.
+        # Finish is the way out, set apart from the take-editing controls. It
+        # only takes the accent once there is a take: green on an empty screen
+        # points at the one thing you cannot have meant yet.
         self.finish_btn = QPushButton("Finish")
         self.finish_btn.setMinimumWidth(130)
         self.finish_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.finish_btn.setIcon(icons.check(colour="#ffffff"))
-        self.finish_btn.setToolTip("Done - the take is already saved to the sound")
-        self.finish_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {theme.colors()['accent']}; "
-            f"color: #ffffff; font-weight: bold; border: none; }}")
         self.finish_btn.clicked.connect(self._on_done)
         controls.addWidget(self.finish_btn)
         root.addLayout(controls)
@@ -548,8 +545,15 @@ class RecordingView(QWidget):
         self.editor.setVisible(reviewing)
         self.detection.setVisible(reviewing)
         # Start over only makes sense once a take exists; you can finish anytime.
-        self.start_over_btn.setVisible(self._take_wav is not None)
+        has_take = self._take_wav is not None
+        self.start_over_btn.setVisible(has_take)
         self.start_over_btn.setEnabled(reviewing)
+        components.set_primary(self.finish_btn, has_take)
+        self.finish_btn.setIcon(icons.check(
+            colour=theme.colors()["accent_text"] if has_take else None))
+        self.finish_btn.setToolTip(
+            "Done - the take is already saved to the sound" if has_take
+            else "Leave without recording anything")
         if reviewing:
             self.editor.refresh_history_buttons()
         # Lock strategy/name once a take exists.
@@ -948,4 +952,5 @@ class RecordingView(QWidget):
         self.detection.refresh_theme()
         self.waveform.refresh_theme()
         self.start_over_btn.setIcon(icons.restart())
+        components.refresh_primary(self.finish_btn)
         self._set_state(self._state)
