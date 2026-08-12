@@ -215,14 +215,15 @@ class HomePage(QWidget):
         guide_row.addStretch()
         v.addLayout(guide_row)
 
-        # Only on a fresh empty install; gone for good once anything is
-        # recorded or trained. Import stays reachable via Manage profiles.
+        # On any empty data root, a fresh install or a profile just made;
+        # gone for good once anything is recorded or trained here. Import
+        # stays reachable via Manage profiles.
         from gui.services import profiles as profiles_service
         self.import_panel, self.import_title, self.import_body = self._make_panel(
             "Already used Parrot.py before?")
         self.import_body.setText(
-            "Copy sounds and models of an existing install in as a profile. "
-            "Original folder is not changed.")
+            "Copy an existing install in here. "
+            "The original folder is not changed.")
         import_row = QHBoxLayout()
         import_row.setContentsMargins(0, 10, 0, 0)
         find_setup_btn = QPushButton("Import my setup...")

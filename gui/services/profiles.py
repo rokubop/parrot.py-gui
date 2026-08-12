@@ -54,13 +54,26 @@ def debug_enabled():
     return not getattr(sys, "frozen", False) and DATA_ROOT == ""
 
 
-def current_profile():
-    """Name of the active profile, or None when running on the real data/."""
-    root = os.path.normpath(DATA_DIR)
-    parent, name = os.path.split(root)
-    if os.path.normpath(parent) == os.path.normpath(PROFILES_DIR):
+def profile_name_of(data_dir):
+    """The profile a data tree belongs to, or None when it is not one.
+
+    None covers Main and also a PARROT_DATA_DIR pointed somewhere else
+    entirely, so a caller that needs to tell those apart compares the path.
+    """
+    parent, name = os.path.split(os.path.abspath(data_dir))
+    if os.path.normcase(parent) == os.path.normcase(os.path.abspath(PROFILES_DIR)):
         return name
     return None
+
+
+def current_profile():
+    """Name of the active profile, or None when running on the real data/."""
+    return profile_name_of(DATA_DIR)
+
+
+def current_data_dir():
+    """The data tree this process is running on, whatever chose it."""
+    return DATA_DIR
 
 
 def profile_data_dir(name):
@@ -105,7 +118,9 @@ def write_meta(name, meta):
         json.dump(meta, f, indent=2)
 
 
-def _check_new_name(name):
+def check_new_name(name):
+    """Raise ProfileError if this name cannot be used. Public so a dialog can
+    ask the same question per keystroke that create/duplicate ask on submit."""
     if not _VALID_NAME.match(name or ""):
         raise ProfileError("Profile names use letters, numbers, spaces, . _ -")
     if name == "current":
@@ -124,7 +139,7 @@ def _copy_data_tree(src, dst):
 
 
 def create_empty(name):
-    _check_new_name(name)
+    check_new_name(name)
     root = profile_data_dir(name)
     for sub in ("recordings", "models", "code"):
         os.makedirs(os.path.join(root, sub), exist_ok=True)
@@ -134,7 +149,7 @@ def create_empty(name):
 
 def duplicate(source_data_dir, name, talon="real"):
     """New profile from any data tree: the real data/ or another profile."""
-    _check_new_name(name)
+    check_new_name(name)
     if not os.path.isdir(source_data_dir):
         raise ProfileError(f"Nothing to copy at {source_data_dir}")
     _copy_data_tree(source_data_dir, profile_data_dir(name))
@@ -142,23 +157,40 @@ def duplicate(source_data_dir, name, talon="real"):
     freeze(name)
 
 
-def main_is_empty():
-    return stats(MAIN_DATA_DIR) == (0, 0)
+def import_into(dest_data_dir, source_data_dir):
+    """Copy a whole data tree into an empty one.
 
+    Empty only, deliberately. Merging into a library with content in it was
+    the one unrecoverable act here, and it silently replaced notes, config
+    and the Talon setup along with the sounds. Every real path lands
+    somewhere empty: a first launch, or a profile just made.
 
-def import_into_main(source_data_dir):
-    """A fresh install has nothing to protect, so an import belongs in Main
-    rather than in a profile nobody asked for."""
+    Because the destination has nothing to lose, the copy takes the source
+    entire, which is what someone bringing an old install in expects.
+    """
     if not os.path.isdir(source_data_dir):
         raise ProfileError(f"Nothing to copy at {source_data_dir}")
-    os.makedirs(MAIN_DATA_DIR, exist_ok=True)
-    shutil.copytree(source_data_dir, MAIN_DATA_DIR,
+    if os.path.realpath(source_data_dir) == os.path.realpath(dest_data_dir):
+        raise ProfileError("That is the folder you are copying into")
+    if stats(dest_data_dir) != (0, 0):
+        raise ProfileError("Import needs somewhere empty; this one already "
+                           "has sounds or models")
+    os.makedirs(dest_data_dir, exist_ok=True)
+    shutil.copytree(source_data_dir, dest_data_dir,
                     ignore=shutil.ignore_patterns(*_NON_DATA),
                     dirs_exist_ok=True)
+    name = profile_name_of(dest_data_dir)
+    if name is not None:
+        freeze(name)  # its baseline was the empty tree it no longer is
 
 
 def freeze(name):
-    """Save the profile as it is now; Reset returns here."""
+    """Mark the profile as it is now; Reset returns here.
+
+    Not a button any more. Every path that makes a profile ends with one of
+    these, so the mark is always "how it started" and there is nothing to
+    explain: create_empty, duplicate, and import_into on an empty one.
+    """
     root = profile_data_dir(name)
     if not os.path.isdir(root):
         raise ProfileError(f"No profile named {name}")
@@ -170,6 +202,12 @@ def freeze(name):
     if os.path.isdir(baseline):
         shutil.rmtree(baseline)
     os.rename(staging, baseline)
+
+
+def baseline_stats(name):
+    """What Reset would put back. Empty for a profile made empty, the copied
+    tree for one made by duplicate or import."""
+    return stats(os.path.join(profile_data_dir(name), BASELINE_DIR))
 
 
 def reset(name):
@@ -193,6 +231,40 @@ def reset(name):
             shutil.copytree(src, dst)
         else:
             shutil.copy2(src, dst)
+
+
+def rename(name, new_name):
+    """Rename a profile. The folder is the profile, so this is os.rename plus
+    the two things that hold its old path: the current pointer, and a mock
+    Talon home, which test profiles store as an absolute path inside it.
+
+    A caller renaming the *running* profile must relaunch: DATA_DIR was
+    resolved at import and still names the folder that no longer exists.
+    """
+    check_new_name(new_name)
+    old_dir = profile_data_dir(name)
+    if not os.path.isdir(old_dir):
+        raise ProfileError(f"No profile named {name}")
+    new_dir = profile_data_dir(new_name)
+    os.rename(old_dir, new_dir)
+
+    meta = read_meta(new_name)
+    talon = meta.get("talon")
+    if talon and talon not in ("real", "none"):
+        old_abs = os.path.abspath(old_dir)
+        talon_abs = os.path.abspath(talon)
+        if talon_abs.startswith(old_abs + os.sep):
+            meta["talon"] = os.path.join(os.path.abspath(new_dir),
+                                         os.path.relpath(talon_abs, old_abs))
+            write_meta(new_name, meta)
+
+    try:
+        with open(CURRENT_POINTER, encoding="utf-8") as f:
+            points_here = f.read().strip() == name
+    except OSError:
+        points_here = False
+    if points_here:
+        set_current(new_name)
 
 
 def delete(name):
@@ -240,7 +312,8 @@ def export_copy(source_data_dir, dest_parent):
 # ---- bringing in an outside setup -------------------------------------
 #
 # CLI veterans have a year-old checkout somewhere on disk. Importing copies
-# its data tree in as a profile via duplicate(); the original folder is
+# its data tree into a root the user picks: the one they are on via
+# import_into(), or a fresh profile via duplicate(). The original folder is
 # never touched. The Home card offering this is dismissible per data root.
 
 IMPORT_CARD_MARKER = ".import-card-dismissed"
