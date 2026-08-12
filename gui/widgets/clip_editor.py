@@ -16,8 +16,9 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import components, icons, theme
-from gui.services import playback
+from gui.services import levels, playback
 from gui.widgets.audio_preview import AudioPreviewWidget, view_after_cut
+from gui.widgets.level_lane import LevelLane
 from gui.workers.segment_worker import TrimWorker
 
 
@@ -38,10 +39,14 @@ class ClipEditorWidget(QWidget):
     edited = pyqtSignal()               # the clip's files changed on disk
     history_changed = pyqtSignal()      # undo/redo availability moved
 
-    def __init__(self, history, noun="clip", parent=None):
+    def __init__(self, history, noun="clip", show_levels=False, parent=None):
         super().__init__(parent)
         self.history = history
         self.noun = noun
+        # Asked for by screens that own a threshold control. Elsewhere it is a
+        # strip of chart nothing on the page can act on.
+        self.lane = None
+        self._show_levels = show_levels
         # Where to look up the clip's srt after an undo restores it. The two
         # views resolve it differently, so the host supplies it.
         self.srt_provider = lambda: None
@@ -52,7 +57,6 @@ class ClipEditorWidget(QWidget):
         self.wav_path = None
         self.label = None
         self.worker = None
-        self._editing_allowed = True
 
         # view toggles (mirror AudioPreviewWidget defaults)
         self._norm = False
@@ -88,6 +92,11 @@ class ClipEditorWidget(QWidget):
         self.preview = AudioPreviewWidget()
         self.preview.seeked.connect(self.on_seek)
         root.addWidget(self.preview, 1)
+
+        if self._show_levels:
+            self.lane = LevelLane()
+            self.lane.link_x(self.preview.plot)
+            root.addWidget(self.lane)
 
         row = QHBoxLayout()
         row.setSpacing(6)
@@ -149,10 +158,21 @@ class ClipEditorWidget(QWidget):
         self._stop_at = None
         view = None if reset_view else self.preview.view_range()
         self.preview.load(wav_path, srt_path, view=view)
+        self.refresh_levels()
         if reset_view:
             self.preview.fit_full()
         self.preview.set_busy(False)
         self.refresh_history_buttons()
+
+    def refresh_levels(self):
+        """Recompute the lane from disk. Cheap next to a re-detect, and a trim
+        or an undo changes the audio under it."""
+        if self.lane is None:
+            return
+        if not self.wav_path:
+            self.lane.clear()
+            return
+        self.lane.set_levels(*levels.frame_dbfs(self.wav_path))
 
     def set_regions(self, srt_path):
         """Refresh only the detection overlay."""
@@ -164,6 +184,8 @@ class ClipEditorWidget(QWidget):
         self._audio = None
         self._cut_note = ""
         self.preview.set_busy(False)
+        if self.lane is not None:
+            self.lane.clear()
 
     # ---- enabling -------------------------------------------------------
 
@@ -171,28 +193,16 @@ class ClipEditorWidget(QWidget):
         """Host work that reprocesses the clip (re-detection) uses this too, so
         the plot is inert for the whole of it and not just for our own edits."""
         self.preview.set_busy(busy, message)
+        if self.lane is not None:
+            self.lane.setEnabled(not busy)
         for btn in (self.play_btn, self.fit_btn, self.norm_btn, self.spec_btn):
             btn.setEnabled(not busy)
-        self.delete_btn.setEnabled(not busy and self._editing_allowed)
+        self.delete_btn.setEnabled(not busy)
         if busy:
             self.undo_btn.setEnabled(False)
             self.redo_btn.setEnabled(False)
         else:
             self.refresh_history_buttons()
-
-    def set_editing_enabled(self, on, reason=""):
-        """Turn off the controls that rewrite the audio - the recording view
-        does this for a multi-mic take, where a cut would desync the mic files.
-
-        Greyed rather than hidden. A control that vanishes reads as an app that
-        changes shape for no reason, and takes the only place the reason could
-        have been printed with it. Selecting and playing stay on: they read the
-        take without touching it.
-        """
-        self._editing_allowed = on
-        self.delete_btn.setEnabled(on)
-        self.delete_btn.setToolTip(reason if not on else self._delete_tip)
-        self.refresh_history_buttons()
 
     def is_busy(self):
         return self.worker is not None
@@ -227,7 +237,7 @@ class ClipEditorWidget(QWidget):
     # ---- delete ---------------------------------------------------------
 
     def delete_selection(self):
-        if self.worker or not self.wav_path or not self._editing_allowed:
+        if self.worker or not self.wav_path:
             return
         sel = self.preview.current_selection()
         if not sel or sel[1] - sel[0] <= 0:
@@ -274,6 +284,7 @@ class ClipEditorWidget(QWidget):
         view = view_after_cut(self._view_before_cut or self.preview.view_range(),
                               cut_start, removed, new_duration)
         self.preview.load(self.wav_path, None, view=view)
+        self.refresh_levels()                  # the audio under the lane changed
         self.set_busy(True, "Re-detecting…")   # load repositions the scrim
         self.preview.clear_selection()
         self.preview.flash_seam(cut_start)
@@ -295,16 +306,16 @@ class ClipEditorWidget(QWidget):
         self.status.emit(f"{self._cut_note}  Space to hear the join, "
                          f"Ctrl+Z to undo.")
 
-    def _on_trim_failed(self, message):
-        """A trim can fail after the audio is already cut (the rewrite lands,
-        re-detection doesn't). Keep the checkpoint in that case or Ctrl+Z would
-        no longer reach a change that really happened."""
+    def _on_trim_failed(self, message, changed=False):
+        """A trim can fail after audio is written: re-detection dies, or one mic
+        file of several is done. Keep the checkpoint whenever anything was
+        written, or Ctrl+Z stops reaching a change that happened."""
         self._finish_worker()
-        if not self._cut_applied:
+        if not self._cut_applied and not changed:
             self.history.discard_last_checkpoint()
         self.set_busy(False)
         self.history_changed.emit()
-        if self._cut_applied:
+        if self._cut_applied or changed:
             self.edited.emit()
             self.status.emit(f"{self._cut_note}  Detection is out of date.")
             QMessageBox.warning(self, "Couldn't re-detect",
@@ -316,7 +327,7 @@ class ClipEditorWidget(QWidget):
     # ---- undo / redo ----------------------------------------------------
 
     def refresh_history_buttons(self):
-        allowed = self._editing_allowed and not self.worker
+        allowed = not self.worker
         self.undo_btn.setEnabled(allowed and self.history.can_undo())
         self.redo_btn.setEnabled(allowed and self.history.can_redo())
 
@@ -340,6 +351,7 @@ class ClipEditorWidget(QWidget):
         # the whole clip again.
         self.preview.load(self.wav_path, self.srt_provider(),
                           view=self.preview.view_range())
+        self.refresh_levels()
         self._audio = None
         self.edited.emit()
         self.refresh_history_buttons()
@@ -423,4 +435,7 @@ class ClipEditorWidget(QWidget):
 
     def cleanup(self):
         self.stop_playback()
+        # Unlink first, or pyqtgraph paints a ViewBox that has already gone.
+        if self.lane is not None:
+            self.lane.cleanup()
         self.preview.cleanup()

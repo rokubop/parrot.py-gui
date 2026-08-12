@@ -1,4 +1,4 @@
-"""Snapshot-based undo/redo for a single recording's files.
+"""Snapshot-based undo/redo for one take's files, across every mic that recorded it.
 
 Audacity affords cheap deep undo via immutable block files; we don't have that,
 but parrot clips are short, so we just snapshot the clip's files before each
@@ -38,11 +38,19 @@ class UndoHistory:
         if self._root is None:
             self._root = tempfile.mkdtemp(prefix="parrot_undo_")
 
+    def _files(self):
+        """Every file the take owns, across every mic. Restoring only the one on
+        screen would leave the desync the cut avoided."""
+        files = []
+        for wav in library_ops.take_group(self.wav_path):
+            files.extend(library_ops.recording_sibling_files(wav))
+        return files
+
     def _capture(self):
         self._ensure_root()
         snapdir = tempfile.mkdtemp(dir=self._root)
         manifest = []
-        for f in library_ops.recording_sibling_files(self.wav_path):
+        for f in self._files():
             name = os.path.basename(f)
             try:
                 shutil.copy2(f, os.path.join(snapdir, name))
@@ -54,7 +62,7 @@ class UndoHistory:
     def _restore(self, snap):
         snapdir, manifest = snap
         # Remove whatever's there now, then lay the snapshot back exactly.
-        for f in library_ops.recording_sibling_files(self.wav_path):
+        for f in self._files():
             try:
                 os.remove(f)
             except OSError:

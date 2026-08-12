@@ -6,6 +6,8 @@ paused the whole take shows in the interactive preview, so play/scrub/Delete
 (TrimWorker) operate on a static file - no mid-stream splicing. The take lives
 in the sound from the first segment on, so it's always saved.
 """
+import math
+import os
 import time
 import numpy as np
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -15,18 +17,19 @@ from PyQt6.QtWidgets import (
     QLineEdit, QGroupBox, QFormLayout, QMessageBox
 )
 
-from config.config import RATE
+from config.config import RATE, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from gui import components, icons, theme
 from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
 from gui.widgets.clip_editor import ClipEditorWidget
+from gui.widgets.level_lane import LevelLane
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets.mic_picker import MicPicker
 from gui.workers.audio_worker import AudioWorker
-from gui.workers.segment_worker import AppendWorker
+from gui.workers.segment_worker import AppendWorker, read_min_dbfs
 from gui.services import library_ops, strategies
 from gui.services.undo import UndoHistory
-from lib.srt import ms_to_srt_timestring
+from lib.srt import ms_to_srt_timestring, parse_srt_file
 from lib.print_status import get_quantity_rating
 
 
@@ -67,6 +70,13 @@ class RecordingView(QWidget):
         self._pending_action = None     # 'pause' | 'done' while a segment stops
         self._state = "idle"
         self._last_status_draw = 0.0
+        # Counted live off the detection flag, replaced at Pause by the
+        # re-judge of the whole take.
+        self._live_sounds = 0
+        self._was_detected = False
+        # Loudest frame since the panel drew. Sampling one frame per redraw
+        # mostly shows the silence between two-frame pops.
+        self._peak_dbfs = None
 
         self._setup_ui()
 
@@ -157,7 +167,15 @@ class RecordingView(QWidget):
         left = QVBoxLayout()
         self.waveform = WaveformWidget()
         left.addWidget(self.waveform)
-        self.editor = ClipEditorWidget(self.history, noun="take")
+        # The trace says what was recorded. This says what detection will call
+        # sound, while there is still time to change it.
+        self.level_lane = LevelLane()
+        self.level_lane.link_x(self.waveform.get_plot_widget())
+        self.level_lane.threshold_moved.connect(self._on_threshold_moved)
+        left.addWidget(self.level_lane)
+        left.addWidget(self._build_threshold_row())
+        # Kept after Pause: that is when you most want to look at it.
+        self.editor = ClipEditorWidget(self.history, noun="take", show_levels=True)
         self.editor.setVisible(False)
         self.editor.srt_provider = lambda: self._srt_for(self._take_wav)
         self.editor.whole_clip_hint = "Start over deletes it."
@@ -250,6 +268,7 @@ class RecordingView(QWidget):
         self.v_noise = value_label()
         self.v_snr = value_label()
         self.v_detected = value_label()
+        self.v_sounds = value_label()
         self.v_quantity = value_label()
         self.v_type = value_label()
         for caption, widget in (("Recorded", self.v_time),
@@ -258,6 +277,7 @@ class RecordingView(QWidget):
                                 ("Noise floor", self.v_noise),
                                 ("SNR", self.v_snr),
                                 ("Detected sound", self.v_detected),
+                                ("Sounds", self.v_sounds),
                                 ("Data quantity", self.v_quantity),
                                 ("Type", self.v_type)):
             cap = QLabel(caption + ":")
@@ -265,6 +285,135 @@ class RecordingView(QWidget):
             form.addRow(cap, widget)
         group.setMaximumWidth(280)
         return group
+
+    def _build_threshold_row(self):
+        """Automatic or a threshold you set, beside the lane that draws it.
+
+        Automatic is not one number: it moves per sound and only settles on a
+        floor after ten onsets, so there is nothing to drag. Manual pins it
+        live, for a sound the automatic pass keeps missing.
+        """
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QLabel("Detection threshold:"))
+        self.thr_mode = QComboBox()
+        self.thr_mode.addItem("Automatic", None)
+        self.thr_mode.addItem("Manual", "manual")
+        self.thr_mode.setToolTip("Manual pins the threshold and lets you drag "
+                                 "the line while recording")
+        self.thr_mode.currentIndexChanged.connect(self._on_threshold_mode)
+        layout.addWidget(self.thr_mode)
+        self.thr_note = QLabel("")
+        self.thr_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+        layout.addWidget(self.thr_note, 1)
+        self._manual_dbfs = -40.0     # remembered across a switch back to auto
+        self._threshold_row = row
+        self._on_threshold_mode()
+        return row
+
+    def _threshold_override(self):
+        """The value to run detection at, or None while it is automatic."""
+        return self._manual_dbfs if self.thr_mode.currentData() == "manual" else None
+
+    def _on_threshold_mode(self, *_):
+        manual = self.thr_mode.currentData() == "manual"
+        lane = self.level_lane
+        lane.set_mode("manual" if manual else "auto")
+        if manual:
+            lane.set_threshold(self._manual_dbfs)
+            lane.set_line_visible(True)
+            self.thr_note.setText(f"{round(self._manual_dbfs)} dBFS - drag the "
+                                  f"line to move it")
+        else:
+            # Nothing to draw until it settles; _on_status brings it back.
+            lane.set_line_visible(False)
+            self.thr_note.setText("detection picks its own")
+        self._push_threshold()
+
+    def _on_threshold_moved(self, value):
+        self._manual_dbfs = float(value)
+        self.thr_note.setText(f"{round(value)} dBFS - drag the line to move it")
+        self._push_threshold()
+
+    def _on_frame_level(self, seconds, dbfs):
+        """Every frame, from the frame the detector judged."""
+        self.level_lane.push_level(seconds, dbfs)
+        self._peak_dbfs = dbfs if self._peak_dbfs is None else max(self._peak_dbfs, dbfs)
+
+    def _count_sound(self, _frame, detected):
+        """Rising edge of the detection flag. Provisional like the bands it
+        counts: Pause re-judges the take and overwrites it."""
+        if detected and not self._was_detected:
+            self._live_sounds += 1
+            self.v_sounds.setText(str(self._live_sounds))
+        self._was_detected = detected
+
+    def _take_summary(self):
+        """``(sounds, ms)`` in the take's srt, or None.
+
+        Pause throws the live running total away and re-judges from 0:00, so
+        left alone the panel shows a number nothing on screen agrees with.
+        """
+        if not self._take_srt or not os.path.isfile(self._take_srt):
+            return None
+        ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
+        try:
+            events = parse_srt_file(self._take_srt, ms_per_frame, show_errors=False)
+        except Exception:
+            return None
+        label = (self._label or "").lower()
+        sounds = total = 0
+        start = -1
+        for event in events:
+            if event.label.lower() == label:
+                start = event.start_ms
+            elif start > -1:
+                total += event.start_ms - start
+                sounds += 1
+                start = -1
+        return sounds, total
+
+    def _show_take_summary(self):
+        """Replace the live counters with what the re-judge produced."""
+        summary = self._take_summary()
+        if summary is None:
+            return
+        sounds, ms = summary
+        self._live_sounds = sounds
+        self.v_detected.setText(ms_to_srt_timestring(ms, False))
+        self.v_sounds.setText(str(sounds))
+        quantity, pct, nxt = get_quantity_rating(ms)
+        tail = f" ({round(pct)}% → {nxt})" if nxt else ""
+        self.v_quantity.setText(quantity + tail)
+
+    def _sync_review_lane(self):
+        """Carry the threshold onto the take's own lane after Pause.
+
+        Not draggable: nothing here re-detects, and the edit view is where a
+        recorded take's detection gets changed. Manual is what was in effect,
+        automatic is what the recorder just wrote to the thresholds file.
+        """
+        lane = self.editor.lane
+        if lane is None or not self._take_wav:
+            return
+        lane.set_editable(False)
+        if self.thr_mode.currentData() == "manual":
+            lane.set_mode("manual")
+            lane.set_threshold(self._manual_dbfs)
+            lane.set_line_visible(True)
+            return
+        lane.set_mode("auto")
+        settled = read_min_dbfs(self._take_wav)
+        if settled is not None and settled < 0:
+            lane.set_threshold(settled)
+        lane.set_line_visible(settled is not None and settled < 0)
+
+    def _push_threshold(self):
+        """Every live mic. The extras write their own srt for the same take."""
+        value = self._threshold_override()
+        for worker in ([self.worker] if self.worker else []) + self._extra_workers:
+            worker.set_threshold(value)
 
     def refresh_mic_label(self):
         """Once a take exists the session's mics are locked so every segment
@@ -295,15 +444,21 @@ class RecordingView(QWidget):
             self.history.clear()
         self.name_input.setEnabled(take is None and self._new_mode)
         for w in (self.v_time, self.v_quality, self.v_dbfs, self.v_noise,
-                  self.v_snr, self.v_detected, self.v_quantity, self.v_type):
+                  self.v_snr, self.v_detected, self.v_sounds, self.v_quantity,
+                  self.v_type):
             w.setText("-")
+        self._live_sounds = 0
+        self._was_detected = False
         if take:
             self.editor.open(take, self._take_srt, self._label)
+            self._sync_review_lane()
+            self._show_take_summary()
             self._set_state("review")
             self.hint.setText(self._review_hint("Resume to add more."))
         else:
             self.editor.clear()
             self.waveform.clear_display()
+            self.level_lane.clear()
             self._set_state("idle")
             self.hint.setText("")
 
@@ -350,16 +505,12 @@ class RecordingView(QWidget):
         recording = state == "recording"
         reviewing = state == "review"
         self.waveform.setVisible(not reviewing)
+        self.level_lane.setVisible(not reviewing)
+        self._threshold_row.setVisible(not reviewing)
         self.editor.setVisible(reviewing)
         # Start over only makes sense once a take exists; you can finish anytime.
         self.start_over_btn.setVisible(self._take_wav is not None)
         self.start_over_btn.setEnabled(reviewing)
-        # Selection editing only touches the primary take; with extra mics that
-        # would desync the per-mic files, so it's off for multi-mic sessions.
-        self.editor.set_editing_enabled(
-            not self._multi_mic(),
-            "Off for a multi-mic take: cutting the primary would desync the "
-            "other mics' files.")
         if reviewing:
             self.editor.refresh_history_buttons()
         # Lock strategy/name once a take exists.
@@ -379,12 +530,10 @@ class RecordingView(QWidget):
             self._session_mics is not None and bool(self._session_mics[1]))
 
     def _review_hint(self, tail):
-        """One place, because every caller used to overwrite the multi-mic line
-        with an instruction to drag-select and delete - which is exactly what a
-        multi-mic take cannot do."""
+        """One place, because every caller used to write its own version."""
         if self._multi_mic():
-            return ("Multi-mic take: cutting is off so the mic files stay in "
-                    "sync. Play to review, " + tail)
+            return ("Play to review, drag-select to delete from every mic "
+                    "file, " + tail)
         return "Play to review, drag-select to delete, " + tail
 
     def _on_editor_edited(self):
@@ -462,18 +611,26 @@ class RecordingView(QWidget):
 
         self.stop_playback()
         self._seed_or_clear_live()
+        # Continue the take's time axis, so a resumed segment's levels line up
+        # with the trace seeded above them instead of restarting at zero.
+        self.level_lane.begin_live(self.waveform.total_seconds())
 
         # one timestamp for all mics: their files read as one take
         time_string = str(int(time.time()))
-        self.worker = AudioWorker(label, mic, strategy, time_string)
+        threshold = self._threshold_override()
+        self.worker = AudioWorker(label, mic, strategy, time_string, threshold)
+        self._was_detected = False
+        self._peak_dbfs = None
         self.worker.frame_recorded.connect(self.waveform.append_live_data)
+        self.worker.frame_recorded.connect(self._count_sound)
+        self.worker.frame_level.connect(self._on_frame_level)
         self.worker.status_updated.connect(self._on_status)
         self.worker.recording_finished.connect(self._on_segment_finished)
         self.worker.start()
 
         # extra mics record headless; the primary drives the live view
         for extra in extras:
-            w = AudioWorker(label, extra, strategy, time_string)
+            w = AudioWorker(label, extra, strategy, time_string, threshold)
             w.recording_finished.connect(
                 lambda wav, srt, m=extra, wk=w:
                     self._on_extra_segment_finished(m, wk, wav, srt))
@@ -636,6 +793,8 @@ class RecordingView(QWidget):
             return
         self._take_srt = self._srt_for(self._take_wav) or self._take_srt
         self.editor.open(self._take_wav, self._take_srt, self._label)
+        self._sync_review_lane()
+        self._show_take_summary()
         self._set_state("review")
         self.hint.setText(self._review_hint("Resume to add more, Done to finish."))
 
@@ -658,14 +817,30 @@ class RecordingView(QWidget):
             return
         self._last_status_draw = now
 
+        # Automatic has nothing to show until calibration engages, and 0 is
+        # how it says "not yet".
+        if self.thr_mode.currentData() != "manual":
+            settled = state.upper_bound_dBFS_threshold or 0
+            if settled < 0:
+                self.level_lane.set_threshold(settled)
+                self.level_lane.set_line_visible(True)
+                self.thr_note.setText(f"detection settled on {round(settled)} dBFS")
+            else:
+                self.level_lane.set_line_visible(False)
+                self.thr_note.setText("detection is still calibrating")
+
         self.v_time.setText(ms_to_srt_timestring(state.ms_recorded, False))
         quality, color = _quality_from_snr(state.expected_snr, state.ms_recorded)
         self.v_quality.setText(quality)
         self.v_quality.setStyleSheet(f"color: {color}; font-weight: bold;")
-        if state.latest_dBFS <= -100:
+        # Loudest since the last draw, not whichever frame this tick landed on.
+        peak, self._peak_dbfs = self._peak_dbfs, None
+        if peak is None:
+            pass
+        elif peak <= -100:
             self.v_dbfs.setText("weak / muted?")
         else:
-            self.v_dbfs.setText(f"{round(state.latest_dBFS)}")
+            self.v_dbfs.setText(f"{round(peak)}")
         self.v_noise.setText(f"{round(state.expected_noise_floor)}")
         self.v_snr.setText(f"{round(state.expected_snr)}")
 

@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 
+from config.config import RATE
+
 
 class WaveformWidget(QWidget):
     MAX_DISPLAY_POINTS = 100000   # for a one-shot loaded file
@@ -26,14 +28,23 @@ class WaveformWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         layout.addWidget(self.plot_widget)
 
-        # Live detection (the "blue overlay"): full-height shaded bands where the
-        # recorder flagged the frame as sound, drawn with a recycled pool of
-        # LinearRegionItems (same as the static waveforms). Preliminary - the
-        # final regions are computed after Save.
+        # Live detection (the "blue overlay"): full-height bands where the
+        # recorder flagged the frame as sound, from a recycled pool of
+        # LinearRegionItems.
+        #
+        # Provisional twice over, which the caption says and the styling does
+        # not: never revised once drawn, and Pause re-judges the whole take from
+        # 0:00 anyway. Hatching them was tried and read as broken.
         self._det_brush = QColor(90, 175, 245); self._det_brush.setAlpha(55)
         self._det_pen = pg.mkPen(QColor(90, 175, 245, 90))
         self._det_regions = []
-        self.MAX_DET_REGIONS = 80
+        self.MAX_DET_REGIONS = 160
+
+        self.provisional = pg.TextItem(color=QColor(90, 175, 245, 210), anchor=(0, 0))
+        self.provisional.setText("provisional, re-detected when you pause")
+        self.provisional.setZValue(25)
+        self.provisional.setVisible(False)
+        self.plot_widget.addItem(self.provisional)
 
         # Cut mark: click the waveform to mark where to cut back to; everything
         # from there to the record head shades red and Backspace/Delete removes
@@ -50,7 +61,7 @@ class WaveformWidget(QWidget):
         self.plot_widget.addItem(self.cut_region)
 
         self.plot_item = self.plot_widget.plot(pen=pg.mkPen(color='c', width=1))
-        self._sample_rate = 48000
+        self._sample_rate = RATE
 
         # Live view behaves like a DAW recorder: fixed vertical scale, fixed-
         # width time window scrolling to keep the record head at the right
@@ -65,6 +76,9 @@ class WaveformWidget(QWidget):
         self._reset_live()
 
     def _reset_live(self):
+        # Live audio always arrives at RATE. Without this a fresh take kept the
+        # constructor's 48000: the axis ran 3x fast, ten seconds held thirty.
+        self._sample_rate = RATE
         # Growable int16 buffer (amortized doubling) so appending a frame is O(1)
         # and we never rebuild an array from a growing Python list per frame.
         # A parallel uint8 buffer tracks detection (1 = sound) per sample.
@@ -184,6 +198,19 @@ class WaveformWidget(QWidget):
                 ts, te = time_axis[s], time_axis[min(e, n - 1)]
                 if te > ts:
                     runs.append((ts, te))
+        # Merge runs under a pixel apart. An item each pushed dense takes past
+        # the cap, which drops the tail silently: 80 bands painted 23% of a
+        # window that was 43% detected.
+        if runs:
+            span = time_axis[-1] - time_axis[0] if len(time_axis) > 1 else 0.0
+            min_gap = span / max(1, self.plot_widget.width())
+            merged = [list(runs[0])]
+            for ts, te in runs[1:]:
+                if ts - merged[-1][1] <= min_gap:
+                    merged[-1][1] = te
+                else:
+                    merged.append([ts, te])
+            runs = merged
         runs = runs[:self.MAX_DET_REGIONS]
         for i, (ts, te) in enumerate(runs):
             if i >= len(self._det_regions):
@@ -199,6 +226,11 @@ class WaveformWidget(QWidget):
             self._det_regions[i].setVisible(True)
         for j in range(len(runs), len(self._det_regions)):
             self._det_regions[j].setVisible(False)
+        # Only once there is something to caption.
+        self.provisional.setVisible(bool(runs))
+        if runs:
+            x0 = self._vb.viewRange()[0][0]
+            self.provisional.setPos(x0, self.LIVE_Y_RANGE)
 
     def drop_last_seconds(self, seconds):
         """Remove the most recent N seconds from the live view (mirrors the
@@ -238,6 +270,7 @@ class WaveformWidget(QWidget):
         self.plot_item.setData([], [])
         for reg in self._det_regions:
             reg.setVisible(False)
+        self.provisional.setVisible(False)
         self.cut_region.setVisible(False)
         self.plot_widget.setYRange(-self.LIVE_Y_RANGE, self.LIVE_Y_RANGE, padding=0)
         self.plot_widget.setXRange(0, self.LIVE_WINDOW_SECONDS, padding=0)
