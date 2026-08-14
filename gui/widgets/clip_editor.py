@@ -424,7 +424,12 @@ class ClipEditorWidget(QWidget):
             self._play_from = max(0.0, min(self._play_from, self._duration))
         start = int(self._play_from * self._sr)
         end = int(self._stop_at * self._sr) if self._stop_at else len(self._audio)
-        self._latency = playback.play(self._audio[start:end], self._sr)
+        try:
+            self._latency = playback.play(self._audio[start:end], self._sr)
+        except playback.PlaybackError:
+            self.status.emit("That playback device would not open. "
+                             "Pick another one above.")
+            return
         self._playing = True
         self.play_btn.setText(self._play_labels[1])
         self.play_btn.setIcon(icons.stop())

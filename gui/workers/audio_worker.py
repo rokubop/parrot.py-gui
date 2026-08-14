@@ -13,6 +13,7 @@ from config.config import (
 from lib.stream_processing import CURRENT_VERSION, CURRENT_DETECTION_STRATEGY
 from lib.typing import DetectionLabel, DetectionState
 from lib.stream_recorder import StreamRecorder
+from lib.stream_warmup import StreamWarmup
 
 
 class AudioWorker(QThread):
@@ -20,6 +21,9 @@ class AudioWorker(QThread):
     frame_level = pyqtSignal(float, float)    # seconds recorded, this frame's dBFS
     status_updated = pyqtSignal(object)  # DetectionState
     recording_finished = pyqtSignal(str, str)  # wav_path, srt_path
+    # The mic is delivering and the take has begun. Seconds late on a
+    # Bluetooth headset (lib/stream_warmup.py).
+    stream_ready = pyqtSignal()
 
     # Automatic = the override not naming our label. Not its value: a matching
     # entry marks the label overridden even at -96, and an overridden label only
@@ -45,6 +49,7 @@ class AudioWorker(QThread):
         self._stop_requested = False
         self._pause_requested = False
         self._clear_requested = False
+        self._announced_ready = False
         self._clear_seconds = 3.0
         self.recorder = None
         self.wav_path = ""
@@ -90,12 +95,20 @@ class AudioWorker(QThread):
         )
 
         self.recorder = StreamRecorder(stream, self.wav_path, self.srt_path, detection_state)
+        warmup = StreamWarmup()
         stream.start()
 
         try:
             while not self._stop_requested:
                 while not audio_queue.empty() and not self._stop_requested:
                     frame = audio_queue.get()
+                    # The take starts at the first frame the mic can be
+                    # believed on.
+                    if warmup.hold():
+                        continue
+                    if not self._announced_ready:
+                        self._announced_ready = True
+                        self.stream_ready.emit()
                     self.recorder.add_audio_frame(frame)
                     frames = self.recorder.detection_frames
                     detected = bool(frames[-1].positive) if frames else False
@@ -109,10 +122,13 @@ class AudioWorker(QThread):
                             float(frames[-1].dBFS))
                     self.status_updated.emit(self.recorder.get_detection_state())
 
+                # Both paths restart the stream, which renegotiates a
+                # Bluetooth link, so the gate goes back up.
                 if self._clear_requested:
                     self._clear_requested = False
                     self.recorder.clear(self._clear_seconds)
                     self.recorder.resume()
+                    warmup.restart()
 
                 if self._pause_requested:
                     self.recorder.pause()
@@ -122,6 +138,7 @@ class AudioWorker(QThread):
                         time.sleep(0.05)
                     if not self._stop_requested:
                         self.recorder.resume()
+                        warmup.restart()
 
                 time.sleep(0.001)
         except Exception as e:

@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, _wav_duration
+from gui.widgets.output_picker import OutputPicker
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
 from gui.widgets import help_dialog
@@ -200,6 +201,10 @@ class SoundLibraryPage(QWidget):
         actions.addWidget(self.add_recording_btn)
         actions.addStretch()
 
+        self.output_picker = OutputPicker()
+        actions.addWidget(self.output_picker)
+        actions.addSpacing(12)
+
         self.view_label = QLabel("View:")
         actions.addWidget(self.view_label)
         self._mode_group = QButtonGroup(self)
@@ -362,6 +367,7 @@ class SoundLibraryPage(QWidget):
                     card.set_mode(self._mode)
                     card.set_normalized(self._normalized)
                     card.started.connect(self._on_card_started)
+                    card.failed.connect(self._on_card_failed)
                     card.selected.connect(self._select_card)
                     card.action.connect(self._on_card_action)
                     self._cards.append(card)
@@ -498,6 +504,9 @@ class SoundLibraryPage(QWidget):
         if self._active_card is not None and self._active_card is not card:
             self._active_card.stop()
         self._active_card = card
+
+    def _on_card_failed(self, message):
+        QMessageBox.warning(self, "Playback", message)
 
     def _mark_selected(self, card):
         """Set the selection highlight only (no preview build) - used during a

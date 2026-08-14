@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 from gui import components, theme
 from gui.widgets.clip_editor import ClipEditorWidget
 from gui.widgets.detection_panel import DetectionPanel
+from gui.widgets.output_picker import OutputPicker
 from gui.services import library_ops
 from gui.services.undo import UndoHistory
 
@@ -83,6 +84,14 @@ class EditRecordingView(QWidget):
         self.save_btn.clicked.connect(self._on_save)
         top.addWidget(self.save_btn)
         root.addLayout(top)
+
+        # Where the recording view puts its devices. Nothing records here, so
+        # playback is the only one of the pair.
+        devices = QHBoxLayout()
+        self.output_picker = OutputPicker()
+        devices.addWidget(self.output_picker)
+        devices.addStretch()
+        root.addLayout(devices)
 
         self.editor = ClipEditorWidget(self.history, noun="clip", show_levels=True)
         self.editor.srt_provider = self._current_srt

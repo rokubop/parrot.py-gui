@@ -18,6 +18,7 @@ import threading
 import traceback
 import sys
 import lib.ipc_manager as ipc_manager
+from lib.stream_warmup import StreamWarmup
 import joblib
 from lib.audio_model import AudioModel
 from lib.stream_controls import manage_loop_state
@@ -170,6 +171,11 @@ def classification_consumer( stream, classifier, persist_files, high_speed ):
     
 def nonblocking_record( indata, frames, time_info, status ):
     global listening_state
+    # A mic's first frames can be full-scale garbage. Dropped here so neither
+    # consumer sees them.
+    warmup = listening_state.get('warmup')
+    if warmup is not None and warmup.hold():
+        return
     listening_state['audioQueue'].put( indata.tobytes() )
     
 def start_nonblocking_listen_loop( classifier, mode_switcher = False, persist_replay = False, persist_files = False, amount_of_seconds=-1, high_speed=False ):
@@ -181,7 +187,8 @@ def start_nonblocking_listen_loop( classifier, mode_switcher = False, persist_re
         'classifierQueue': Queue(maxsize=0),
         'classifier_name': ipc_manager.getClassifier(),
         'restart_listen_loop': False,
-        'last_audio_update': time.time()
+        'last_audio_update': time.time(),
+        'warmup': StreamWarmup()
     }
     
     # Get a minimum of these elements of data dictionaries

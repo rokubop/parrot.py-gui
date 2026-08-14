@@ -22,6 +22,15 @@ import sounddevice as sd
 _CHUNK = 256   # frames per write - small enough that stop() responds promptly
 
 
+class PlaybackError(Exception):
+    """The output device could not be opened.
+
+    Raised, not swallowed: a caller with no stream still starts a playhead, so
+    a device that has gone away looked exactly like a successful play. A merely
+    inaudible device raises nothing, which is why the picker is visible.
+    """
+
+
 class _Player:
     def __init__(self):
         self._lock = threading.Lock()
@@ -45,8 +54,8 @@ class _Player:
                                      dtype="float32", blocksize=0,
                                      latency="low")
             stream.start()
-        except Exception:
-            return 0.0
+        except Exception as exc:
+            raise PlaybackError(str(exc)) from exc
         token = object()
         worker = threading.Thread(target=self._run, args=(samples, stream, token),
                                   daemon=True)

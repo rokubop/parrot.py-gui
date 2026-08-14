@@ -16,7 +16,7 @@ import math
 import os
 import time
 import numpy as np
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QComboBox,
@@ -32,6 +32,7 @@ from gui.widgets.detection_panel import DetectionPanel
 from gui.widgets.level_lane import LaneSplitter, LevelLane
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets.mic_picker import MicPicker
+from gui.widgets.output_picker import OutputPicker
 from gui.workers.audio_worker import AudioWorker
 from gui.workers.segment_worker import AppendWorker
 from gui.services import library_ops, strategies
@@ -77,6 +78,17 @@ class RecordingView(QWidget):
         self._pending_action = None     # 'pause' | 'done' while a segment stops
         self._exit_after_apply = False  # leaving, once the re-detect we asked for lands
         self._state = "idle"
+        # Whether the mic behind the current "recording" state has delivered,
+        # how loudly the view is saying it has not, and what it says.
+        self._stream_live = False
+        self._wait_tier = 0          # 0 none, 1 veil, 2 words, 3 warning
+        self._waiting = self._WAITING
+        self._mic_words_timer = QTimer(self)
+        self._mic_words_timer.setSingleShot(True)
+        self._mic_words_timer.timeout.connect(self._on_mic_words)
+        self._mic_slow_timer = QTimer(self)
+        self._mic_slow_timer.setSingleShot(True)
+        self._mic_slow_timer.timeout.connect(self._on_mic_slow)
         self._last_status_draw = 0.0
         # Counted live off the detection flag, replaced at Pause by the
         # re-judge of the whole take.
@@ -148,6 +160,10 @@ class RecordingView(QWidget):
         self.mic_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
         opts.addWidget(self.mic_note, 2)
         opts.addSpacing(12)
+        # Both device pickers in one row: the two ends of the same question.
+        self.output_picker = OutputPicker()
+        opts.addWidget(self.output_picker)
+        opts.addSpacing(12)
         opts.addWidget(QLabel("Strategy:"))
         self.strategy_combo = QComboBox()
         for lbl in strategies.labels():
@@ -214,7 +230,7 @@ class RecordingView(QWidget):
         self.record_btn = QPushButton("Record")
         # Pinned across all three labels, or Pause shoves Start over along.
         components.lock_width(self.record_btn, "Record", "Pause", "Resume",
-                              floor=150)
+                              "Starting…", floor=150)
         self.record_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.record_btn.clicked.connect(self._on_primary)
         controls.addWidget(self.record_btn)
@@ -359,6 +375,48 @@ class RecordingView(QWidget):
         self._manual_dbfs = float(value)
         self.thr_note.setText(f"{round(value)} dBFS - drag the line to move it")
         self._push_threshold()
+
+    @property
+    def _waiting_message(self):
+        text, colour = self._waiting
+        return text, theme.colors()[colour]
+
+    def _on_stream_ready(self):
+        """The primary mic is delivering. Only now is anything being kept."""
+        self._stop_wait_timers()
+        if self._state != "recording":
+            return
+        self._stream_live = True
+        self._wait_tier = 0
+        self._set_state("recording")
+        extras = len(self._extra_workers)
+        self.hint.setText(
+            (f"Recording with {1 + extras} mics… " if extras else "Recording… ")
+            + "Space (or Pause) to stop and review.")
+
+    def _stop_wait_timers(self):
+        self._mic_words_timer.stop()
+        self._mic_slow_timer.stop()
+
+    def _on_mic_words(self):
+        """Long enough to be worth explaining, so the veil gets its words."""
+        if self._state != "recording" or self._stream_live:
+            return
+        self._wait_tier = 2
+        self._waiting = self._WAITING
+        self._set_state("recording")
+        self.hint.setText("Waiting for mic…")
+
+    def _on_mic_slow(self):
+        """Past MIC_SLOW_MS with nothing. Say so, but keep waiting: a link that
+        arrives at eight seconds still records fine, and tearing the take down
+        would throw away a mic that was merely slow."""
+        if self._state != "recording" or self._stream_live:
+            return
+        self._wait_tier = 3
+        self._waiting = self._WAITING_SLOW
+        self._set_state("recording")
+        self.hint.setText("Waiting for mic…")
 
     def _on_frame_level(self, seconds, dbfs):
         """Every frame, from the frame the detector judged."""
@@ -527,13 +585,43 @@ class RecordingView(QWidget):
     _STATE_ICONS = {"idle": icons.record, "recording": icons.pause,
                     "review": icons.record}
 
+    # Three tiers, because most waits are too short to read. A wired mic
+    # clears the first in ~300 ms; Bluetooth takes 1.4-3 s and gets the words.
+    #
+    #   at once    grey veil, no words. Text that flashes past unread is
+    #              worse than none.
+    #   MIC_WORDS  the veil gets words, button and indicator follow.
+    #   MIC_SLOW   not a slow mic, an absent one. Says so, keeps waiting.
+    #
+    # Grey until the last tier: a Bluetooth mic taking two seconds is how that
+    # hardware works, not a fault.
+    MIC_WORDS_MS = 700
+    MIC_SLOW_MS = 5000
+    _WAITING = ("Waiting for mic…", "text_dim")
+    _WAITING_SLOW = ("Still waiting for the mic\n"
+                     "check it is switched on and connected", "bad")
+
     def _set_state(self, state):
         self._state = state
         text, color, ind_text, ind_color, trace = self._STATES[state]
+        icon = self._STATE_ICONS[state]
+        # Recording is asked for on click and granted whenever the mic gets
+        # round to it. Until then the graph is veiled; only once the wait is
+        # worth reading about do the button and the indicator say so too.
+        if state == "recording" and not self._stream_live:
+            if self._wait_tier >= 2:
+                # No fill: an unfilled button among two filled ones already
+                # reads as "not the live one", without claiming a fault.
+                text, color, icon = "Starting…", None, icons.record
+                ind_text, ind_color = "● Waiting for mic", None
+                self.waveform.show_message(*self._waiting_message)
+            else:
+                self.waveform.show_veil()
+        else:
+            self.waveform.clear_message()
         ind_color = ind_color or theme.colors()["text_dim"]
         self.record_btn.setText(text)
-        self.record_btn.setIcon(
-            self._STATE_ICONS[state](colour="#ffffff" if color else None))
+        self.record_btn.setIcon(icon(colour="#ffffff" if color else None))
         self.record_btn.setStyleSheet(
             (f"QPushButton {{ background-color: {color}; color: #ffffff; "
              f"font-weight: bold; border: none; }}"
@@ -688,6 +776,7 @@ class RecordingView(QWidget):
         self.worker.frame_recorded.connect(self._count_sound)
         self.worker.frame_level.connect(self._on_frame_level)
         self.worker.status_updated.connect(self._on_status)
+        self.worker.stream_ready.connect(self._on_stream_ready)
         self.worker.recording_finished.connect(self._on_segment_finished)
         self.worker.start()
 
@@ -700,12 +789,17 @@ class RecordingView(QWidget):
             self._extra_workers.append(w)
             w.start()
 
+        # "recording" is the right state - Pause has to work through the wait -
+        # but the take has not started until the mic delivers, so the graph is
+        # veiled until it does. Wordless, and so is the hint: on a wired mic
+        # this whole tier is over in 300 ms.
+        self._stream_live = False
+        self._wait_tier = 1
+        self._waiting = self._WAITING
         self._set_state("recording")
-        if extras:
-            self.hint.setText(f"Recording with {1 + len(extras)} mics… "
-                              "Space (or Pause) to stop and review.")
-        else:
-            self.hint.setText("Recording… Space (or Pause) to stop and review.")
+        self.hint.setText("")
+        self._mic_words_timer.start(self.MIC_WORDS_MS)
+        self._mic_slow_timer.start(self.MIC_SLOW_MS)
 
     def _pause(self):
         self._stop_segment("pause")
@@ -749,6 +843,11 @@ class RecordingView(QWidget):
     def _stop_segment(self, action):
         if not self.worker:
             return
+        # Stopping mid-wait is a cancel: no frame ever arrived, so the worker
+        # deletes its own empty wav and there is nothing left to say.
+        self._stop_wait_timers()
+        self._wait_tier = 0
+        self.waveform.clear_message()
         self._pending_action = action
         self.record_btn.setEnabled(False)
         self.finish_btn.setEnabled(False)
@@ -759,6 +858,12 @@ class RecordingView(QWidget):
 
     def _on_segment_finished(self, seg_wav, seg_srt):
         self.worker = None
+        # Stopped before the mic delivered: the worker deleted its own empty
+        # wav. Binding the take to a path that is not there takes the editor
+        # down with it. Reachable now that a take waits for the mic.
+        if not os.path.isfile(seg_wav):
+            self._on_empty_segment()
+            return
         if self._take_wav is None:
             # First segment becomes the take.
             self._take_wav = seg_wav
@@ -778,6 +883,24 @@ class RecordingView(QWidget):
                 lambda msg, src=seg_wav, srt=seg_srt: self._on_append_failed(msg, src, srt))
             self._seg_worker.start()
 
+    def _on_empty_segment(self):
+        """The segment captured nothing. Any existing take is untouched, so
+        this is only ever a return to where we already were."""
+        if self._take_wav is not None:
+            self._after_segment()
+            return
+        action, self._pending_action = self._pending_action, None
+        self.record_btn.setEnabled(True)
+        self.finish_btn.setEnabled(True)
+        if action == "done":
+            self._leave()
+            return
+        # Back to idle with no take, so the name is editable again. Starting a
+        # segment locks it, and only _reset ever unlocked it.
+        self.name_input.setEnabled(self._new_mode)
+        self._set_state("idle")
+        self.hint.setText("Nothing recorded, the mic had not started yet.")
+
     # ---- extra-mic takes (headless mirrors of the primary flow) ---------
 
     def _on_extra_segment_finished(self, mic, worker, seg_wav, seg_srt):
@@ -785,6 +908,8 @@ class RecordingView(QWidget):
             self._extra_workers.remove(worker)
         worker.wait()
         worker.deleteLater()
+        if not os.path.isfile(seg_wav):
+            return
         take = self._extra_takes.get(mic)
         if take is None:
             self._extra_takes[mic] = {"wav": seg_wav, "srt": seg_srt}

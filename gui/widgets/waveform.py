@@ -1,7 +1,7 @@
 import numpy as np
 import wave
 import pyqtgraph as pg
-from PyQt6.QtWidgets import QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QGridLayout, QLabel, QWidget
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 
@@ -20,7 +20,9 @@ class WaveformWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
+        # A grid, not a box, so the message below can share the plot's cell and
+        # centre itself on the plot however the splitter resizes it.
+        layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Same ground as every other plot. It used to take pyqtgraph's default
@@ -29,7 +31,26 @@ class WaveformWidget(QWidget):
         self.plot_widget.setLabel('left', 'Amplitude')
         self.plot_widget.setLabel('bottom', 'Time', units='s')
         self.plot_widget.showGrid(x=True, y=True, alpha=theme.colors()["grid_alpha"])
-        layout.addWidget(self.plot_widget)
+        layout.addWidget(self.plot_widget, 0, 0)
+
+        # What an empty plot is waiting for. A QLabel rather than a TextItem:
+        # it centres on the widget without knowing the view range, which is in
+        # samples and meaningless before a single one has arrived. Transparent
+        # to the mouse, or it would eat the clicks that set the cut mark.
+        # Parented by the layout, not by the plot: a sibling in the same cell,
+        # created after it and raised, so it draws over the plot.
+        self.message = QLabel("")
+        self.message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.message.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.message.setVisible(False)
+        # Fills the cell rather than hugging its text: the widget *is* the
+        # veil, and AlignCenter centres the words inside it.
+        layout.addWidget(self.message, 0, 0)
+        # The border is always 2px and usually the plot's own background, so
+        # colouring it cannot shift the plot by two pixels and make it jump.
+        self._frame_colour = None
+        self._apply_frame()
 
         # Live detection (the "blue overlay"): full-height bands where the
         # recorder flagged the frame as sound, from a recycled pool of
@@ -251,6 +272,46 @@ class WaveformWidget(QWidget):
         only the ground under it moves with the theme."""
         self.plot_widget.setBackground(theme.colors()["plot_bg"])
         self.plot_widget.showGrid(x=True, y=True, alpha=theme.colors()["grid_alpha"])
+        self._apply_frame()
+
+    # ---- "nothing here yet, and here is why" ---------------------------
+    #
+    # Veil first, words later. A veil says "not live" without asking to be
+    # read, so a 300 ms one costs nothing; words wait until they will still
+    # be on screen when the eye reaches them.
+
+    def show_veil(self, colour=None):
+        """Mute the plot: it is not live, and there is nothing to say yet."""
+        self._veil(colour or theme.colors()["text_dim"], "")
+
+    def show_message(self, text, colour=None):
+        """The veil, now with `text` centred on it. Call once the wait is long
+        enough to read - `show_veil` is what goes up at once."""
+        self._veil(colour or theme.colors()["text_dim"], text)
+
+    def clear_message(self):
+        self.message.setVisible(False)
+        self._frame_colour = None
+        self._apply_frame()
+
+    def _veil(self, colour, text):
+        self.message.setText(text)
+        # A neutral scrim rather than a tint of `colour`: it has to read on a
+        # dark plot and a light one, where opposite directions are "muted".
+        self.message.setStyleSheet(
+            f"color: {colour}; font-weight: bold;"
+            " background: rgba(128, 128, 128, 0.14);")
+        self.message.setVisible(True)
+        self.message.raise_()
+        self._frame_colour = colour
+        self._apply_frame()
+
+    def _apply_frame(self):
+        # Scoped to PlotWidget: unscoped, the rule reaches every child widget
+        # the plot owns.
+        colour = self._frame_colour or theme.colors()["plot_bg"]
+        self.plot_widget.setStyleSheet(
+            f"PlotWidget {{ border: 2px solid {colour}; }}")
 
     def seed_live(self, samples, sample_rate):
         """Pre-fill the live buffer with already-recorded audio so a *resumed*

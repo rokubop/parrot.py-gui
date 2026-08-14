@@ -118,6 +118,10 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
             if (listening_state['stream']):
                 try:
                     listening_state['stream'].start()
+                    # Restarting renegotiates a Bluetooth link, so the first
+                    # frames are suspect again
+                    if listening_state.get('warmup') is not None:
+                        listening_state['warmup'].restart()
                     set_loop_state(requested_state)                    
                     return LOOP_STATE_CONTINUE                    
                 except Exception as e:

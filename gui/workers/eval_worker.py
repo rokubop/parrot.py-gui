@@ -10,6 +10,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from config.config import RATE, CHANNELS, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from lib.signal_processing import determine_dBFS
+from lib.stream_warmup import StreamWarmup
 from gui.services import model_eval
 
 import numpy as np
@@ -77,11 +78,17 @@ class LiveTestWorker(QThread):
             self.failed.emit(f"Couldn't open the microphone: {exc}")
             return
 
+        # A mic's first frames can be full-scale garbage, which the model
+        # would dutifully classify as something.
+        warmup = StreamWarmup()
+
         try:
             while not self._stop:
                 try:
                     chunk = queue.get(timeout=0.2)
                 except Empty:
+                    continue
+                if warmup.hold():
                     continue
                 probabilities = classifier.add_chunk(chunk)
                 if probabilities is None:

@@ -118,6 +118,7 @@ class SessionCard(QFrame):
     started = pyqtSignal(object)   # emits self when playback begins
     selected = pyqtSignal(object)  # emits self when the card is interacted with
     action = pyqtSignal(object, str)  # (card, action_name) for menu actions
+    failed = pyqtSignal(str)       # playback could not start
 
     def __init__(self, session_name, wav_path, srt_path, thresholds_path, parent=None):
         super().__init__(parent)
@@ -430,7 +431,12 @@ class SessionCard(QFrame):
         else:
             clip = self._audio[start_sample:]
 
-        self._latency = playback.play(clip, self._sample_rate)
+        try:
+            self._latency = playback.play(clip, self._sample_rate)
+        except playback.PlaybackError:
+            self.failed.emit("That playback device would not open. "
+                             "Pick another above the cards.")
+            return
 
         self._playing = True
         self.play_btn.setIcon(self._pause_icon)
