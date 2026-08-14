@@ -76,6 +76,17 @@ def analyse(wav_path):
 
     quiet = 1e-5        # -100 dB, below the floor everything is clipped to
     to_db = lambda v: 20.0 * np.log10(np.maximum(v, quiet))
+
+    # A second, much finer peak series. The detection grid averages over 30 ms,
+    # and an average is the one thing that cannot show a transient. This is what
+    # the granular variants draw behind the trace the threshold actually cuts.
+    fine_hop = max(1, int(rate * 0.001))            # 1 ms
+    fine_win = max(fine_hop, int(rate * 0.004))     # 4 ms
+    f_starts = np.arange(0, len(data) - fine_win + 1, fine_hop)
+    strided = np.lib.stride_tricks.sliding_window_view(
+        np.abs(data.astype(np.int32)), fine_win)[::fine_hop]
+    fine = to_db(strided.max(axis=1) / 32768.0)
+
     return {
         "path": wav_path,
         "rate": rate,
@@ -84,10 +95,24 @@ def analyse(wav_path):
         "det": np.clip(det, FLOOR, 0.0),
         "rms": np.clip(to_db(rms), FLOOR, 0.0),
         "peak": np.clip(to_db(peak), FLOOR, 0.0),
+        "fine_times": (f_starts + fine_win // 2) / float(rate),
+        "fine": np.clip(fine, FLOOR, 0.0),
         # A frame holding a sample at full scale. RMS over 30 ms cannot show
         # this - it reads -12 dB while the samples are pinned.
         "clipped": peak >= (32767.0 / 32768.0),
     }
+
+
+def content_range(d, span_db):
+    """``(bottom, top)`` for a Pro-L2 style cropped scale, anchored to the take.
+
+    A limiter can anchor at 0 because everything it sees was gain-staged to
+    reach it. A microphone in a quiet room was not, so the same cropped window
+    has to find its own top.
+    """
+    top = float(np.percentile(d["peak"], 99.9)) + 3.0
+    top = min(0.0, np.ceil(top / 3.0) * 3.0)
+    return top - span_db, top
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +178,9 @@ class Variant(QWidget):
 
     def set_threshold(self, value):
         pass
+
+    def set_scale(self, span_db):
+        """Only the cropped variants have a scale to set."""
 
 
 class A_Baseline(Variant):
@@ -501,8 +529,138 @@ class J_Proposal(Variant):
         self.below.setRegion((-0.04, y))
 
 
+class K_Cropped(Variant):
+    title = "K - cropped scale"
+    note = ("Pro-L2's actual model: a fixed-width window (it offers 16, 32 and "
+            "48 dB, never 96) with linear dB inside it. A limiter anchors the "
+            "top at 0 because the material was gain-staged to reach it; a mic "
+            "was not, so this anchors to the take's own peak instead.")
+
+    def build(self):
+        d, t = self.d, self.t
+        self.plot = p = self.new_plot()
+        p.setLabel("left", "dBFS")
+        p.plot(d["times"], d["det"], pen=pg.mkPen(QColor(*t["wave"]), width=1),
+               fillLevel=FLOOR, brush=QColor(*t["wave_fill"]))
+        self.below = pg.LinearRegionItem(
+            values=[FLOOR, DEFAULT_THRESHOLD], orientation="horizontal",
+            movable=False, pen=pg.mkPen(None),
+            brush=QColor(*_rgba(t["plot_bg"], 150)))
+        self.below.setZValue(10)
+        p.addItem(self.below)
+        self.line = pg.InfiniteLine(pos=DEFAULT_THRESHOLD, angle=0,
+                                    pen=pg.mkPen(QColor(t["warn"]), width=2))
+        self.line.setZValue(20)
+        p.addItem(self.line)
+        self.set_scale(48)
+
+    def set_scale(self, span_db):
+        self._bottom, self._top = content_range(self.d, span_db)
+        step = 3 if span_db <= 16 else (6 if span_db <= 48 else 12)
+        ticks = np.arange(np.ceil(self._bottom / step) * step,
+                          self._top + step, step)
+        self.plot.getAxis("left").setTicks(
+            [[(float(v), str(int(v))) for v in ticks if v <= self._top]])
+        self._apply_range()
+
+    def _apply_range(self):
+        # The line is allowed anywhere, so the window follows it out rather
+        # than pinning it to the edge and lying about where it is.
+        bottom = min(self._bottom, self._value - 2) if hasattr(self, "_value") \
+            else self._bottom
+        self.plot.setYRange(bottom, self._top, padding=0)
+        self.below.setRegion((FLOOR, getattr(self, "_value", DEFAULT_THRESHOLD)))
+
+    def set_threshold(self, v):
+        self._value = v
+        self.line.setPos(v)
+        self._apply_range()
+
+
+class L_Granular(Variant):
+    title = "L - cropped + granular"
+    note = ("The same window, with a 1 ms peak envelope behind the 30 ms trace. "
+            "The line still cuts the average, because that is what detection "
+            "thresholds - but the detail behind it is no longer thrown away.")
+
+    def build(self):
+        d, t = self.d, self.t
+        self.plot = p = self.new_plot()
+        p.setLabel("left", "dBFS")
+        fine = p.plot(d["fine_times"], d["fine"],
+                      pen=pg.mkPen(QColor(*_rgba(t["info"], 90)), width=1),
+                      fillLevel=FLOOR, brush=QColor(*_rgba(t["info"], 40)))
+        fine.setDownsampling(auto=True, method="peak")
+        fine.setClipToView(True)
+        p.plot(d["times"], d["det"], pen=pg.mkPen(QColor(*t["wave"]), width=1))
+        self.below = pg.LinearRegionItem(
+            values=[FLOOR, DEFAULT_THRESHOLD], orientation="horizontal",
+            movable=False, pen=pg.mkPen(None),
+            brush=QColor(*_rgba(t["plot_bg"], 150)))
+        self.below.setZValue(10)
+        p.addItem(self.below)
+        self.line = pg.InfiniteLine(pos=DEFAULT_THRESHOLD, angle=0,
+                                    pen=pg.mkPen(QColor(t["warn"]), width=2))
+        self.line.setZValue(20)
+        p.addItem(self.line)
+        self.set_scale(48)
+
+    set_scale = K_Cropped.set_scale
+    _apply_range = K_Cropped._apply_range
+    set_threshold = K_Cropped.set_threshold
+
+
+class M_Proposal2(Variant):
+    title = "M - proposal v2"
+    note = ("Cropped scale, 1 ms envelope behind the detector trace, clip ticks, "
+            "dead zone. No warp: once the window is cropped to the content, "
+            "there is nothing left for a warp to fix.")
+
+    def build(self):
+        d, t = self.d, self.t
+        self.plot = p = self.new_plot()
+        p.setLabel("left", "dBFS")
+        fine = p.plot(d["fine_times"], d["fine"],
+                      pen=pg.mkPen(QColor(*_rgba(t["info"], 80)), width=1),
+                      fillLevel=FLOOR, brush=QColor(*_rgba(t["info"], 34)))
+        fine.setDownsampling(auto=True, method="peak")
+        fine.setClipToView(True)
+        p.plot(d["times"], d["det"], pen=pg.mkPen(QColor(*t["wave"]), width=1),
+               fillLevel=FLOOR, brush=QColor(*t["wave_fill"]))
+        clips = d["times"][d["clipped"]]
+        if len(clips):
+            p.plot(clips, np.full(len(clips), -0.5), pen=None, symbol="t",
+                   symbolSize=7, symbolBrush=QColor("#e05a5a"),
+                   symbolPen=pg.mkPen(None))
+        self.below = pg.LinearRegionItem(
+            values=[FLOOR, DEFAULT_THRESHOLD], orientation="horizontal",
+            movable=False, pen=pg.mkPen(None),
+            brush=QColor(*_rgba(t["plot_bg"], 150)))
+        self.below.setZValue(10)
+        p.addItem(self.below)
+        self.line = pg.InfiniteLine(
+            pos=DEFAULT_THRESHOLD, angle=0,
+            pen=pg.mkPen(QColor(t["warn"]), width=2),
+            label="{value:0.0f} dBFS",
+            labelOpts={"position": 0.02, "color": t["warn"],
+                       "fill": QColor(t["plot_bg"])})
+        self.line.setZValue(20)
+        p.addItem(self.line)
+        self.set_scale(48)
+
+    set_scale = K_Cropped.set_scale
+    _apply_range = K_Cropped._apply_range
+
+    def set_threshold(self, v):
+        K_Cropped.set_threshold(self, v)
+        self.line.label.valueChanged()
+
+
 VARIANTS = [A_Baseline, B_Warped, C_PeakRms, D_CrestBand, E_Ballistics,
-            F_HeatStrip, G_Hanging, H_Histogram, I_DetectorVsTruth, J_Proposal]
+            F_HeatStrip, G_Hanging, H_Histogram, I_DetectorVsTruth, J_Proposal,
+            K_Cropped, L_Granular, M_Proposal2]
+
+SCALES = [16, 32, 48, 96]       # Pro-L2 offers the first three
 
 
 def _rgba(color, alpha):
@@ -538,6 +696,14 @@ class Lab(QMainWindow):
             self.picker.addItem(_pretty(path), path)
         self.picker.currentIndexChanged.connect(lambda _: self._show())
         top.addWidget(self.picker, 2)
+        top.addSpacing(16)
+        top.addWidget(QLabel("Scale"))
+        self.scale = QComboBox()
+        for span in SCALES:
+            self.scale.addItem(f"{span} dB", span)
+        self.scale.setCurrentIndex(SCALES.index(48))
+        self.scale.currentIndexChanged.connect(self._scale_changed)
+        top.addWidget(self.scale)
         top.addSpacing(16)
         top.addWidget(QLabel("Threshold"))
         self.slider = QSlider(Qt.Orientation.Horizontal)
@@ -587,9 +753,15 @@ class Lab(QMainWindow):
             self._current.deleteLater()
         cls = VARIANTS[row]
         self._current = cls(self._data())
+        self._current.set_scale(self.scale.currentData())
         self._current.set_threshold(float(self.slider.value()))
         self.note.setText(f"{cls.title} - {cls.note}")
         self.holder.addWidget(self._current)
+
+    def _scale_changed(self, _):
+        if self._current is not None:
+            self._current.set_scale(self.scale.currentData())
+            self._current.set_threshold(float(self.slider.value()))
 
     def _threshold_changed(self, value):
         self.slider_label.setText(f"{value} dBFS")
