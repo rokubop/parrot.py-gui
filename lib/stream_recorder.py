@@ -1,11 +1,11 @@
 from config.config import *
-import pyaudio
+import sounddevice as sd
 import struct
 import wave
 import math
 import numpy as np
 from lib.print_status import get_current_status
-from lib.stream_processing import process_audio_frame, post_processing
+from lib.stream_processing import process_audio_frame, post_processing, settle_detection_state, detect_wav_frames
 from lib.typing import DetectionState, DetectionFrame
 from typing import List
 import io
@@ -16,8 +16,7 @@ class StreamRecorder:
     thresholds_filename: str
     comparison_wav_filename: str
     
-    audio: pyaudio.PyAudio
-    stream: pyaudio.Stream
+    stream: sd.InputStream
     detection_state: DetectionState
     
     length_per_frame: int
@@ -28,13 +27,12 @@ class StreamRecorder:
     current_occurrence: List[DetectionFrame]
     false_occurrence: List[DetectionFrame]
     
-    def __init__(self, audio: pyaudio.PyAudio, stream: pyaudio.Stream, total_wav_filename: str, srt_filename: str, detection_state: DetectionState):
+    def __init__(self, stream: sd.InputStream, total_wav_filename: str, srt_filename: str, detection_state: DetectionState):
         self.total_wav_filename = total_wav_filename
         self.srt_filename = srt_filename
         self.comparison_wav_filename = srt_filename.replace(".v" + str(CURRENT_VERSION) + ".srt", "_comparison.wav")
         self.thresholds_filename = srt_filename.replace(".v" + str(CURRENT_VERSION) + ".srt", "_thresholds.txt")
         
-        self.audio = audio
         self.stream = stream
         self.detection_state = detection_state
         self.total_audio_frames = []
@@ -48,7 +46,7 @@ class StreamRecorder:
         # Write the source file first with the right settings to add the headers, and write the data later
         totalWaveFile = wave.open(self.total_wav_filename, 'wb')
         totalWaveFile.setnchannels(CHANNELS)
-        totalWaveFile.setsampwidth(audio.get_sample_size(FORMAT))
+        totalWaveFile.setsampwidth(SAMPLE_WIDTH)
         totalWaveFile.setframerate(RATE)
         totalWaveFile.close()
     
@@ -79,6 +77,7 @@ class StreamRecorder:
         # This is used to modify the wave file directly
         CHUNK_SIZE_OFFSET = 4
         DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
+        DATA_OFFSET = 44   # canonical PCM header; the payload starts here
         LITTLE_ENDIAN_INT = struct.Struct('<I')
     
         byteString = b''.join(self.total_audio_frames)
@@ -93,21 +92,25 @@ class StreamRecorder:
         # Thanks to hydrogen18.com for the explanation and code
         appendTotalFile = open(self.total_wav_filename, 'r+b')
         appendTotalFile.seek(0,2)
-        chunk_size = appendTotalFile.tell() - 8
+        file_size = appendTotalFile.tell()
+        chunk_size = file_size - 8
         appendTotalFile.seek(CHUNK_SIZE_OFFSET)
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(chunk_size))
         appendTotalFile.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-        sample_length = 2 * ( self.index * self.length_per_frame )
+        # Measured from the file. length_per_frame is already a byte count, so
+        # the old `2 * ( index * length_per_frame )` applied the 16-bit sample
+        # width twice and declared double the real length.
+        sample_length = file_size - DATA_OFFSET
         
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(sample_length))
         appendTotalFile.close()
 
     # Resume playing
     def resume(self):
-        self.stream.start_stream()
+        self.stream.start()
     
     def pause(self):
-        self.stream.stop_stream()
+        self.stream.stop()
         
         self.index -= len(self.total_audio_frames)
         if self.index != 0 and len(self.total_audio_frames) > 0:
@@ -141,7 +144,7 @@ class StreamRecorder:
         if clear_file:
             totalWaveFile = wave.open(self.total_wav_filename, 'wb')
             totalWaveFile.setnchannels(CHANNELS)
-            totalWaveFile.setsampwidth(self.audio.get_sample_size(FORMAT))
+            totalWaveFile.setsampwidth(SAMPLE_WIDTH)
             totalWaveFile.setframerate(RATE)
             totalWaveFile.close()
             
@@ -155,14 +158,16 @@ class StreamRecorder:
                 # Overwrite the total recording length
                 CHUNK_SIZE_OFFSET = 4
                 DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
+                DATA_OFFSET = 44   # canonical PCM header; the payload starts here
                 LITTLE_ENDIAN_INT = struct.Struct('<I')
 
                 f.seek(0,2)
-                chunk_size = f.tell() - 8
+                file_size = f.tell()
+                chunk_size = file_size - 8
                 f.seek(CHUNK_SIZE_OFFSET)
                 f.write(LITTLE_ENDIAN_INT.pack(chunk_size))
                 f.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-                sample_length = 2 * ( self.index * self.length_per_frame )
+                sample_length = file_size - DATA_OFFSET   # see persist_total_wav_file
                 f.write(LITTLE_ENDIAN_INT.pack(sample_length))        
         
         return should_resume
@@ -178,23 +183,37 @@ class StreamRecorder:
     def get_status(self, detection_states: List[DetectionState] = []) -> List[str]:
         return get_current_status(self.detection_state, detection_states)
     
+    # Second detection pass - settle the thresholds over the whole take and
+    # re-judge every frame. The wav on disk always matches the in-memory frames
+    # ( pause and clear truncate it too ), so the take can simply be re-read.
+    def rejudge_recording(self, callback = None):
+        if not TWO_PASS_DETECTION or self.index == 0 or len(self.detection_frames) == 0 \
+            or not os.path.exists(self.total_wav_filename):
+            return
+        settle_detection_state(self.detection_frames, self.detection_state)
+        self.detection_frames, _ = detect_wav_frames(self.total_wav_filename, self.detection_state, callback, 0, 0.75)
+
+        # Un-freeze so the online recalculation resumes if more audio is recorded after this
+        self.detection_state.frozen = False
+
     # Stop processing the streams and build the final files
     def stop(self, callback = None):
         self.pause()
         self.persist_total_wav_file()
         if self.index == 0:
             os.remove(self.total_wav_filename)        
+        self.rejudge_recording(callback)
 
         comparison_wav_file = wave.open(self.comparison_wav_filename, 'wb')
         comparison_wav_file.setnchannels(CHANNELS)
-        comparison_wav_file.setsampwidth(self.audio.get_sample_size(FORMAT))
+        comparison_wav_file.setsampwidth(SAMPLE_WIDTH)
         comparison_wav_file.setframerate(RATE)
         post_processing(self.detection_frames, self.detection_state, self.srt_filename, self.thresholds_filename, callback, comparison_wav_file)
         self.stream.close()
-        self.audio.terminate()
         self.detection_frames = []
 
     # Do all post processing related tasks that cannot be done during runtime
     def post_processing(self, callback = None, comparison_wav_file: wave.Wave_write = None):
         self.persist_total_wav_file()
+        self.rejudge_recording(callback)
         post_processing(self.detection_frames, self.detection_state, self.srt_filename, self.thresholds_filename, callback, comparison_wav_file)

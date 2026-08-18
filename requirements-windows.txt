@@ -1,4 +1,7 @@
-pyaudio
+sounddevice
+# audioop left the stdlib in 3.13 and lib/ imports it directly. It arrives
+# transitively via librosa today, which is not something to rely on.
+audioop-lts; python_version >= "3.13"
 numpy
 pandas
 numba
@@ -10,5 +13,7 @@ pydirectinput
 dragonfly2
 pywin32
 joblib
-audiomentations==0.40.0
+audiomentations
 torch
+PyQt6
+pyqtgraph

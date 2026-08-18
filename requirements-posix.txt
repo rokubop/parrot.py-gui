@@ -1,4 +1,8 @@
-pyaudio
+# System packages required (apt): libportaudio2 libgl1 libegl1 libxkbcommon0 libdbus-1-3
+sounddevice
+# audioop left the stdlib in 3.13 and lib/ imports it directly. It arrives
+# transitively via librosa today, which is not something to rely on.
+audioop-lts; python_version >= "3.13"
 numpy
 pandas
 matplotlib
@@ -8,3 +12,5 @@ pyautogui
 joblib
 torch
 audiomentations
+PyQt6
+pyqtgraph
