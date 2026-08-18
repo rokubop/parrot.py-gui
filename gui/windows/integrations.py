@@ -3,11 +3,15 @@
 Information only. This tab reads and writes nothing outside the app's own
 data folder - it names the model file and opens the folder holding it. What
 consumes the model is the other program's business, not this one's.
+
+Talon gets a section because it is what almost everyone takes the file to, and
+knowing the beta is required before you go looking is worth a screen. It stays
+copy: the setup happens on Talon's side, and nothing here reaches into it.
 """
 import os
 
 from PyQt6.QtWidgets import (
-    QFrame, QScrollArea, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from config.config import CLASSIFIER_FOLDER
@@ -36,6 +40,16 @@ class IntegrationsPage(QWidget):
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(16)
 
+        # Hero rank, so the page title outranks the two section headings
+        # below it, which are "title".
+        layout.addWidget(components.heading("Integrations", "hero"))
+
+        # The shape first: this program ends at a file, and something else
+        # runs it. Everything below is one half of that or the other.
+        layout.addWidget(help_dialog.topic_content(
+            content.get("running_a_model"), stretch=False))
+        layout.addSpacing(20)
+
         layout.addWidget(components.heading("Your model file", "title"))
 
         self.model_label = components.dim_label("", wrap=True)
@@ -47,11 +61,28 @@ class IntegrationsPage(QWidget):
         self.open_btn = components.primary_button(
             "Open models folder", self._on_open_folder)
         components.lock_width(self.open_btn, "Open models folder")
+        self.open_btn.setToolTip(
+            "Opens the folder holding your .pkl files, to copy one into an "
+            "integration")
         layout.addWidget(self.open_btn, 0)
 
         layout.addSpacing(12)
         layout.addWidget(help_dialog.topic_content(content.get("model_file"),
                                                    stretch=False))
+
+        layout.addSpacing(20)
+        layout.addWidget(components.heading("Talon integration", "title"))
+        layout.addWidget(help_dialog.topic_content(content.get("talon"),
+                                                   stretch=False))
+
+        # The field reference stays behind the button: it is what you read
+        # while writing patterns.json, not while reading this page.
+        patterns_row = QHBoxLayout()
+        patterns_row.setSpacing(6)
+        patterns_row.addWidget(components.dim_label("What a pattern holds"))
+        patterns_row.addWidget(help_dialog.help_button(self, "patterns"))
+        patterns_row.addStretch()
+        layout.addLayout(patterns_row)
         layout.addStretch()
         scroll.setWidget(body)
         self._refresh()

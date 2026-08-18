@@ -195,7 +195,7 @@ class HomePage(QWidget):
         self.step_connect.action.clicked.connect(self._on_connect_action)
         self.step_record.help_btn.clicked.connect(lambda: self._show_help("record"))
         self.step_train.help_btn.clicked.connect(lambda: self._show_help("train"))
-        self.step_connect.help_btn.clicked.connect(lambda: self._show_help("connect"))
+        self.step_connect.help_btn.clicked.connect(lambda: self._show_help("model_file"))
         for card in (self.step_record, self.step_train, self.step_connect):
             steps_row.addWidget(card, 1)
         v.addWidget(self.steps_widget)

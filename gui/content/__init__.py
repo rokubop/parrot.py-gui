@@ -36,7 +36,15 @@ TAGLINE = ("Train a model on the sounds you make - clicks, pops, vowels, "
 # current theme. A constant anchor cannot work - a stylesheet makes Qt ignore
 # the palette's Link role, so the colour has to be inlined at render time -
 # and a token keeps this file free of Qt and readable to a translator.
-LINKS = {}
+TALON_URL = "https://talonvoice.com/"
+TALON_BETA_URL = "https://talon.wiki/Help/beta_talon/"
+TESTER_URL = "https://github.com/rokubop/parrot_tester"
+
+LINKS = {
+    "talon": (TALON_URL, "talonvoice.com"),
+    "talon_beta": (TALON_BETA_URL, "How to get the beta"),
+    "tester": (TESTER_URL, "Parrot Tester"),
+}
 
 
 def topic(key, title, rows=None, diagram=None, lede=None, intro=None,
