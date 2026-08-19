@@ -121,6 +121,48 @@ def card_frame(object_name, surface="panel", children="> QLabel", spacing=8):
     return card, layout
 
 
+# ---- sections -----------------------------------------------------------
+
+SECTION_MARGINS = (18, 16, 18, 16)
+
+
+def section_card(title, surface="card", spacing=10, layout_cls=QVBoxLayout):
+    """A titled section: the title above a filled card, not notched into it.
+
+    `QGroupBox` cuts its title through its own top border, which is the Qt
+    Designer default and the one shape in the app that still looks like one.
+    Here the title is an eyebrow above the frame - what a settings page is
+    expected to look like now, and the same card the rest of the app uses.
+
+    Returns ``(wrapper, layout, restyle)``: add `wrapper` to the page, fill
+    `layout`, and call `restyle()` from ``refresh_theme()`` - the card fill and
+    the eyebrow are per-widget stylesheets, so the global sheet cannot repaint
+    them on a theme switch.
+    """
+    name = "sec" + "".join(c for c in title.title() if c.isalnum())
+    wrapper = QWidget()
+    outer = QVBoxLayout(wrapper)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.setSpacing(6)
+
+    label = QLabel(title)
+    outer.addWidget(label)
+
+    card = QFrame()
+    card.setObjectName(name)
+    layout = layout_cls(card)
+    layout.setContentsMargins(*SECTION_MARGINS)
+    layout.setSpacing(spacing)
+    outer.addWidget(card)
+
+    def restyle():
+        label.setStyleSheet(heading_style("eyebrow"))
+        card.setStyleSheet(card_style(name, surface))
+
+    restyle()
+    return wrapper, layout, restyle
+
+
 # ---- buttons ------------------------------------------------------------
 
 def primary_button_style():

@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox,
-    QPushButton, QGroupBox, QScrollArea, QFrame, QMessageBox, QApplication
+    QPushButton, QScrollArea, QFrame, QMessageBox, QApplication
 )
 
 from config.config import (
@@ -23,6 +23,10 @@ from gui.services import (user_config, strategies, library_ops, audio_devices,
                           ui_prefs, profiles)
 from gui.content import program as program_content
 
+# Home's content column, so the two page titles land in the same place when you
+# switch tabs (within the width of a scrollbar, which only one of them has).
+CONTENT_WIDTH = 980
+
 
 class SettingsPage(QWidget):
     def __init__(self, app_state, parent=None):
@@ -31,7 +35,42 @@ class SettingsPage(QWidget):
         self._setup_ui()
         self.app_state.models_changed.connect(self._populate_models)
 
+    def _section(self, title, layout_cls=QVBoxLayout):
+        """A card with its title above it. Registers the restyle closure so a
+        theme switch repaints it."""
+        wrapper, layout, restyle = components.section_card(
+            title, layout_cls=layout_cls)
+        self._section_restyles.append(restyle)
+        if isinstance(layout, QFormLayout):
+            # Left, not Qt's centred-and-right-aligned default: a row whose
+            # label is pushed away from its control is hard to read across.
+            layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft
+                                     | Qt.AlignmentFlag.AlignVCenter)
+            layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft
+                                    | Qt.AlignmentFlag.AlignTop)
+            # Combos keep their natural width - one stretched the full row
+            # reads as a text field waiting to be filled in.
+            layout.setFieldGrowthPolicy(
+                QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+            layout.setHorizontalSpacing(14)
+        return wrapper, layout
+
+    def _describe(self, form, text):
+        """Help text under a row. Spans both columns - in the field column it
+        wraps to the width of the widest combo and leaves the card half empty."""
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setContentsMargins(0, 0, 0, 4)
+        self._dim_labels.append(label)
+        form.addRow(label)
+        return label
+
     def _setup_ui(self):
+        # Anything styled per-widget goes in one of these, so refresh_theme has
+        # a single place to repaint from.
+        self._dim_labels = []
+        self._section_restyles = []
+
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
@@ -40,25 +79,37 @@ class SettingsPage(QWidget):
         outer.addWidget(scroll)
 
         body = QWidget()
-        layout = QVBoxLayout(body)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(16)
+        # A settings card stretched to a 1600px window puts its label at one
+        # end of the row and its control at the other. The column is capped and
+        # centred instead, which is what every settings page of this shape does.
+        centre = QHBoxLayout(body)
+        centre.setContentsMargins(32, 28, 32, 28)
+        column = QWidget()
+        column.setMaximumWidth(CONTENT_WIDTH)
+        # heavy column stretch: side gutters absorb only the space past
+        # maxWidth, and collapse to ~0 when the window narrows (as on Home)
+        centre.addStretch(1)
+        centre.addWidget(column, 1000)
+        centre.addStretch(1)
+        layout = QVBoxLayout(column)
+        layout.setContentsMargins(0, 0, 0, 0)
+        # Sections carry their own title, so they need the gap that used to be
+        # the group box's top margin.
+        layout.setSpacing(18)
         scroll.setWidget(body)
 
-        title = QLabel("Settings")
-        title.setStyleSheet(components.heading_style("title"))
-        layout.addWidget(title)
+        self.title_label = QLabel("Settings")
+        layout.addWidget(self.title_label)
 
-        note = QLabel(f"Changes are saved to {user_config.USER_CONFIG_PATH} "
-                      "and take effect the next time you launch Parrot.py.")
-        note.setWordWrap(True)
-        note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
-        layout.addWidget(note)
+        self.note = QLabel(
+            f"Changes are saved to {user_config.USER_CONFIG_PATH} "
+            "and take effect the next time you launch Parrot.py.")
+        self.note.setWordWrap(True)
+        self._dim_labels.append(self.note)
+        layout.addWidget(self.note)
 
         # ---- Audio / detection ----
-        audio_group = QGroupBox("Audio & detection")
-        form = QFormLayout(audio_group)
-        form.setSpacing(10)
+        audio_section, form = self._section("Audio & detection", QFormLayout)
 
         self.threshold_combo = QComboBox()
         self.threshold_combo.addItem("Strict - rapid back-to-back sounds", "strict")
@@ -76,11 +127,7 @@ class SettingsPage(QWidget):
         self.two_pass_combo.setCurrentIndex(0 if TWO_PASS_DETECTION else 1)
         form.addRow("Detection passes:", self.two_pass_combo)
 
-        two_pass_desc = QLabel(content.short("detection"))
-        two_pass_desc.setWordWrap(True)
-        two_pass_desc.setStyleSheet(
-            f"color: {theme.colors()['text_dim']}; ")
-        form.addRow("", two_pass_desc)
+        self._describe(form, content.short("detection"))
 
         self.strategy_combo = QComboBox()
         for label in strategies.labels():
@@ -91,19 +138,13 @@ class SettingsPage(QWidget):
         self.strategy_combo.currentTextChanged.connect(self._on_strategy_changed)
         form.addRow("Default strategy:", self.strategy_combo)
 
-        self.strategy_desc = QLabel(strategies.description_for_label(
+        self.strategy_desc = self._describe(form, strategies.description_for_label(
             self.strategy_combo.currentText()))
-        self.strategy_desc.setWordWrap(True)
-        self.strategy_desc.setStyleSheet(
-            f"color: {theme.colors()['text_dim']}; ")
-        form.addRow("", self.strategy_desc)
 
-        layout.addWidget(audio_group)
+        layout.addWidget(audio_section)
 
         # ---- Display ----
-        display_group = QGroupBox("Display")
-        display_form = QFormLayout(display_group)
-        display_form.setSpacing(10)
+        display_section, display_form = self._section("Display", QFormLayout)
         self.scale_combo = QComboBox()
         for value in ui_prefs.SCALES:
             self.scale_combo.addItem(f"{value:.0%}", value)
@@ -116,19 +157,16 @@ class SettingsPage(QWidget):
         self.scale_combo.setMaximumWidth(150)
         self.scale_combo.currentIndexChanged.connect(self._on_scale_changed)
         display_form.addRow("Interface size:", self.scale_combo)
-        scale_note = QLabel(
+        self._describe(
+            display_form,
             "Ctrl + and Ctrl - anywhere in the app, Ctrl 0 for 100%. Scales "
             "the whole window at once. Kept per machine, not in your data "
             "folder, so it stays put when you switch profiles or copy your "
             "data somewhere else. Restarts Parrot.py.")
-        scale_note.setWordWrap(True)
-        scale_note.setStyleSheet(f"color: {theme.colors()['text_dim']};")
-        display_form.addRow("", scale_note)
-        layout.addWidget(display_group)
+        layout.addWidget(display_section)
 
         # ---- Playback ----
-        model_group = QGroupBox("Playback")
-        model_form = QFormLayout(model_group)
+        model_section, model_form = self._section("Playback", QFormLayout)
         self.output_combo = QComboBox()
         self.output_combo.setToolTip("Where recordings play back - applies "
                                      "immediately, no save needed")
@@ -148,18 +186,16 @@ class SettingsPage(QWidget):
         self.model_combo = QComboBox()
         self._populate_models()
         model_form.addRow("Default model:", self.model_combo)
-        layout.addWidget(model_group)
+        layout.addWidget(model_section)
 
         # ---- Folders ----
-        folder_group = QGroupBox("Data folders")
-        folder_layout = QVBoxLayout(folder_group)
+        folder_section, folder_layout = self._section("Data folders")
         folder_layout.addLayout(self._folder_row("Recordings", RECORDINGS_FOLDER))
         folder_layout.addLayout(self._folder_row("Models", CLASSIFIER_FOLDER))
-        layout.addWidget(folder_group)
+        layout.addWidget(folder_section)
 
         # ---- Profiles ----
-        profiles_group = QGroupBox("Profiles")
-        profiles_layout = QHBoxLayout(profiles_group)
+        profiles_section, profiles_layout = self._section("Profiles", QHBoxLayout)
         profiles_desc = QLabel(
             program_content.PROFILE_SHORT
             + " Once one exists, the switcher is in the top right.")
@@ -168,11 +204,10 @@ class SettingsPage(QWidget):
         manage_profiles_btn = QPushButton("Manage profiles...")
         manage_profiles_btn.clicked.connect(self._on_manage_profiles)
         profiles_layout.addWidget(manage_profiles_btn)
-        layout.addWidget(profiles_group)
+        layout.addWidget(profiles_section)
 
         # ---- Back up ----
-        backup_group = QGroupBox("Back up")
-        backup_layout = QVBoxLayout(backup_group)
+        backup_section, backup_layout = self._section("Back up")
         backup_desc = QLabel(program_content.DATA_FOLDER_SHORT)
         backup_desc.setWordWrap(True)
         backup_layout.addWidget(backup_desc)
@@ -185,17 +220,16 @@ class SettingsPage(QWidget):
         export_btn.clicked.connect(self._on_export_copy)
         backup_row.addWidget(export_btn)
         self.backup_status = QLabel("")
-        self.backup_status.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+        self._dim_labels.append(self.backup_status)
         backup_row.addWidget(self.backup_status)
         backup_row.addStretch()
         backup_layout.addLayout(backup_row)
-        layout.addWidget(backup_group)
+        layout.addWidget(backup_section)
 
         # ---- Save ----
         save_row = QHBoxLayout()
         save_row.addStretch()
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet(f"color: {theme.colors()['accent']};")
         save_row.addWidget(self.status_label)
         save_btn = QPushButton("Save settings")
         save_btn.clicked.connect(self._on_save)
@@ -203,6 +237,16 @@ class SettingsPage(QWidget):
         layout.addLayout(save_row)
 
         layout.addStretch()
+        self._apply_theme_styles()
+
+    def _apply_theme_styles(self):
+        t = theme.colors()
+        self.title_label.setStyleSheet(components.heading_style("title"))
+        for label in self._dim_labels:
+            label.setStyleSheet(f"color: {t['text_dim']};")
+        self.status_label.setStyleSheet(f"color: {t['accent']};")
+        for restyle in self._section_restyles:
+            restyle()
 
     def _scale_index(self, value):
         return list(ui_prefs.SCALES).index(value) if value in ui_prefs.SCALES else 0
@@ -288,7 +332,7 @@ class SettingsPage(QWidget):
     def _folder_row(self, name, path):
         row = QHBoxLayout()
         lbl = QLabel(f"{name}:  {os.path.abspath(path)}")
-        lbl.setStyleSheet(f"color: {theme.colors()['text_dim']};")
+        self._dim_labels.append(lbl)
         row.addWidget(lbl)
         row.addStretch()
         btn = QPushButton("Open folder")
@@ -369,4 +413,4 @@ class SettingsPage(QWidget):
             self.status_label.setText(f"Couldn't save: {exc}")
 
     def refresh_theme(self):
-        pass
+        self._apply_theme_styles()
