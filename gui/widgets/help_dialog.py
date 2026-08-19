@@ -8,7 +8,8 @@ way wherever it appears.
 import math
 
 from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QPolygonF
+from PyQt6.QtGui import (QPainter, QColor, QFontMetrics, QPen,
+                         QPolygonF)
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QWidget, QFrame, QSizePolicy
@@ -162,6 +163,22 @@ class FramesDiagram(QWidget):
         p.end()
 
 
+def _arrow(painter, x0, x1, y, color, head=7):
+    """A thin line with a solid head, inset from both ends so it never
+    touches the boxes it runs between."""
+    pad = 7
+    x0, x1 = x0 + pad, x1 - pad
+    painter.setPen(QPen(color, 1.4))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawLine(QPointF(x0, y), QPointF(x1 - head + 1, y))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    painter.drawPolygon(QPolygonF([
+        QPointF(x1, y),
+        QPointF(x1 - head, y - head * 0.62),
+        QPointF(x1 - head, y + head * 0.62)]))
+
+
 class PipelineDiagram(QWidget):
     """Record, train, connect, and the tab each happens on. Same order and
     names as Home's numbered steps, deliberately."""
@@ -184,20 +201,6 @@ class PipelineDiagram(QWidget):
         self.setFixedHeight(self.BOX_H + self.SUB_ROW + self.TAB_ROW + 6)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Fixed)
-
-    def _arrow(self, painter, x0, x1, y, color):
-        pad = 7
-        x0, x1 = x0 + pad, x1 - pad
-        head = self.ARROW_HEAD
-        painter.setPen(QPen(color, 1.4))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawLine(QPointF(x0, y), QPointF(x1 - head + 1, y))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(color)
-        painter.drawPolygon(QPolygonF([
-            QPointF(x1, y),
-            QPointF(x1 - head, y - head * 0.62),
-            QPointF(x1 - head, y + head * 0.62)]))
 
     def paintEvent(self, _event):
         t = theme.colors()
@@ -235,8 +238,8 @@ class PipelineDiagram(QWidget):
                        int(Qt.AlignmentFlag.AlignCenter), f"{tab} tab")
 
             if index < n - 1:
-                self._arrow(p, x + span, x + span + self.GAP,
-                            self.BOX_H / 2, dim)
+                _arrow(p, x + span, x + span + self.GAP,
+                       self.BOX_H / 2, dim, self.ARROW_HEAD)
             x += span + self.GAP
         p.end()
 
@@ -507,10 +510,117 @@ def _balance_legend_widget():
     return balance_legend()
 
 
+class HandoffDiagram(QWidget):
+    """Where this program stops.
+
+    Parrot ends at a file. Something else picks the file up and is what
+    actually does things to your computer - and the two are never running at
+    the same time, which is the part people assume wrong.
+
+    The right box stays a box on purpose. What an integration does with a
+    model is its own business, on its own release schedule, so the drawing
+    names one as an example and claims nothing about how it works.
+    """
+
+    # Three columns, and under each the same two questions: what happens
+    # here, and whose it is. The middle column's answer to the second is
+    # "you", which is the whole point of the picture.
+    LEFT = ("parrot.py", "makes a model", "this app")
+    MIDDLE = (None, "manually copy", "you")
+    RIGHT = ("Integration", "uses the model to act on your computer",
+             "e.g. Talon Voice")
+    FILE = "model.pkl"
+
+    BOX_H = 52
+    TAB_ROW = 18
+    GAP = 168           # room for the file to sit on the arrow
+    ARROW_HEAD = 7
+    CHIP_H = 24
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(200 * 2 + self.GAP)
+        # Held to the prose measure: a diagram twice as wide as the paragraph
+        # under it reads as a banner rather than as part of the topic.
+        self.setMaximumWidth(BODY_WIDTH)
+        # Two lines, because the right column's line does not fit on one at
+        # the minimum width and drawText clips rather than shrinking.
+        self._sub_h = QFontMetrics(components.painter_font(self)).height() * 2
+        self.setFixedHeight(self.BOX_H + self._sub_h + self.TAB_ROW + 6)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Fixed)
+
+    def _column(self, p, x, span, column, small, dim, accent):
+        """The two rows under a box. Bottom-aligned, so a column that wraps
+        to two lines and one that does not still meet the same baseline."""
+        _, sub, who = column
+        flags = int(Qt.AlignmentFlag.AlignHCenter.value
+                    | Qt.AlignmentFlag.AlignBottom.value
+                    | Qt.TextFlag.TextWordWrap.value)
+        p.setFont(small)
+        p.setPen(dim)
+        p.drawText(QRectF(x, self.BOX_H + 1, span, self._sub_h), flags, sub)
+        p.setPen(accent)
+        p.drawText(QRectF(x, self.BOX_H + self._sub_h, span, self.TAB_ROW),
+                   int(Qt.AlignmentFlag.AlignCenter), who)
+
+    def paintEvent(self, _event):
+        t = theme.colors()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        accent = QColor(t["accent"])
+        dim = QColor(t["text_dim"])
+        bright = QColor(t["text_bright"])
+        small = components.painter_font(self)
+
+        span = (self.width() - self.GAP) / 2
+        for x, column in ((0.0, self.LEFT), (span + self.GAP, self.RIGHT)):
+            rect = QRectF(x, 0, span, self.BOX_H)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(t["plot_bg"]))
+            p.drawRect(rect)
+            p.setPen(QPen(accent, 1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
+
+            p.setFont(self.font())
+            p.setPen(bright)
+            p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), column[0])
+            self._column(p, x, span, column, small, dim, accent)
+
+        mid = self.BOX_H / 2
+        _arrow(p, span, span + self.GAP, mid, dim, self.ARROW_HEAD)
+
+        # The file rides the arrow, because the file is the whole handoff:
+        # one thing crosses, once, and a person carries it. Filled, so it
+        # covers the line rather than sitting beside it.
+        p.setFont(self.font())
+        width = p.fontMetrics().horizontalAdvance(self.FILE) + 20
+        chip = QRectF(span + (self.GAP - width) / 2, mid - self.CHIP_H / 2,
+                      width, self.CHIP_H)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(t["plot_bg"]))
+        p.drawRoundedRect(chip, 3, 3)
+        p.setPen(QPen(accent, 1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(chip.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3)
+        p.setPen(bright)
+        p.drawText(chip, int(Qt.AlignmentFlag.AlignCenter), self.FILE)
+
+        self._column(p, span, self.GAP, self.MIDDLE, small, dim, accent)
+        p.end()
+
+
+def handoff_diagram_widget():
+    return HandoffDiagram()
+
+
 # The names topics use for their pictures. A topic in gui/content names one
 # of these; nothing outside this module knows a diagram is a widget.
 DIAGRAMS = {
     "pipeline": pipeline_diagram_widget,
+    "handoff": handoff_diagram_widget,
     "frames": frames_diagram_widget,
     "nets": nets_diagram_widget,
     "closed_set": closed_set_diagram_widget,
@@ -613,6 +723,12 @@ def _prose(html, rank=None):
         body.setStyleSheet(f"color: {theme.colors()['text']}; "
                            f"font-size: {theme.TYPE_SCALE[rank]}px;")
     return body
+
+
+def prose(html, rank=None):
+    """One paragraph at the help measure, for a page that has to put a
+    control between two pieces of a topic and so cannot use topic_content."""
+    return _prose(html, rank)
 
 
 def bands_html(bands):

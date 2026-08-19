@@ -50,13 +50,10 @@ class IntegrationsPage(QWidget):
             content.get("running_a_model"), stretch=False))
         layout.addSpacing(20)
 
-        layout.addWidget(components.heading("Your model file", "title"))
+        layout.addWidget(components.heading("Instructions", "title"))
 
-        self.model_label = components.dim_label("", wrap=True)
-        layout.addWidget(self.model_label)
-
-        self.path_label = components.dim_label("", wrap=True)
-        layout.addWidget(self.path_label)
+        spec = content.get("model_file")
+        layout.addWidget(help_dialog.prose(spec["intro"]))
 
         self.open_btn = components.primary_button(
             "Open models folder", self._on_open_folder)
@@ -66,9 +63,14 @@ class IntegrationsPage(QWidget):
             "integration")
         layout.addWidget(self.open_btn, 0)
 
+        self.model_label = components.dim_label("", wrap=True)
+        layout.addWidget(self.model_label)
+
+        self.path_label = components.dim_label("", wrap=True)
+        layout.addWidget(self.path_label)
+
         layout.addSpacing(12)
-        layout.addWidget(help_dialog.topic_content(content.get("model_file"),
-                                                   stretch=False))
+        layout.addWidget(help_dialog.prose(spec["note"]))
 
         layout.addSpacing(20)
         layout.addWidget(components.heading("Talon integration", "title"))

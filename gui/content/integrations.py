@@ -19,24 +19,26 @@ HANDOFF_LEDE = ("After training a model, you'll need to integrate it with "
                 "another application in order to make use of it to do actions "
                 "on your computer.")
 
-HANDOFF_INTRO = ("You do that by copying the model file into wherever that "
-                 "application keeps it. <b>Open models folder</b> takes you "
-                 "to it. Talon (beta version) has first party integration "
-                 "support, and is the recommended integration path.")
+# The whole procedure, because it is two steps and pretending otherwise
+# would be padding. The button below it is the first step.
+# "parrot's", not "data/models": the real path moves with the profile and
+# with whether this is a checkout or an installed build, and the label under
+# the button prints whichever one it actually is.
+COPY_STEP = ("Go to parrot's models folder and copy the model to where the "
+             "integration expects it.")
 
+# The folder has more in it than the one file, and the extras look like they
+# might matter. Named here so nobody copies a checkpoint and wonders why
+# nothing loads: only the .pkl leaves.
+FILES_NOTE = ("The folder holds one <code>.pkl</code> per model - that is "
+              "the model, and the only file you copy. It carries its own "
+              "nets, so nothing else travels with it. The "
+              "<code>.pth.tar</code> files beside it are per-net training "
+              "checkpoints the <code>.pkl</code> was built from "
+              "(<code>-BEST</code> is that net's most accurate so far). "
+              "They stay here.")
 
-MODEL_FILE_ROWS = (
-    ("What", "One <code>.pkl</code> file. It carries its own nets, so "
-             "nothing else has to travel with it."),
-    ("Where", "<code>data/models/</code>, one file per model. The button on "
-              "this tab opens that folder."),
-    ("Taking it elsewhere", "Copy the file wherever the program that reads "
-                            "parrot models expects it. Parrot reads and "
-                            "writes nothing outside its own data folder."),
-    ("Test it first", "Models tab, <b>Test live</b>. Runs the model against "
-                      "your microphone here, so you can see what it detects "
-                      "before it goes anywhere."),
-)
+TALON_INTRO = "Talon is the recommended integration path."
 
 # What Talon needs, in the order someone hits it: what it does for you, the
 # thing that stops most people (the beta), then where the file goes.
@@ -90,14 +92,15 @@ PATTERN_NOTE = ("<p>Detection runs 60 times a second, so a throttle is what "
 TAB = tab("integrations", "Integrations",
           "The model you trained, and the program that runs it.", (
     topic("running_a_model", "Using your model", lede=HANDOFF_LEDE,
-          intro=HANDOFF_INTRO,
+          diagram="handoff",
           short="A trained model needs another application to act on what it "
                 "hears.",
           shown_on="Integrations tab"),
-    topic("model_file", "Your model file", rows=MODEL_FILE_ROWS,
+    topic("model_file", "Copying your model", intro=COPY_STEP,
+          note=FILES_NOTE,
           short="A trained model is one .pkl file in data/models/.",
           shown_on="Integrations tab"),
-    topic("talon", "Talon integration", rows=TALON_ROWS,
+    topic("talon", "Talon integration", intro=TALON_INTRO, rows=TALON_ROWS,
           short="Talon runs your model live and turns each sound into an "
                 "action.",
           shown_on="Integrations tab"),
