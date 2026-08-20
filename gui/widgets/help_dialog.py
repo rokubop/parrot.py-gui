@@ -522,9 +522,6 @@ class HandoffDiagram(QWidget):
     names one as an example and claims nothing about how it works.
     """
 
-    # Three columns, and under each the same two questions: what happens
-    # here, and whose it is. The middle column's answer to the second is
-    # "you", which is the whole point of the picture.
     LEFT = ("parrot.py", "record sounds and train a model", "this app")
     MIDDLE = (None, "manually copy", None)
     RIGHT = ("Integration", "uses the model to convert sounds into actions",
@@ -725,9 +722,7 @@ def _prose(html, rank=None):
     return body
 
 
-# A QFont asked for "monospace" resolves to Tahoma on Windows - proportional,
-# so columns stop lining up. Rich text gets a fixed face on its own; a plain
-# label has to name real ones.
+# A QFont asked for "monospace" resolves to Tahoma on Windows, proportional.
 MONO_FAMILIES = ["Consolas", "Menlo", "DejaVu Sans Mono"]
 
 

@@ -5,8 +5,6 @@ COPY_STEP = ("Open parrot.py's models folder and manually copy the model "
              "to where the integration expects it. For Talon Voice, see "
              "instructions below.")
 
-# The listing is the explanation. Every trained model lands in the same
-# flat folder, so all a reader needs is which name to pick out of the pile.
 FILES_LISTING = """data/models/
 
   your_model.pkl                          ← copy this

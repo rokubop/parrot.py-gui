@@ -61,9 +61,8 @@ def topic(key, title, rows=None, diagram=None, lede=None, intro=None,
     a full-width paragraph sharing the table with label rows stretches the
     label column halfway across the page.
 
-    `code` is a literal block - a file listing, a snippet - shown as typed,
-    on its own surface. Plain text: the monospace font and the colours are
-    help_dialog's, so a block does not carry markup it cannot theme.
+    `code` is a literal block shown as typed. Plain text: the font and the
+    colours are help_dialog's.
 
     `diagram` names one of help_dialog.DIAGRAMS. `shown_on` says where the
     topic's Help button lives, for readers of the About page.
