@@ -8,7 +8,7 @@ way wherever it appears.
 import math
 
 from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import (QPainter, QColor, QFontMetrics, QPen,
+from PyQt6.QtGui import (QPainter, QColor, QFont, QFontMetrics, QPen,
                          QPolygonF)
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -525,9 +525,9 @@ class HandoffDiagram(QWidget):
     # Three columns, and under each the same two questions: what happens
     # here, and whose it is. The middle column's answer to the second is
     # "you", which is the whole point of the picture.
-    LEFT = ("parrot.py", "makes a model", "this app")
-    MIDDLE = (None, "manually copy", "you")
-    RIGHT = ("Integration", "uses the model to act on your computer",
+    LEFT = ("parrot.py", "record sounds and train a model", "this app")
+    MIDDLE = (None, "manually copy", None)
+    RIGHT = ("Integration", "uses the model to convert sounds into actions",
              "e.g. Talon Voice")
     FILE = "model.pkl"
 
@@ -725,6 +725,31 @@ def _prose(html, rank=None):
     return body
 
 
+# A QFont asked for "monospace" resolves to Tahoma on Windows - proportional,
+# so columns stop lining up. Rich text gets a fixed face on its own; a plain
+# label has to name real ones.
+MONO_FAMILIES = ["Consolas", "Menlo", "DejaVu Sans Mono"]
+
+
+def code_block(text, parent=None):
+    """A literal block on the surface the log view already uses, so anything
+    shown as typed looks the same wherever the app shows it."""
+    t = theme.colors()
+    label = QLabel(text, parent)
+    label.setWordWrap(False)
+    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    font = label.font()
+    font.setFamilies(MONO_FAMILIES)
+    font.setStyleHint(QFont.StyleHint.Monospace)
+    label.setFont(font)
+    label.setStyleSheet(
+        f"background-color: {t['plot_bg']}; color: {t['text_dim']}; "
+        f"border: 1px solid {t['border']}; border-radius: {t['radius']}; "
+        f"padding: 10px 14px;")
+    label.setMaximumWidth(BODY_WIDTH)
+    return label
+
+
 def prose(html, rank=None):
     """One paragraph at the help measure, for a page that has to put a
     control between two pieces of a topic and so cannot use topic_content."""
@@ -744,7 +769,7 @@ def bands_html(bands):
 
 
 def topic_content(key, parent=None, stretch=True):
-    """A topic drawn as a widget: lede, diagram, intro, rows, note.
+    """A topic drawn as a widget: lede, diagram, intro, code, rows, note.
 
     The one renderer for help. The ``?  Help`` modal shows this, and the About
     page stacks one per topic, so a topic looks the same in both and gains
@@ -769,6 +794,9 @@ def topic_content(key, parent=None, stretch=True):
         inner.addWidget(widget)
     if spec["intro"]:
         inner.addWidget(_prose(spec["intro"]))
+    if spec.get("code"):
+        inner.addWidget(code_block(spec["code"], panel),
+                        0, Qt.AlignmentFlag.AlignLeft)
     if spec.get("bands"):
         inner.addWidget(_prose(bands_html(spec["bands"])))
     if spec["rows"]:

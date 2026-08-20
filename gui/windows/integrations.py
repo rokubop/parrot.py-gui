@@ -10,6 +10,7 @@ copy: the setup happens on Talon's side, and nothing here reaches into it.
 """
 import os
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget,
 )
@@ -70,7 +71,8 @@ class IntegrationsPage(QWidget):
         layout.addWidget(self.path_label)
 
         layout.addSpacing(12)
-        layout.addWidget(help_dialog.prose(spec["note"]))
+        layout.addWidget(help_dialog.code_block(spec["code"]), 0,
+                         Qt.AlignmentFlag.AlignLeft)
 
         layout.addSpacing(20)
         layout.addWidget(components.heading("Talon integration", "title"))

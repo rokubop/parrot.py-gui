@@ -48,7 +48,7 @@ LINKS = {
 
 
 def topic(key, title, rows=None, diagram=None, lede=None, intro=None,
-          note=None, bands=None, short=None, shown_on=None):
+          note=None, bands=None, code=None, short=None, shown_on=None):
     """One topic, in the two lengths the app needs.
 
     `short` is the one-line version a tooltip shows; everything else is the
@@ -61,11 +61,15 @@ def topic(key, title, rows=None, diagram=None, lede=None, intro=None,
     a full-width paragraph sharing the table with label rows stretches the
     label column halfway across the page.
 
+    `code` is a literal block - a file listing, a snippet - shown as typed,
+    on its own surface. Plain text: the monospace font and the colours are
+    help_dialog's, so a block does not carry markup it cannot theme.
+
     `diagram` names one of help_dialog.DIAGRAMS. `shown_on` says where the
     topic's Help button lives, for readers of the About page.
     """
     return dict(key=key, title=title, rows=rows, diagram=diagram, lede=lede,
-                intro=intro, note=note, bands=bands, short=short,
+                intro=intro, note=note, bands=bands, code=code, short=short,
                 shown_on=shown_on)
 
 
