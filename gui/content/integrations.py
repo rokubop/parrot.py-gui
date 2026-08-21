@@ -36,6 +36,13 @@ TALON_ROWS = (
                   "is how you find the numbers a threshold should use."),
 )
 
+# The two words come from two programs, and nothing on screen says so.
+# Mixing them up is the common failure: a sound name where a pattern name
+# belongs, in a throttle or in a .talon file.
+PATTERN_LEDE = ("<b>Sounds</b> are your model's. <b>Patterns</b> are Talon's: "
+                "a named rule over those sounds, and the name is what a "
+                "<code>.talon</code> file binds.")
+
 PATTERN_INTRO = ("One trigger in <code>patterns.json</code>, using every key "
                  "there is:")
 
@@ -62,6 +69,20 @@ PATTERN_EXAMPLE = """"hiss": {
 # there are no others. A threshold it does not know is a warning in Talon's
 # log and nothing else, so a rule that looks written is a rule not applied.
 PATTERN_ROWS = (
+    ("The words", None),
+    ("sound", "A label in your model, one per sound you recorded and "
+              "trained. The model scores every one of them on every frame. "
+              "This app's side."),
+    ("pattern", "A named rule in <code>patterns.json</code>: which sounds "
+                "count, and how sure and how loud they have to be. One sound "
+                "or several. Talon's side. parrot.py's own modes use the "
+                "word too, with different keys, so a pattern written for "
+                "those does not run here."),
+    ("pattern name", "The key the pattern is written under, and the only "
+                     "thing a <code>.talon</code> file sees: "
+                     "<code>parrot(hiss): mouse_click(0)</code>. Never a "
+                     "sound name."),
+
     ("Top level", None),
     ("sounds", "Required. The model's own labels, and they have to match: a "
                "name the model does not have discards the whole pattern. "
@@ -133,7 +154,8 @@ TAB = tab("integrations", "Integrations",
           short="Talon runs your model live and turns each sound into an "
                 "action.",
           shown_on="Integrations tab"),
-    topic("patterns", "What a pattern holds", intro=PATTERN_INTRO,
+    topic("patterns", "What a pattern holds", lede=PATTERN_LEDE,
+          intro=PATTERN_INTRO,
           code=PATTERN_EXAMPLE, rows=PATTERN_ROWS, note=PATTERN_NOTE,
           short="A trigger: the sounds that fire it, and the rules that "
                 "decide when they count.",
