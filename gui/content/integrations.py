@@ -1,6 +1,4 @@
 """The Integrations tab: where a trained model is, and what runs it."""
-import os
-
 from gui.content import tab, topic
 
 COPY_STEP = ("Open parrot.py's models folder and manually copy the model "
@@ -37,10 +35,6 @@ TALON_ROWS = (
     ("Tuning it", "{tester} shows what Talon detects frame by frame, which "
                   "is how you find the numbers a threshold should use."),
 )
-
-# Three drafts of the pattern reference, chosen with PARROT_PATTERNS_VARIANT
-# so they can be compared in the running app. One survives.
-VARIANT = os.environ.get("PARROT_PATTERNS_VARIANT", "a").lower()
 
 PATTERN_INTRO = ("One trigger in <code>patterns.json</code>. This one fires on "
                  "the model's <code>ss</code> sound:")
@@ -93,86 +87,6 @@ PATTERN_NOTE = ("<p>Detection runs 60 times a second. Talon skips the model "
                 "<code>&gt;power</code> you have written, so one low value "
                 "costs a little CPU for every pattern.</p>")
 
-PATTERNS_TOPIC = topic("patterns", "What a pattern holds",
-                       intro=PATTERN_INTRO, code=PATTERN_EXAMPLE,
-                       rows=PATTERN_ROWS, note=PATTERN_NOTE,
-                       short="A trigger: the sounds that fire it, and the "
-                             "rules that decide when they count.",
-                       shown_on="Integrations tab")
-
-# Draft B: the reference, plus what to reach for when a trigger misbehaves.
-# The reference says what a key is; this says which key a symptom calls for,
-# which is the part nobody can look up.
-TUNING_ROWS = (
-    ("Fires when you were quiet", "Raise <code>&gt;power</code> first. Most "
-                                  "stray detections are quiet noises the "
-                                  "model has never heard: a hand through "
-                                  "your hair, a mouse on a mat. Raise "
-                                  "<code>&gt;probability</code> after."),
-    ("Fires twice per sound", "Throttle it against itself. 0.15 s is about "
-                              "one utterance; too long and a deliberate "
-                              "double is swallowed."),
-    ("Sets off a different trigger", "Name that pattern in this one's "
-                                     "<code>throttle</code>. An echo often "
-                                     "reads as another sound for a frame or "
-                                     "two just after a real one."),
-    ("Stutters while you hold it", "Add a <code>grace_threshold</code> "
-                                   "looser than the threshold, with a "
-                                   "<code>graceperiod</code> of 0.05. A held "
-                                   "sound drifts as you run out of breath, "
-                                   "and its probability drops with it."),
-    ("Fires the moment you start", "<code>detect_after</code>, if you wanted "
-                                   "hold to activate rather than a tap."),
-    ("Two sounds fire each other", "Split them on pitch with "
-                                   "<code>&gt;f0</code> or "
-                                   "<code>&lt;f1</code>, or on "
-                                   "<code>&gt;ratio</code> if one sound "
-                                   "always leads the other."),
-    ("It never fires at all", "Check the sound names against the model's "
-                              "own labels. A name that is not in the model "
-                              "makes Talon discard the whole pattern."),
-)
-
-TUNING_NOTE = ("<p>Every number here is one you read off a frame, not one you "
-               "guess. {tester}, or the test screen, shows the power and "
-               "probability of the sound you just made.</p>")
-
-TUNING_TOPIC = topic("pattern_tuning", "When a trigger misbehaves",
-                     rows=TUNING_ROWS, note=TUNING_NOTE,
-                     short="Which threshold to reach for when a sound fires "
-                           "twice, fires early, or fires on nothing.",
-                     shown_on="Integrations tab")
-
-# What the page draws for this variant: which topics get a ? button under
-# Talon, and what it shows inline.
-# Draft C: the shape of a trigger is on the page, where it answers "what am
-# I even writing" without a click. The field table stays behind the button.
-PATTERN_EXAMPLE_INTRO = ("A trigger is a name, the sounds that fire it, and "
-                         "the rules that decide when they count:")
-
-SMALL_EXAMPLE = """"pop": {
-  "sounds": ["pop"],
-  "threshold": {
-    ">power": 5,
-    ">probability": 0.95
-  },
-  "throttle": { "pop": 0.15 }
-}"""
-
-if VARIANT == "b":
-    PATTERN_TOPICS = (PATTERNS_TOPIC, TUNING_TOPIC)
-    PATTERN_EXAMPLE_ON_PAGE = None
-elif VARIANT == "c":
-    # Nothing shown twice: the page has the example, so the topic drops it.
-    PATTERN_TOPICS = (topic("patterns", "What each part does",
-                            rows=PATTERN_ROWS, note=PATTERN_NOTE,
-                            short=PATTERNS_TOPIC["short"],
-                            shown_on="Integrations tab"),)
-    PATTERN_EXAMPLE_ON_PAGE = SMALL_EXAMPLE
-else:
-    PATTERN_TOPICS = (PATTERNS_TOPIC,)
-    PATTERN_EXAMPLE_ON_PAGE = None
-
 
 TAB = tab("integrations", "Integrations",
           "The model you trained, and the program that runs it.", (
@@ -188,4 +102,9 @@ TAB = tab("integrations", "Integrations",
           short="Talon runs your model live and turns each sound into an "
                 "action.",
           shown_on="Integrations tab"),
-) + PATTERN_TOPICS)
+    topic("patterns", "What a pattern holds", intro=PATTERN_INTRO,
+          code=PATTERN_EXAMPLE, rows=PATTERN_ROWS, note=PATTERN_NOTE,
+          short="A trigger: the sounds that fire it, and the rules that "
+                "decide when they count.",
+          shown_on="Integrations tab"),
+))

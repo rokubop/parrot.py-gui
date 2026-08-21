@@ -12,12 +12,11 @@ import os
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget,
+    QFrame, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from config.config import CLASSIFIER_FOLDER
 from gui import components, content, theme
-from gui.content import integrations as integrations_copy
 from gui.services import library_ops
 from gui.widgets import help_dialog
 
@@ -80,25 +79,13 @@ class IntegrationsPage(QWidget):
         layout.addWidget(help_dialog.topic_content(content.get("talon"),
                                                    stretch=False))
 
-        # The field reference stays behind the button: it is what you read
-        # while writing patterns.json, not while reading this page.
-        if integrations_copy.PATTERN_EXAMPLE_ON_PAGE:
-            layout.addSpacing(4)
-            layout.addWidget(help_dialog.prose(
-                integrations_copy.PATTERN_EXAMPLE_INTRO))
-            layout.addWidget(
-                help_dialog.code_block(
-                    integrations_copy.PATTERN_EXAMPLE_ON_PAGE),
-                0, Qt.AlignmentFlag.AlignLeft)
-        for pattern_topic in integrations_copy.PATTERN_TOPICS:
-            patterns_row = QHBoxLayout()
-            patterns_row.setSpacing(6)
-            patterns_row.addWidget(
-                components.dim_label(pattern_topic["title"]))
-            patterns_row.addWidget(
-                help_dialog.help_button(self, pattern_topic["key"]))
-            patterns_row.addStretch()
-            layout.addLayout(patterns_row)
+        # On the page, not behind a ?: this is what you read while writing
+        # patterns.json, and a click away is a click too far when the file
+        # you are writing is open beside it.
+        layout.addSpacing(4)
+        layout.addWidget(components.heading("What a pattern holds", "card"))
+        layout.addWidget(help_dialog.topic_content(content.get("patterns"),
+                                                   stretch=False))
         layout.addStretch()
         scroll.setWidget(body)
         self._refresh()
