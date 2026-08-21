@@ -61,16 +61,16 @@ PATTERN_EXAMPLE = """"hiss": {
     ">probability": 0.985,
     "<f0": 450
   },
+  "throttle": {
+    "hiss": 0.15,
+    "tut": 0.2
+  },
   "detect_after": 0.05,
-  "graceperiod": 0.03,
   "grace_threshold": {
     ">power": 3,
     ">probability": 0.4
   },
-  "throttle": {
-    "hiss": 0.15,
-    "tut": 0.2
-  }
+  "graceperiod": 0.03
 }"""
 
 PROPERTY_TABLE = (
@@ -82,6 +82,10 @@ PROPERTY_TABLE = (
          "added together."),
         ("threshold", "Yes", "object",
          "The rules a frame has to pass for the pattern to fire."),
+        ("throttle", "No", "pattern name: seconds",
+         "How long each named pattern stays silent after this one fires. "
+         "Naming itself is the usual case, and what makes one utterance one "
+         "action."),
         ("detect_after", "No", "seconds",
          "How long the rules must hold before the first fire. Turns a tap "
          "into hold to activate."),
@@ -90,9 +94,6 @@ PROPERTY_TABLE = (
          "you hold does not stutter."),
         ("graceperiod", "No", "seconds",
          "How long those looser rules last. 0.03 to 0.1 in practice."),
-        ("throttle", "No", "pattern name: seconds",
-         "How long each named pattern stays silent after this one fires. Its "
-         "own name included, which is what makes one utterance one action."),
     ),
 )
 
