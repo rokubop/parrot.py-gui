@@ -48,7 +48,8 @@ LINKS = {
 
 
 def topic(key, title, rows=None, diagram=None, lede=None, intro=None,
-          note=None, bands=None, code=None, short=None, shown_on=None):
+          note=None, bands=None, code=None, tables=None, short=None,
+          shown_on=None):
     """One topic, in the two lengths the app needs.
 
     `short` is the one-line version a tooltip shows; everything else is the
@@ -64,12 +65,17 @@ def topic(key, title, rows=None, diagram=None, lede=None, intro=None,
     `code` is a literal block shown as typed. Plain text: the font and the
     colours are help_dialog's.
 
+    `tables` are (title, headers, rows) triples for a reference that needs
+    columns of its own - required, format, description. `rows` stays the
+    right shape for everything else: a table with one wide column and a
+    narrow label is a table nobody reads.
+
     `diagram` names one of help_dialog.DIAGRAMS. `shown_on` says where the
     topic's Help button lives, for readers of the About page.
     """
     return dict(key=key, title=title, rows=rows, diagram=diagram, lede=lede,
-                intro=intro, note=note, bands=bands, code=code, short=short,
-                shown_on=shown_on)
+                intro=intro, note=note, bands=bands, code=code, tables=tables,
+                short=short, shown_on=shown_on)
 
 
 def tab(key, title, blurb, topics):

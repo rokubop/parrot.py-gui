@@ -708,6 +708,41 @@ def rows_html(rows):
     return "".join(out)
 
 
+def table_html(headers, rows):
+    """A reference table with its own columns.
+
+    The last column is the description and takes the slack; every one before
+    it holds a word or two, so they are kept off the wrap. `headers` may be
+    None for a table whose columns need no naming.
+    """
+    t = theme.colors()
+    dim, text, bright = t["text_dim"], t["text"], t["text_bright"]
+    columns = len(headers) if headers else len(rows[0])
+    out = ["<table cellspacing='0' cellpadding='3' width='100%'>"]
+    if headers:
+        out.append("<tr>")
+        for i, head in enumerate(headers):
+            width = "" if i == columns - 1 else " white-space:nowrap;"
+            out.append(
+                f"<td style='color:{bright}; font-weight:bold; "
+                f"padding-right:14px; border-bottom:1px solid {t['border']};"
+                f"{width}'>{head}</td>")
+        out.append("</tr>")
+    for row in rows:
+        out.append("<tr>")
+        for i, cell in enumerate(row):
+            last = i == columns - 1
+            colour = text if last else dim
+            weight = "" if last else " font-weight:bold;"
+            width = "" if last else " white-space:nowrap;"
+            out.append(f"<td style='color:{colour};{weight}{width} "
+                       f"padding-right:14px; padding-top:6px; "
+                       f"vertical-align:top;'>{with_links(cell)}</td>")
+        out.append("</tr>")
+    out.append("</table>")
+    return "".join(out)
+
+
 # Wider than a comfortable measure, so a long topic fits on one screen -
 # which matters more for help nobody scrolls.
 BODY_WIDTH = 860
@@ -764,7 +799,8 @@ def bands_html(bands):
 
 
 def topic_content(key, parent=None, stretch=True):
-    """A topic drawn as a widget: lede, diagram, intro, code, rows, note.
+    """A topic drawn as a widget: lede, diagram, intro, code, rows, tables,
+    note.
 
     The one renderer for help. The ``?  Help`` modal shows this, and the About
     page stacks one per topic, so a topic looks the same in both and gains
@@ -796,6 +832,11 @@ def topic_content(key, parent=None, stretch=True):
         inner.addWidget(_prose(bands_html(spec["bands"])))
     if spec["rows"]:
         inner.addWidget(_prose(rows_html(spec["rows"])))
+    for title, headers, rows in spec.get("tables") or ():
+        heading = QLabel(title, panel)
+        heading.setStyleSheet(components.heading_style("card"))
+        inner.addWidget(heading)
+        inner.addWidget(_prose(table_html(headers, rows)))
     if spec["note"]:
         inner.addWidget(_prose(spec["note"]))
 

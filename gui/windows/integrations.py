@@ -83,7 +83,7 @@ class IntegrationsPage(QWidget):
         # patterns.json, and a click away is a click too far when the file
         # you are writing is open beside it.
         layout.addSpacing(4)
-        layout.addWidget(components.heading("What a pattern holds", "card"))
+        layout.addWidget(components.heading(content.title("patterns"), "title"))
         layout.addWidget(help_dialog.topic_content(content.get("patterns"),
                                                    stretch=False))
         layout.addStretch()

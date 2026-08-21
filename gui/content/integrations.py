@@ -36,15 +36,23 @@ TALON_ROWS = (
                   "is how you find the numbers a threshold should use."),
 )
 
-# The two words come from two programs, and nothing on screen says so.
+# The two words come from two programs, and nothing on screen said so.
 # Mixing them up is the common failure: a sound name where a pattern name
 # belongs, in a throttle or in a .talon file.
-PATTERN_LEDE = ("<b>Sounds</b> are your model's. <b>Patterns</b> are Talon's: "
-                "a named rule over those sounds, and the name is what a "
-                "<code>.talon</code> file binds.")
+VOCABULARY_TABLE = (
+    "Sound vs Pattern",
+    None,
+    (
+        ("sound", "A sound from parrot.py, one of the labels your model was "
+                  "trained on."),
+        ("pattern", "A named rule in <code>patterns.json</code>, and what "
+                    "Talon works in: which sounds, which thresholds, when it "
+                    "fires. The name is what a <code>.talon</code> file "
+                    "binds."),
+    ),
+)
 
-PATTERN_INTRO = ("One trigger in <code>patterns.json</code>, using every key "
-                 "there is:")
+PATTERN_INTRO = "Example of one pattern:"
 
 PATTERN_EXAMPLE = """"hiss": {
   "sounds": ["ss"],
@@ -65,79 +73,60 @@ PATTERN_EXAMPLE = """"hiss": {
   }
 }"""
 
-# Complete on purpose: every key the integration reads, and the fact that
-# there are no others. A threshold it does not know is a warning in Talon's
-# log and nothing else, so a rule that looks written is a rule not applied.
-PATTERN_ROWS = (
-    ("The words", None),
-    ("sound", "A label in your model, one per sound you recorded and "
-              "trained. The model scores every one of them on every frame. "
-              "This app's side."),
-    ("pattern", "A named rule in <code>patterns.json</code>: which sounds "
-                "count, and how sure and how loud they have to be. One sound "
-                "or several. Talon's side. parrot.py's own modes use the "
-                "word too, with different keys, so a pattern written for "
-                "those does not run here."),
-    ("pattern name", "The key the pattern is written under, and the only "
-                     "thing a <code>.talon</code> file sees: "
-                     "<code>parrot(hiss): mouse_click(0)</code>. Never a "
-                     "sound name."),
-
-    ("Top level", None),
-    ("sounds", "Required. The model's own labels, and they have to match: a "
-               "name the model does not have discards the whole pattern. "
-               "Listing two adds their probabilities together, which is how "
-               "two sounds it confuses can still fire one thing reliably."),
-    ("threshold", "Required. The rules that must <i>all</i> pass for a frame "
-                  "to fire."),
-    ("detect_after", "Seconds the rules have to hold before the first fire, "
-                     "which turns a pop into hold to activate. Left out, one "
-                     "frame is enough."),
-    ("grace_threshold", "Softer rules that take over once the pattern has "
-                        "fired, so a sound you are holding does not stutter "
-                        "as its probability wobbles. Same keys as "
-                        "<code>threshold</code>."),
-    ("graceperiod", "How long those softer rules last. 0.03 to 0.1 s."),
-    ("throttle", "Seconds of silence after firing."),
-
-    ("Inside threshold and grace_threshold", None),
-    ("&gt;probability<br>&lt;probability", "Summed confidence across every "
-                                           "sound listed, 0 to 1. Sits at "
-                                           "0.9 to 0.99 in practice."),
-    ("&gt;power<br>&lt;power", "Loudness, on Talon's own scale. 3 to 15 in "
-                               "practice, 30 is loud. Not parrot.py's power, "
-                               "which runs in the thousands."),
-    ("&gt;f0<br>&lt;f0", "Pitch in Hz. Tells a high sound from a low one "
-                         "without training a second sound for it."),
-    ("&gt;f1, &gt;f2<br>&lt;f1, &lt;f2", "First and second formants in Hz. "
-                                         "Vowels separate on these where "
-                                         "pitch alone will not do it."),
-    ("&gt;ratio<br>&lt;ratio", "The first listed sound's probability divided "
-                               "by the second's, for splitting two patterns "
-                               "that share sounds. Needs two sounds; with one "
-                               "it is ignored."),
-    ("Nothing else", "Those twelve are the whole set. <code>&gt;=</code>, "
-                     "<code>&lt;=</code> and <code>=</code> are not "
-                     "operators, and a key Talon does not know - "
-                     "<code>&gt;rate</code>, or parrot.py's own "
-                     "<code>percentage</code>, <code>frequency</code>, "
-                     "<code>intensity</code>, <code>times</code> - is logged "
-                     "as unknown and then ignored. The rule reads as written "
-                     "and is not applied."),
-
-    ("Inside throttle", None),
-    ("a pattern name", "Seconds that pattern stays silent after this one "
-                       "fires. Its own name included: 0.15 on itself is what "
-                       "makes one utterance one action. A name that is not a "
-                       "pattern is ignored, so a sound name here is a "
-                       "throttle that never happens."),
+PROPERTY_TABLE = (
+    "Pattern properties",
+    ("Property", "Required", "Format", "What it does"),
+    (
+        ("sounds", "Yes", "list of labels",
+         "The model's sounds that count toward this pattern. Two or more are "
+         "added together."),
+        ("threshold", "Yes", "object",
+         "The rules a frame has to pass for the pattern to fire."),
+        ("detect_after", "No", "seconds",
+         "How long the rules must hold before the first fire. Turns a tap "
+         "into hold to activate."),
+        ("grace_threshold", "No", "object",
+         "Looser rules that take over once the pattern has fired, so a sound "
+         "you hold does not stutter."),
+        ("graceperiod", "No", "seconds",
+         "How long those looser rules last. 0.03 to 0.1 in practice."),
+        ("throttle", "No", "pattern name: seconds",
+         "How long each named pattern stays silent after this one fires. Its "
+         "own name included, which is what makes one utterance one action."),
+    ),
 )
 
-PATTERN_NOTE = ("<p>Detection runs 60 times a second. "
+# One table for both objects: grace_threshold takes the same keys, and
+# saying so twice is how the two lists drift apart.
+THRESHOLD_TABLE = (
+    "Threshold keys, in threshold and grace_threshold",
+    ("Key", "Format", "What it compares"),
+    (
+        ("&gt;probability<br>&lt;probability", "0 to 1",
+         "Confidence, summed across the pattern's sounds. Most sit at 0.9 to "
+         "0.99."),
+        ("&gt;power<br>&lt;power", "number",
+         "Loudness on Talon's scale, where 3 to 15 is usual and 30 is loud."),
+        ("&gt;f0<br>&lt;f0", "Hz",
+         "Pitch, for telling a high sound from a low one."),
+        ("&gt;f1, &gt;f2<br>&lt;f1, &lt;f2", "Hz",
+         "First and second formants, which separate vowels that share a "
+         "pitch."),
+        ("&gt;ratio<br>&lt;ratio", "number",
+         "The first sound's probability divided by the second's. Needs two "
+         "sounds."),
+    ),
+)
+
+PATTERN_NOTE = ("<p>Those twelve keys are the whole set. <code>&gt;=</code>, "
+                "<code>&lt;=</code> and <code>=</code> are not operators, and "
+                "a key Talon does not know is written to its log as unknown "
+                "and then ignored, leaving the rule unenforced. "
                 "<code>&gt;</code> means at or above, <code>&lt;</code> means "
-                "below. Talon skips the model entirely while power sits below "
-                "the lowest <code>&gt;power</code> you have written, so one "
-                "low value costs a little CPU for every pattern.</p>")
+                "below.</p>"
+                "<p>A name in a <code>throttle</code> that is not a pattern "
+                "is ignored the same way, so a sound name there is a throttle "
+                "that never happens.</p>")
 
 
 TAB = tab("integrations", "Integrations",
@@ -154,10 +143,10 @@ TAB = tab("integrations", "Integrations",
           short="Talon runs your model live and turns each sound into an "
                 "action.",
           shown_on="Integrations tab"),
-    topic("patterns", "What a pattern holds", lede=PATTERN_LEDE,
-          intro=PATTERN_INTRO,
-          code=PATTERN_EXAMPLE, rows=PATTERN_ROWS, note=PATTERN_NOTE,
+    topic("patterns", "Understanding Talon's patterns.json",
+          intro=PATTERN_INTRO, code=PATTERN_EXAMPLE,
+          tables=(VOCABULARY_TABLE, PROPERTY_TABLE, THRESHOLD_TABLE),
+          note=PATTERN_NOTE,
           short="A trigger: the sounds that fire it, and the rules that "
                 "decide when they count.",
-          shown_on="Integrations tab"),
-))
+          shown_on="Integrations tab"),))
