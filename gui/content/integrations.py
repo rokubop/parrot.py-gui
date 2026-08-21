@@ -124,12 +124,7 @@ THRESHOLD_TABLE = (
 PATTERN_NOTE = ("<p>Those twelve keys are the whole set. <code>&gt;=</code>, "
                 "<code>&lt;=</code> and <code>=</code> are not operators, and "
                 "a key Talon does not know is written to its log as unknown "
-                "and then ignored, leaving the rule unenforced. "
-                "<code>&gt;</code> means at or above, <code>&lt;</code> means "
-                "below.</p>"
-                "<p>A name in a <code>throttle</code> that is not a pattern "
-                "is ignored the same way, so a sound name there is a throttle "
-                "that never happens.</p>")
+                "and then ignored, leaving the rule unenforced.</p>")
 
 
 TAB = tab("integrations", "Integrations",
