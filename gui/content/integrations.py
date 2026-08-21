@@ -100,10 +100,55 @@ PATTERNS_TOPIC = topic("patterns", "What a pattern holds",
                              "rules that decide when they count.",
                        shown_on="Integrations tab")
 
+# Draft B: the reference, plus what to reach for when a trigger misbehaves.
+# The reference says what a key is; this says which key a symptom calls for,
+# which is the part nobody can look up.
+TUNING_ROWS = (
+    ("Fires when you were quiet", "Raise <code>&gt;power</code> first. Most "
+                                  "stray detections are quiet noises the "
+                                  "model has never heard: a hand through "
+                                  "your hair, a mouse on a mat. Raise "
+                                  "<code>&gt;probability</code> after."),
+    ("Fires twice per sound", "Throttle it against itself. 0.15 s is about "
+                              "one utterance; too long and a deliberate "
+                              "double is swallowed."),
+    ("Sets off a different trigger", "Name that pattern in this one's "
+                                     "<code>throttle</code>. An echo often "
+                                     "reads as another sound for a frame or "
+                                     "two just after a real one."),
+    ("Stutters while you hold it", "Add a <code>grace_threshold</code> "
+                                   "looser than the threshold, with a "
+                                   "<code>graceperiod</code> of 0.05. A held "
+                                   "sound drifts as you run out of breath, "
+                                   "and its probability drops with it."),
+    ("Fires the moment you start", "<code>detect_after</code>, if you wanted "
+                                   "hold to activate rather than a tap."),
+    ("Two sounds fire each other", "Split them on pitch with "
+                                   "<code>&gt;f0</code> or "
+                                   "<code>&lt;f1</code>, or on "
+                                   "<code>&gt;ratio</code> if one sound "
+                                   "always leads the other."),
+    ("It never fires at all", "Check the sound names against the model's "
+                              "own labels. A name that is not in the model "
+                              "makes Talon discard the whole pattern."),
+)
+
+TUNING_NOTE = ("<p>Every number here is one you read off a frame, not one you "
+               "guess. {tester}, or the test screen, shows the power and "
+               "probability of the sound you just made.</p>")
+
+TUNING_TOPIC = topic("pattern_tuning", "When a trigger misbehaves",
+                     rows=TUNING_ROWS, note=TUNING_NOTE,
+                     short="Which threshold to reach for when a sound fires "
+                           "twice, fires early, or fires on nothing.",
+                     shown_on="Integrations tab")
+
 # What the page draws for this variant: which topics get a ? button under
 # Talon, and what it shows inline.
-PATTERN_TOPICS = (PATTERNS_TOPIC,)
-PATTERN_TOPIC_KEYS = ("patterns",)
+if VARIANT == "b":
+    PATTERN_TOPICS = (PATTERNS_TOPIC, TUNING_TOPIC)
+else:
+    PATTERN_TOPICS = (PATTERNS_TOPIC,)
 PATTERN_EXAMPLE_ON_PAGE = None
 
 
