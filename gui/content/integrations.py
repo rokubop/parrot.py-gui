@@ -121,12 +121,6 @@ THRESHOLD_TABLE = (
     ),
 )
 
-PATTERN_NOTE = ("<p>Those twelve keys are the whole set. <code>&gt;=</code>, "
-                "<code>&lt;=</code> and <code>=</code> are not operators, and "
-                "a key Talon does not know is written to its log as unknown "
-                "and then ignored, leaving the rule unenforced.</p>")
-
-
 TAB = tab("integrations", "Integrations",
           "The model you trained, and the program that runs it.", (
     topic("running_a_model", "Using your model", diagram="handoff",
@@ -144,7 +138,6 @@ TAB = tab("integrations", "Integrations",
     topic("patterns", "Understanding Talon's patterns.json",
           intro=PATTERN_INTRO, code=PATTERN_EXAMPLE,
           tables=(VOCABULARY_TABLE, PROPERTY_TABLE, THRESHOLD_TABLE),
-          note=PATTERN_NOTE,
           short="A trigger: the sounds that fire it, and the rules that "
                 "decide when they count.",
           shown_on="Integrations tab"),))
