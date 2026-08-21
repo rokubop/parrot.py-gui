@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 
 from config.config import CLASSIFIER_FOLDER
 from gui import components, content, theme
+from gui.content import integrations as integrations_copy
 from gui.services import library_ops
 from gui.widgets import help_dialog
 
@@ -81,12 +82,23 @@ class IntegrationsPage(QWidget):
 
         # The field reference stays behind the button: it is what you read
         # while writing patterns.json, not while reading this page.
-        patterns_row = QHBoxLayout()
-        patterns_row.setSpacing(6)
-        patterns_row.addWidget(components.dim_label("What a pattern holds"))
-        patterns_row.addWidget(help_dialog.help_button(self, "patterns"))
-        patterns_row.addStretch()
-        layout.addLayout(patterns_row)
+        if integrations_copy.PATTERN_EXAMPLE_ON_PAGE:
+            layout.addSpacing(4)
+            layout.addWidget(help_dialog.prose(
+                integrations_copy.PATTERN_EXAMPLE_INTRO))
+            layout.addWidget(
+                help_dialog.code_block(
+                    integrations_copy.PATTERN_EXAMPLE_ON_PAGE),
+                0, Qt.AlignmentFlag.AlignLeft)
+        for pattern_topic in integrations_copy.PATTERN_TOPICS:
+            patterns_row = QHBoxLayout()
+            patterns_row.setSpacing(6)
+            patterns_row.addWidget(
+                components.dim_label(pattern_topic["title"]))
+            patterns_row.addWidget(
+                help_dialog.help_button(self, pattern_topic["key"]))
+            patterns_row.addStretch()
+            layout.addLayout(patterns_row)
         layout.addStretch()
         scroll.setWidget(body)
         self._refresh()

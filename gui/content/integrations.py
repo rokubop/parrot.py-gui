@@ -1,4 +1,6 @@
 """The Integrations tab: where a trained model is, and what runs it."""
+import os
+
 from gui.content import tab, topic
 
 COPY_STEP = ("Open parrot.py's models folder and manually copy the model "
@@ -36,28 +38,73 @@ TALON_ROWS = (
                   "is how you find the numbers a threshold should use."),
 )
 
+# Three drafts of the pattern reference, chosen with PARROT_PATTERNS_VARIANT
+# so they can be compared in the running app. One survives.
+VARIANT = os.environ.get("PARROT_PATTERNS_VARIANT", "a").lower()
+
+PATTERN_INTRO = ("One trigger in <code>patterns.json</code>. This one fires on "
+                 "the model's <code>ss</code> sound:")
+
+PATTERN_EXAMPLE = """"hiss": {
+  "sounds": ["ss"],
+  "threshold": {
+    ">power": 5,
+    ">probability": 0.985
+  },
+  "graceperiod": 0.03,
+  "grace_threshold": {
+    ">power": 3,
+    ">probability": 0.4
+  },
+  "throttle": {
+    "tut": 0.2,
+    "t": 0.15
+  }
+}"""
+
 PATTERN_ROWS = (
-    ("sounds", "Which of the model's sounds count toward this trigger. Their "
-               "probabilities are summed."),
-    ("threshold", "The rules that must <i>all</i> pass for a frame to fire: "
-                  "<code>&gt;probability</code> (summed confidence, 0-1), "
-                  "<code>&gt;power</code> (loudness), and "
-                  "<code>&gt;f0/f1/f2</code> (pitch and formants, in Hz, to "
-                  "tell a high hiss from a low one). Each has a "
-                  "<code>&lt;</code> form too."),
-    ("detect_after", "The rules have to hold this long before the first fire, "
-                     "which turns a pop into hold-to-activate."),
+    ("sounds", "The model's sounds that count toward this trigger. Listing "
+               "two adds their probabilities together, which is how two "
+               "sounds it confuses can still fire one thing reliably."),
+    ("threshold", "The rules that must <i>all</i> pass for a frame to fire. "
+                  "<code>&gt;probability</code> is that summed confidence, 0 "
+                  "to 1, and sits at 0.9 to 0.99 in practice. "
+                  "<code>&gt;power</code> is loudness, 3 to 15. "
+                  "<code>&gt;f0</code>, <code>&gt;f1</code> and "
+                  "<code>&gt;f2</code> are pitch and formants in Hz, for "
+                  "telling a high sound from a low one. "
+                  "<code>&gt;ratio</code> compares the first listed sound to "
+                  "the second. Each has a <code>&lt;</code> form."),
+    ("detect_after", "Seconds the rules have to hold before the first fire, "
+                     "which turns a pop into hold to activate. Left out, one "
+                     "frame is enough."),
     ("grace_threshold", "Softer rules that take over once the pattern has "
                         "fired, so a sound you are holding does not stutter "
                         "as its probability wobbles."),
-    ("graceperiod", "How long grace_threshold stays in effect afterwards."),
-    ("throttle", "After firing, how long this pattern stays silent. Name "
-                 "other patterns to silence those instead. Targets are "
-                 "pattern names, never sound names."),
+    ("graceperiod", "How long those softer rules last. 0.03 to 0.1 s."),
+    ("throttle", "Seconds of silence after firing. 0.15 on itself is what "
+                 "makes one utterance one action; naming another pattern "
+                 "silences that one instead. Targets are pattern names, "
+                 "never sound names."),
 )
 
-PATTERN_NOTE = ("<p>Detection runs 60 times a second, so a throttle is what "
-                "makes one utterance one action.</p>")
+PATTERN_NOTE = ("<p>Detection runs 60 times a second. Talon skips the model "
+                "entirely while power sits below the lowest "
+                "<code>&gt;power</code> you have written, so one low value "
+                "costs a little CPU for every pattern.</p>")
+
+PATTERNS_TOPIC = topic("patterns", "What a pattern holds",
+                       intro=PATTERN_INTRO, code=PATTERN_EXAMPLE,
+                       rows=PATTERN_ROWS, note=PATTERN_NOTE,
+                       short="A trigger: the sounds that fire it, and the "
+                             "rules that decide when they count.",
+                       shown_on="Integrations tab")
+
+# What the page draws for this variant: which topics get a ? button under
+# Talon, and what it shows inline.
+PATTERN_TOPICS = (PATTERNS_TOPIC,)
+PATTERN_TOPIC_KEYS = ("patterns",)
+PATTERN_EXAMPLE_ON_PAGE = None
 
 
 TAB = tab("integrations", "Integrations",
@@ -74,9 +121,4 @@ TAB = tab("integrations", "Integrations",
           short="Talon runs your model live and turns each sound into an "
                 "action.",
           shown_on="Integrations tab"),
-    topic("patterns", "What a pattern holds", rows=PATTERN_ROWS,
-          note=PATTERN_NOTE,
-          short="A trigger: the sounds that fire it, and the rules that "
-                "decide when they count.",
-          shown_on="Integrations tab"),
-))
+) + PATTERN_TOPICS)
