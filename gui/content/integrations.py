@@ -103,11 +103,13 @@ THRESHOLD_TABLE = (
     "Threshold keys, in threshold and grace_threshold",
     ("Key", "Format", "What it compares"),
     (
+        ("&gt;power<br>&lt;power", "number",
+         "Loudness on Talon's scale, where 3 to 15 is usual and 30 is loud. "
+         "Nearly every pattern sets it: it is what keeps quiet noises the "
+         "model has never heard from firing."),
         ("&gt;probability<br>&lt;probability", "0 to 1",
          "Confidence, summed across the pattern's sounds. Most sit at 0.9 to "
          "0.99."),
-        ("&gt;power<br>&lt;power", "number",
-         "Loudness on Talon's scale, where 3 to 15 is usual and 30 is loud."),
         ("&gt;f0<br>&lt;f0", "Hz",
          "Pitch, for telling a high sound from a low one."),
         ("&gt;f1, &gt;f2<br>&lt;f1, &lt;f2", "Hz",
