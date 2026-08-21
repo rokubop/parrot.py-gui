@@ -145,11 +145,33 @@ TUNING_TOPIC = topic("pattern_tuning", "When a trigger misbehaves",
 
 # What the page draws for this variant: which topics get a ? button under
 # Talon, and what it shows inline.
+# Draft C: the shape of a trigger is on the page, where it answers "what am
+# I even writing" without a click. The field table stays behind the button.
+PATTERN_EXAMPLE_INTRO = ("A trigger is a name, the sounds that fire it, and "
+                         "the rules that decide when they count:")
+
+SMALL_EXAMPLE = """"pop": {
+  "sounds": ["pop"],
+  "threshold": {
+    ">power": 5,
+    ">probability": 0.95
+  },
+  "throttle": { "pop": 0.15 }
+}"""
+
 if VARIANT == "b":
     PATTERN_TOPICS = (PATTERNS_TOPIC, TUNING_TOPIC)
+    PATTERN_EXAMPLE_ON_PAGE = None
+elif VARIANT == "c":
+    # Nothing shown twice: the page has the example, so the topic drops it.
+    PATTERN_TOPICS = (topic("patterns", "What each part does",
+                            rows=PATTERN_ROWS, note=PATTERN_NOTE,
+                            short=PATTERNS_TOPIC["short"],
+                            shown_on="Integrations tab"),)
+    PATTERN_EXAMPLE_ON_PAGE = SMALL_EXAMPLE
 else:
     PATTERN_TOPICS = (PATTERNS_TOPIC,)
-PATTERN_EXAMPLE_ON_PAGE = None
+    PATTERN_EXAMPLE_ON_PAGE = None
 
 
 TAB = tab("integrations", "Integrations",
