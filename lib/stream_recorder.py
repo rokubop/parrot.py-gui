@@ -77,7 +77,7 @@ class StreamRecorder:
         # This is used to modify the wave file directly
         CHUNK_SIZE_OFFSET = 4
         DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
-        DATA_OFFSET = 44   # canonical PCM header; the payload starts here
+        DATA_OFFSET = 44   # canonical PCM header
         LITTLE_ENDIAN_INT = struct.Struct('<I')
     
         byteString = b''.join(self.total_audio_frames)
@@ -97,9 +97,6 @@ class StreamRecorder:
         appendTotalFile.seek(CHUNK_SIZE_OFFSET)
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(chunk_size))
         appendTotalFile.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-        # Measured from the file. length_per_frame is already a byte count, so
-        # the old `2 * ( index * length_per_frame )` applied the 16-bit sample
-        # width twice and declared double the real length.
         sample_length = file_size - DATA_OFFSET
         
         appendTotalFile.write(LITTLE_ENDIAN_INT.pack(sample_length))
@@ -158,7 +155,7 @@ class StreamRecorder:
                 # Overwrite the total recording length
                 CHUNK_SIZE_OFFSET = 4
                 DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
-                DATA_OFFSET = 44   # canonical PCM header; the payload starts here
+                DATA_OFFSET = 44   # canonical PCM header
                 LITTLE_ENDIAN_INT = struct.Struct('<I')
 
                 f.seek(0,2)

@@ -78,8 +78,7 @@ class AudioNetTrainer:
     
     def __init__(self, dataset, net_count = 1, audio_settings = None,
                  run_settings = None, source_mics = None):
-        # Instance state, not class attributes: shared class-level lists made a
-        # second training run in the same process reuse the first run's nets.
+        # Instance state: class-level lists would be shared between trainers.
         self.nets = []
         self.optimizers = []
         self.random_seeds = []
@@ -137,7 +136,6 @@ class AudioNetTrainer:
         for sample in self.dataset.samples:
             label_frames[self.dataset_labels[sample[1]]] += 1
 
-        # create_empty() makes recordings/models/code only.
         os.makedirs(REPLAYS_FOLDER, exist_ok=True)
         with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:	
             headers = ['epoch', 'loss', 'avg_validation_accuracy']
@@ -162,10 +160,8 @@ class AudioNetTrainer:
                     with torch.set_grad_enabled(True):
                         st_batch= time.time()
                         for local_batch, local_labels in self.train_loaders[j]:
-                            # BatchNorm1d cannot compute a variance from a single
-                            # sample, so a trailing batch of 1 kills the run.
-                            # Skipped rather than drop_last=True, which would train
-                            # on nothing for a dataset smaller than one batch.
+                            # BatchNorm1d needs 2+ samples for a variance. drop_last
+                            # would train on nothing if the dataset is under one batch.
                             if local_batch.size(0) < 2:
                                 continue
 
@@ -192,8 +188,6 @@ class AudioNetTrainer:
                             
                             if( i % 10 == 0 ):
                                 correct_in_minibatch = ( local_labels == output.max(dim = 1)[1] ).sum()
-                                # Divide by the batch actually seen; the last
-                                # batch of an epoch is usually short.
                                 print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/local_labels.size(0)))
                                 running_loss[j] = 0.0
                     
@@ -210,7 +204,6 @@ class AudioNetTrainer:
                 epoch_loss = []
                 accuracy = []
                 combined_correct = 0
-                # One per net. A single dict here left only the last net's.
                 label_accuracy = []
                 for j in range(self.net_count):
                     epoch_validation_loss.append(0.0)
@@ -253,7 +246,6 @@ class AudioNetTrainer:
                 
                         label_accuracy.append(accuracy_batch['percent'])
 
-                # Reported per sound: the mean across nets, not the last one.
                 mean_label_accuracy = {}
                 for dataset_label in self.dataset_labels:
                     scores = [p[dataset_label] for p in label_accuracy]
