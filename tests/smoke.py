@@ -15,7 +15,9 @@ checked at all, since load_data seeds its sampling with the clock and three
 epochs on eight seconds of audio predicts nothing.
 """
 import atexit
+import contextlib
 import glob
+import io
 import os
 import re
 import shutil
@@ -113,6 +115,38 @@ for label in LABELS:
         # twelve times. Continuous sounds were never called discrete.
         print("       %s heard as %s at %s dBFS, wanted %s" % (
             label, heard, detected.get(label + "_min_dbfs", "?"), DURATION_TYPES[label]))
+print("  took %.1fs" % (time.time() - t))
+
+t = stage("Clamping the discrete threshold at the noise floor")
+from lib.typing import DetectionFrame, DetectionLabel, DetectionState
+from lib.stream_processing import post_processing
+# Only a discrete take drops the threshold, and duration type is measured, not
+# declared: equal length events with widely varying loudness read as discrete
+FLOOR, BOUND, MARGIN = -60.0, -58.0, 3.0
+spiky, frame_index = [], 0
+for loudness in (-20.0, -32.0, -44.0, -56.0, -68.0):
+    for _ in range(3):
+        frame_index += 1
+        spiky.append(DetectionFrame(frame_index, 15, True, False, 1.0,
+                                    loudness, [], 0.0, LABELS[0]))
+    for _ in range(3):
+        frame_index += 1
+        spiky.append(DetectionFrame(frame_index, 15, False, False, 1.0, -90.0,
+                                    [], 0.0, config.config.BACKGROUND_LABEL))
+spiky_state = DetectionState(
+    config.config.CURRENT_DETECTION_STRATEGY, "recording", 15, 900, False,
+    -20.0, 0.0, 30.0, FLOOR,
+    [DetectionLabel(LABELS[0], 0, 0, "", 0, -96, -96, 0, 0)], [])
+spiky_state.upper_bound_dBFS_threshold = BOUND
+spiky_state.current_dBFS_threshold = BOUND
+spiky_state.dBFS_error_margin = MARGIN
+with contextlib.redirect_stdout(io.StringIO()):
+    post_processing(spiky, spiky_state, os.path.join(workdir, "spiky"),
+                    os.path.join(workdir, "spiky_thresholds.txt"))
+check("a discrete drop stops at the noise floor",
+      spiky_state.current_dBFS_threshold == FLOOR,
+      "(%.2f, unclamped would be %.2f)" % (spiky_state.current_dBFS_threshold,
+                                           BOUND - MARGIN * 3))
 print("  took %.1fs" % (time.time() - t))
 
 t = stage("Loading that segmentation as training data")
