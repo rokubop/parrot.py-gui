@@ -341,8 +341,12 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
         detection_state.current_dBFS_threshold = detection_state.upper_bound_dBFS_threshold
 
         # Decrease the threshold by about 20% of the sound range
+        # Never below the noise floor, or every frame counts as detected
         if dominant_label_type == "discrete":
-            detection_state.current_dBFS_threshold -= detection_state.dBFS_error_margin * 3
+            detection_state.current_dBFS_threshold = max(
+                detection_state.current_dBFS_threshold - detection_state.dBFS_error_margin * 3,
+                detection_state.expected_noise_floor
+            )
 
         for index, frame in enumerate(frames):
             detected = frame.positive
