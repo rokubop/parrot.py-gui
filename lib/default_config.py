@@ -12,7 +12,13 @@ import pyautogui
 
 pyautogui.FAILSAFE = False
 
-default_audio = pyaudio.PyAudio().get_default_input_device_info()
+# Training and analysing do not record, so a missing input device must not stop
+# them. PyAudio raises rather than returning None when there is no default.
+try:
+    default_audio = pyaudio.PyAudio().get_default_input_device_info()
+except (IOError, OSError):
+    default_audio = None
+
 REPEAT_DELAY = 0.5
 REPEAT_RATE = 33
 SPEECHREC_ENABLED = False
