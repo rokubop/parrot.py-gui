@@ -122,6 +122,23 @@ print("  took %.1fs" % (time.time() - t))
 check("samples were loaded", len(data_x) > 0, "(%d)" % len(data_x))
 check("every label is there, not just silence", sorted(set(data_y)) == sorted(EXPECTED_CLASSES), str(sorted(set(data_y))))
 
+t = stage("Loading a label that segmented to nothing")
+empty_label = "quiet"
+empty_source = os.path.join(segmented, empty_label, "source")
+empty_segments = os.path.join(segmented, empty_label, "segments")
+os.makedirs(empty_source)
+os.makedirs(empty_segments)
+shutil.copy(os.path.join(FIXTURES, LABELS[0], "source", LABELS[0] + ".wav"), empty_source)
+open(os.path.join(empty_segments, empty_label + ".v3.srt"), "w").close()
+try:
+    with_empty_x, with_empty_y, _ = lib.load_data.load_sklearn_data(LABELS + [empty_label], settings["FEATURE_ENGINEERING_TYPE"])
+    check("an empty label does not stop the rest loading", len(with_empty_x) > 0, "(%d samples)" % len(with_empty_x))
+    check("and it contributes nothing", empty_label not in set(with_empty_y), str(sorted(set(with_empty_y))))
+except Exception as error:
+    check("an empty label does not stop the rest loading", False, "%s: %s" % (type(error).__name__, error))
+shutil.rmtree(os.path.join(segmented, empty_label), ignore_errors=True)
+print("  took %.1fs" % (time.time() - t))
+
 t = stage("Training a random forest")
 from sklearn.ensemble import RandomForestClassifier
 from lib.audio_model import AudioModel
