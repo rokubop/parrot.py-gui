@@ -12,7 +12,11 @@ import pyautogui
 
 pyautogui.FAILSAFE = False
 
-default_audio = pyaudio.PyAudio().get_default_input_device_info()
+try:
+    default_audio = pyaudio.PyAudio().get_default_input_device_info()
+except OSError:
+    default_audio = None
+
 REPEAT_DELAY = 0.5
 REPEAT_RATE = 33
 SPEECHREC_ENABLED = False
