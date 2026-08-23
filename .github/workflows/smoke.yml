@@ -1,0 +1,65 @@
+name: Smoke test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12 because lib/wav.py imports audioop, gone from 3.13.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-*.txt
+
+      # portaudio builds pyaudio, xvfb is for the pyautogui import.
+      - name: Install system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y portaudio19-dev libasound2-dev xvfb
+
+      - name: Install system libraries (macOS)
+        if: runner.os == 'macOS'
+        run: brew install portaudio
+
+      # The torch on PyPI is the CUDA build here, ~2.5 GB of nvidia wheels.
+      # Only sticks while requirements-posix.txt asks for a torch this one
+      # satisfies. A bound it fails pulls the CUDA build back in.
+      - name: Install CPU torch
+        if: runner.os == 'Linux'
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install requirements (Windows)
+        if: runner.os == 'Windows'
+        run: pip install -r requirements-windows.txt
+
+      - name: Install requirements (mac and linux)
+        if: runner.os != 'Windows'
+        run: pip install -r requirements-posix.txt
+
+      - name: Run the smoke test (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python tests/smoke.py
+
+      - name: Run the smoke test (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: python tests/smoke.py
