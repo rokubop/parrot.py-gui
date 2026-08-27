@@ -1,6 +1,6 @@
 import numpy as np
 from config.config import *
-import pyaudio
+import sounddevice as sd
 import time
 from queue import *
 import lib.ipc_manager as ipc_manager
@@ -47,7 +47,7 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
     # Any state can transition to switch and then transition back
     if (requested_state == "switching" or requested_state == "switch_and_run"):
         if (listening_state['stream']):
-            listening_state['stream'].stop_stream()
+            listening_state['stream'].stop()
         if( listening_state['audioQueue'] != None ):
             listening_state['audioQueue'].queue.clear()
         
@@ -57,7 +57,7 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
             print( "Listening stopped" )
             print( "-----------------" )
             listening_state['classifier_name'] = ipc_manager.getClassifier()            
-            listening_state['stream'].stop_stream()
+            listening_state['stream'].stop()
             set_loop_state(current_state)
             
             # Reset the stream
@@ -71,10 +71,10 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
         elif( requested_state == "paused"):
             print( "Listening paused!" )
             if (listening_state['stream']):
-                listening_state['stream'].stop_stream()
+                listening_state['stream'].stop()
         elif ( requested_state == "disconnected" ):
             if (listening_state['stream']):
-                listening_state['stream'].stop_stream()
+                listening_state['stream'].stop()
             if( listening_state['audioQueue'] != None ):
                 listening_state['audioQueue'].queue.clear()
             print( "Found a stall in audio updates" )
@@ -84,17 +84,17 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
     if (current_state == "disconnected"):
         global poll_counter
         if (requested_state == False):
-            audio = pyaudio.PyAudio()
             try:
-                stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
-                        input_device_index=INPUT_DEVICE_INDEX,
-                        frames_per_buffer=round( RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT ))
+                stream = sd.InputStream(
+                    samplerate=RATE, channels=CHANNELS,
+                    dtype='int16',
+                    device=INPUT_DEVICE_INDEX,
+                    blocksize=round( RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT ))
+                stream.start()
                 print( "" )
                 print( "Did not receive errors during reconnection to mic, restarting stream" )
-                if ( stream is not None ):
-                    stream.stop_stream()
-                    stream.close()
-                    audio.terminate()
+                stream.stop()
+                stream.close()
                     
                 # Reset the stream
                 listening_state['restart_listen_loop'] = True
@@ -102,7 +102,6 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
                 return LOOP_STATE_BREAK
             except Exception as e:
                 poll_counter = poll_counter + 1
-                audio.terminate()
                 print( "Reconnection attempt " + str( poll_counter ) + "...", end="\r")
         elif (requested_state == "paused"):
             print( "" )
@@ -118,10 +117,14 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
             print( "Listening resumed!" )
             if (listening_state['stream']):
                 try:
-                    listening_state['stream'].start_stream()
+                    listening_state['stream'].start()
+                    # Restarting renegotiates a Bluetooth link, so the first
+                    # frames are suspect again
+                    if listening_state.get('warmup') is not None:
+                        listening_state['warmup'].restart()
                     set_loop_state(requested_state)                    
                     return LOOP_STATE_CONTINUE                    
-                except IOError as e:
+                except Exception as e:
                     print( "An error occured during the resuming of the listening")
                     return LOOP_STATE_CONTINUE
     

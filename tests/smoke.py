@@ -38,7 +38,7 @@ EPOCHS = 3
 
 # Nothing means a broken segmenter, one means the whole clip was heard as a
 # single sound. Eight seconds is only 533 frames at 15ms, so the upper bound is
-# a runaway guard rather than a tight limit; real counts here are 27 and 15.
+# a runaway guard rather than a tight limit; real counts here are 22 and 11.
 MIN_EVENTS = 3
 MAX_EVENTS = 200
 
