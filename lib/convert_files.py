@@ -168,7 +168,7 @@ def segment_input_file(threshold, power_threshold, frequency_threshold, begin_th
     index = 0
     while( wf.tell() < total_frames ):
         index = index + 1
-        raw_wav = wf.readframes(frames_to_read * number_channels)
+        raw_wav = wf.readframes(frames_to_read)
         
         # If our wav file is shorter than the amount of bytes ( assuming 16 bit ) times the frames, we discard it and assume we arriveed at the end of the file
         if (len(raw_wav) != 2 * frames_to_read * number_channels ):

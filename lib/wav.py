@@ -14,11 +14,13 @@ if (PYTORCH_AVAILABLE == True):
 # Resamples the audio down to 16kHz ( or any other RATE filled in )
 # To make sure all the other calculations are stable and correct
 def resample_audio(wavData: np.array, frame_rate, number_channels) -> np.array:
+    sample_width = 2# 16 bit = 2 bytes
     if frame_rate > RATE:
-        sample_width = 2# 16 bit = 2 bytes
         wavData, _ = audioop.ratecv(wavData, sample_width, number_channels, frame_rate, RATE, None)
-        if number_channels > 1:
-            wavData = audioop.tomono(wavData[0], 2, 1, 0)
+    if number_channels > 1:
+        # Keep the first channel, which is what tomono( ..., 1, 0 ) did for two
+        samples = np.frombuffer(wavData, dtype=np.int16).reshape(-1, number_channels)
+        wavData = samples[:, 0].tobytes()
     return wavData
 
 def load_wav_files_with_srts( directories, label, int_label, start, end, input_type ):
@@ -108,14 +110,14 @@ def load_wav_data_from_srt(srt_file: str, source_file: str, feature_engineering_
                 keep_collecting = True
                 while keep_collecting:
                     try:
-                        raw_wav = wf.readframes(frames_to_read * number_channels)
+                        raw_wav = wf.readframes(frames_to_read)
                     except RuntimeError:
                         raw_wav = ""
                         print( "Error loading in all of the .SRT file for " + source_file + " - Consider deleting " + srt_file + " to resegment the audio file" )
                         keep_collecting = False
 
                     # Reached the end of wav - do not keep collecting
-                    if (len(raw_wav) != SLIDING_WINDOW_AMOUNT * frames_to_read * number_channels ):
+                    if (len(raw_wav) != 2 * frames_to_read * number_channels ):
                         keep_collecting = False
                         break
                         

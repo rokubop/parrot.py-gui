@@ -57,7 +57,7 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
     
     while( wf.tell() < total_frames ):
         index = index + 1
-        raw_wav = wf.readframes(frames_to_read * number_channels)
+        raw_wav = wf.readframes(frames_to_read)
         detection_state.ms_recorded += ms_per_frame
         detected = False
         
@@ -83,7 +83,7 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
     wf.close()
     
     output_wave_file = wave.open(output_file, 'wb')
-    output_wave_file.setnchannels(number_channels)
+    output_wave_file.setnchannels(1)   # resample_audio downmixes to one channel
     output_wave_file.setsampwidth(sample_width)
     output_wave_file.setframerate(RATE)
     
