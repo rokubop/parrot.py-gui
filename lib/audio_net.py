@@ -142,6 +142,11 @@ class AudioNetTrainer:
                     with torch.set_grad_enabled(True):
                         st_batch= time.time()
                         for local_batch, local_labels in self.train_loaders[j]:
+                            # BatchNorm1d needs 2+ samples for a variance. drop_last
+                            # would train on nothing if the dataset is under one batch.
+                            if local_batch.size(0) < 2:
+                                continue
+
                             # Transfer to GPU
                             local_batch, local_labels = local_batch.to(self.device), local_labels.to(self.device)
                             
