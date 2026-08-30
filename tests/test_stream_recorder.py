@@ -27,10 +27,9 @@ FRAMES_WRITTEN = 15
 WAV_HEADER_SIZE = 44
 
 
-class SampleWidthOnly:
-    # The recorder only asks the audio interface how wide a sample is
-    def get_sample_size(self, audio_format):
-        return 2   # paInt16
+class UnusedAudio:
+    # The recorder only holds this to terminate() it, which these tests never do
+    pass
 
 
 class StoppableStream:
@@ -63,7 +62,7 @@ class WavHeaderTest(unittest.TestCase):
         state = DetectionState("strategy", "recording", MS_PER_FRAME, 0, False,
                                0, 0, 0, 0, [label])
         self.recorder = StreamRecorder(
-            SampleWidthOnly(), StoppableStream(), self.wav_file,
+            UnusedAudio(), StoppableStream(), self.wav_file,
             os.path.join(workdir, "total.v%d.srt" % config.config.CURRENT_VERSION),
             state)
         self.recorder.total_audio_frames = [b"\0" * FRAME_BYTES] * FRAMES_WRITTEN

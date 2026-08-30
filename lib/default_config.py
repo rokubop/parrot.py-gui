@@ -22,6 +22,7 @@ REPEAT_RATE = 33
 SPEECHREC_ENABLED = False
 
 FORMAT = pyaudio.paInt16
+SAMPLE_WIDTH = pyaudio.get_sample_size(FORMAT)
 CHANNELS = 1
 RATE = 16000
 CHUNK = 1024

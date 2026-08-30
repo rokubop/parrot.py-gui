@@ -67,7 +67,7 @@ class StreamRecorder:
         # Write the source file first with the right settings to add the headers, and write the data later
         totalWaveFile = wave.open(self.total_wav_filename, 'wb')
         totalWaveFile.setnchannels(CHANNELS)
-        totalWaveFile.setsampwidth(audio.get_sample_size(FORMAT))
+        totalWaveFile.setsampwidth(SAMPLE_WIDTH)
         totalWaveFile.setframerate(RATE)
         totalWaveFile.close()
     
@@ -148,7 +148,7 @@ class StreamRecorder:
         if clear_file:
             totalWaveFile = wave.open(self.total_wav_filename, 'wb')
             totalWaveFile.setnchannels(CHANNELS)
-            totalWaveFile.setsampwidth(self.audio.get_sample_size(FORMAT))
+            totalWaveFile.setsampwidth(SAMPLE_WIDTH)
             totalWaveFile.setframerate(RATE)
             totalWaveFile.close()
             
@@ -184,7 +184,7 @@ class StreamRecorder:
 
         comparison_wav_file = wave.open(self.comparison_wav_filename, 'wb')
         comparison_wav_file.setnchannels(CHANNELS)
-        comparison_wav_file.setsampwidth(self.audio.get_sample_size(FORMAT))
+        comparison_wav_file.setsampwidth(SAMPLE_WIDTH)
         comparison_wav_file.setframerate(RATE)
         post_processing(self.detection_frames, self.detection_state, self.srt_filename, self.thresholds_filename, callback, comparison_wav_file)
         self.stream.close()

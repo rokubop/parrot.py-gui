@@ -4,6 +4,7 @@ import pyaudio
 import time
 from queue import *
 import lib.ipc_manager as ipc_manager
+from lib.audio_input import open_input_stream
 DISCONNECTION_DETECTION_THRESHOLD = 1.0
 
 LOOP_STATE_CONTINUE = 1 # Continue the listening loop
@@ -86,9 +87,9 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
         if (requested_state == False):
             audio = pyaudio.PyAudio()
             try:
-                stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
-                        input_device_index=INPUT_DEVICE_INDEX,
-                        frames_per_buffer=round( RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT ))
+                stream = open_input_stream(audio, INPUT_DEVICE_INDEX,
+                    rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
+                    sliding_window_amount=SLIDING_WINDOW_AMOUNT)
                 print( "" )
                 print( "Did not receive errors during reconnection to mic, restarting stream" )
                 if ( stream is not None ):

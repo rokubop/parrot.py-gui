@@ -15,6 +15,7 @@ from lib.typing import DetectionLabel, DetectionState
 from lib.stream_processing import CURRENT_VERSION, CURRENT_DETECTION_STRATEGY
 from lib.typing import DetectionState, DetectionFrame
 from lib.stream_recorder import StreamRecorder
+from lib.audio_input import open_input_stream
 from lib.srt import count_total_label_ms, ms_to_srt_timestring
 from typing import List
 
@@ -360,11 +361,9 @@ def non_blocking_record(labels, FULL_WAVE_OUTPUT_FILENAME, SRT_FILE, MICROPHONE_
 
     recorders[mic_index] = StreamRecorder(
         audio,
-        audio.open(format=FORMAT, channels=CHANNELS,
-            rate=RATE, input=True,
-            input_device_index=MICROPHONE_INPUT_INDEX,
-            frames_per_buffer=round( RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT ),
-            stream_callback=micindexed_lambda),
+        open_input_stream(audio, MICROPHONE_INPUT_INDEX,
+            rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
+            sliding_window_amount=SLIDING_WINDOW_AMOUNT, callback=micindexed_lambda),
         FULL_WAVE_OUTPUT_FILENAME,
         SRT_FILE,
         DetectionState(detection_strategy, "recording", ms_per_frame, 0, True, 0, 0, 0, 0, detection_labels, None, [])
