@@ -56,6 +56,14 @@ jobs:
         if: runner.os != 'Windows'
         run: pip install -r requirements-posix.txt
 
+      - name: Run the unit tests (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m unittest discover -s tests -v
+
+      - name: Run the unit tests (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: python -m unittest discover -s tests -v
+
       - name: Run the smoke test (Linux, under xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run -a python tests/smoke.py

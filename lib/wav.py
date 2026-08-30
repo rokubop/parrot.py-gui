@@ -115,7 +115,7 @@ def load_wav_data_from_srt(srt_file: str, source_file: str, feature_engineering_
                         keep_collecting = False
 
                     # Reached the end of wav - do not keep collecting
-                    if (len(raw_wav) != SLIDING_WINDOW_AMOUNT * frames_to_read * number_channels ):
+                    if (len(raw_wav) != 2 * frames_to_read * number_channels ):
                         keep_collecting = False
                         break
                         
