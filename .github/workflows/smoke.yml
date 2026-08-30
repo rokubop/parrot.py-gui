@@ -56,10 +56,14 @@ jobs:
         if: runner.os != 'Windows'
         run: pip install -r requirements-posix.txt
 
-      - name: Run the smoke test (Linux, under xvfb)
+      - name: Run the tests (Linux, under xvfb)
         if: runner.os == 'Linux'
-        run: xvfb-run -a python tests/smoke.py
+        run: |
+          xvfb-run -a python tests/smoke.py
+          xvfb-run -a python tests/recording.py
 
-      - name: Run the smoke test (Windows and macOS)
+      - name: Run the tests (Windows and macOS)
         if: runner.os != 'Linux'
-        run: python tests/smoke.py
+        run: |
+          python tests/smoke.py
+          python tests/recording.py
