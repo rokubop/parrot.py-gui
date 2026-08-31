@@ -163,7 +163,6 @@ def segment_input_file(threshold, power_threshold, frequency_threshold, begin_th
         delay_threshold = begin_threshold * -1
         begin_threshold = 1000
 
-    audio = pyaudio.PyAudio()
     record_wave_file_count = 0
     index = 0
     while( wf.tell() < total_frames ):
@@ -195,7 +194,7 @@ def segment_input_file(threshold, power_threshold, frequency_threshold, begin_th
                         files_recorded += 1
                         waveFile = wave.open(WAVE_OUTPUT_FILENAME + str(index) + WAVE_OUTPUT_FILE_EXTENSION, 'wb')
                         waveFile.setnchannels(number_channels)
-                        waveFile.setsampwidth(audio.get_sample_size(FORMAT))
+                        waveFile.setsampwidth(SAMPLE_WIDTH)
                         waveFile.setframerate(frame_rate)
                         waveFile.writeframes(byteString)
                         waveFile.close()

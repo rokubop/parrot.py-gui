@@ -21,6 +21,7 @@ import lib.ipc_manager as ipc_manager
 import joblib
 from lib.audio_model import AudioModel
 from lib.stream_controls import manage_loop_state
+from lib.audio_input import open_input_stream
 from lib.key_poller import KeyPoller
 STATE_POLLING_THRESHOLD = 0.2
     
@@ -121,7 +122,7 @@ def action_consumer( stream, classifier, dataDicts, persist_replay, replay_file,
         listening_state['currently_recording'] = False
 
     
-def classification_consumer( audio, stream, classifier, persist_files, high_speed ):
+def classification_consumer( stream, classifier, persist_files, high_speed ):
     audio_frames = []
     dataDicts = []
     for i in range( 0, PREDICTION_LENGTH ):
@@ -156,7 +157,7 @@ def classification_consumer( audio, stream, classifier, persist_files, high_spee
             if( persist_files ):        
                 audioFile = wave.open(REPLAYS_AUDIO_FOLDER + "/%0.3f.wav" % (seconds_playing), 'wb')
                 audioFile.setnchannels(classifier.get_setting('CHANNELS', CHANNELS))
-                audioFile.setsampwidth(audio.get_sample_size(FORMAT))
+                audioFile.setsampwidth(SAMPLE_WIDTH)
                 audioFile.setframerate(classifier.get_setting('RATE', RATE))
                 audioFile.writeframes(wavData)
                 audioFile.close()
@@ -209,13 +210,14 @@ def start_nonblocking_listen_loop( classifier, mode_switcher = False, persist_re
         print ( "Listening for " + str( amount_of_seconds ) + " seconds..." )
     print ( "" )
     
-    listening_state['stream'] = audio.open(format=FORMAT, channels=classifier.get_setting('CHANNELS', CHANNELS),
-        rate=classifier.get_setting('RATE', RATE), input=True,
-        input_device_index=INPUT_DEVICE_INDEX,
-        frames_per_buffer=round( classifier.get_setting('RATE', RATE) * classifier.get_setting('RECORD_SECONDS', RECORD_SECONDS) / classifier.get_setting('SLIDING_WINDOW_AMOUNT', SLIDING_WINDOW_AMOUNT) ),
-        stream_callback=nonblocking_record)
+    listening_state['stream'] = open_input_stream(audio, INPUT_DEVICE_INDEX,
+        rate=classifier.get_setting('RATE', RATE),
+        channels=classifier.get_setting('CHANNELS', CHANNELS),
+        record_seconds=classifier.get_setting('RECORD_SECONDS', RECORD_SECONDS),
+        sliding_window_amount=classifier.get_setting('SLIDING_WINDOW_AMOUNT', SLIDING_WINDOW_AMOUNT),
+        callback=nonblocking_record)
                 
-    classificationConsumer = threading.Thread(name='classification_consumer', target=classification_consumer, args=(audio, listening_state['stream'], classifier, persist_files, high_speed) )
+    classificationConsumer = threading.Thread(name='classification_consumer', target=classification_consumer, args=(listening_state['stream'], classifier, persist_files, high_speed) )
     classificationConsumer.setDaemon( True )
     classificationConsumer.start()
     
