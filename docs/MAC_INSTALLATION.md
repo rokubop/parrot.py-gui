@@ -1,6 +1,9 @@
 # Mac installation guide
 -----------
 
+The steps below install everything by hand. `./run.sh` does the same work for
+you, including fetching Python, and is the quicker route.
+
 Step one - Installing required programs
 ----------
 
@@ -11,19 +14,17 @@ brew --version
 
 If it isn't returning a version, you need to install it. Follow the instructions here: [Homebrew installation](https://docs.brew.sh/Installation)
 
-After you have installed homebrew, you need to install Python 3.8 and portaudio. This can be done using the following commands
+After you have installed homebrew, you need to install Python 3.13. This can be done using the following command
 
 ```
-brew install python@3.12
-brew install portaudio
-brew install six
+brew install python@3.13
 ```
 
-Test if your python version is correct by typing ```python --version``` in your Terminal, if it shows 3.12, you're good to go!
+Test if your python version is correct by typing ```python --version``` in your Terminal, if it shows 3.13, you're good to go!
 
-On the M1, some issues can occur while installing portaudio. There are a number of possible fixes that are outlined in these links:
-- [Unable to install pyaudio on M1 Mac](https://stackoverflow.com/questions/68251169/unable-to-install-pyaudio-on-m1-mac-portaudio-already-installed)
-- [MacOS Brew install libsndfile but still not found](https://stackoverflow.com/questions/70737503/macos-brew-install-libsndfile-but-still-not-found)
+No audio libraries are needed here. The `sounddevice` wheel bundles PortAudio
+and PyQt6 ships its own Qt frameworks, so nothing has to be built from source
+on Apple Silicon.
 
 Step two - Download and extract the zipfile from this github repository
 ---------------
@@ -53,19 +54,6 @@ python3 settings.py
 ```
 
 If any errors occur, try opening the requirements-posix.txt file and installing each line seperately and run again.
-
-On the M1 Macs, some issues can still occur after this, in that case, you can follow these instructions to append additional ENVIRONMENT variables to the session.
-
-```bash
-export CPATH=/opt/homebrew/include
-export LIBRARY_PATH=/opt/homebrew/lib
-export DYLD_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_LIBRARY_PATH"
-export PATH=$PATH:/opt/homebrew/Cellar/libsndfile/1.1.0/bin
-export PATH="/opt/homebrew/opt/python@3.12/libexec/bin:$PATH"
-python3 settings.py
-```
-
-Note that just running this will not persist these ENVIRONMENT variables, so you will have to run this every time you open up your terminal program. If you wish to not have to do this every time, you should add all the lines with EXPORT= to your terminal profile.
 
 Step four - Enabling permissions
 ---------------

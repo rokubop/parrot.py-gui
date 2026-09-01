@@ -1,11 +1,11 @@
 from config.config import *
-import pyaudio
+import sounddevice as sd
 import struct
 import wave
 import math
 import numpy as np
 from lib.print_status import get_current_status
-from lib.stream_processing import process_audio_frame, post_processing
+from lib.stream_processing import process_audio_frame, post_processing, settle_detection_state, detect_wav_frames
 from lib.typing import DetectionState, DetectionFrame
 from typing import List
 import io
@@ -35,8 +35,7 @@ class StreamRecorder:
     thresholds_filename: str
     comparison_wav_filename: str
     
-    audio: pyaudio.PyAudio
-    stream: pyaudio.Stream
+    stream: sd.InputStream
     detection_state: DetectionState
     
     length_per_frame: int
@@ -47,13 +46,12 @@ class StreamRecorder:
     current_occurrence: List[DetectionFrame]
     false_occurrence: List[DetectionFrame]
     
-    def __init__(self, audio: pyaudio.PyAudio, stream: pyaudio.Stream, total_wav_filename: str, srt_filename: str, detection_state: DetectionState):
+    def __init__(self, stream: sd.InputStream, total_wav_filename: str, srt_filename: str, detection_state: DetectionState):
         self.total_wav_filename = total_wav_filename
         self.srt_filename = srt_filename
         self.comparison_wav_filename = srt_filename.replace(".v" + str(CURRENT_VERSION) + ".srt", "_comparison.wav")
         self.thresholds_filename = srt_filename.replace(".v" + str(CURRENT_VERSION) + ".srt", "_thresholds.txt")
         
-        self.audio = audio
         self.stream = stream
         self.detection_state = detection_state
         self.total_audio_frames = []
@@ -111,10 +109,10 @@ class StreamRecorder:
 
     # Resume playing
     def resume(self):
-        self.stream.start_stream()
+        self.stream.start()
     
     def pause(self):
-        self.stream.stop_stream()
+        self.stream.stop()
         
         self.index -= len(self.total_audio_frames)
         if self.index != 0 and len(self.total_audio_frames) > 0:
@@ -175,12 +173,26 @@ class StreamRecorder:
     def get_status(self, detection_states: List[DetectionState] = []) -> List[str]:
         return get_current_status(self.detection_state, detection_states)
     
+    # Second detection pass - settle the thresholds over the whole take and
+    # re-judge every frame. The wav on disk always matches the in-memory frames
+    # ( pause and clear truncate it too ), so the take can simply be re-read.
+    def rejudge_recording(self, callback = None):
+        if not TWO_PASS_DETECTION or self.index == 0 or len(self.detection_frames) == 0 \
+            or not os.path.exists(self.total_wav_filename):
+            return
+        settle_detection_state(self.detection_frames, self.detection_state)
+        self.detection_frames, _ = detect_wav_frames(self.total_wav_filename, self.detection_state, callback, 0, 0.75)
+
+        # Un-freeze so the online recalculation resumes if more audio is recorded after this
+        self.detection_state.frozen = False
+
     # Stop processing the streams and build the final files
     def stop(self, callback = None):
         self.pause()
         self.persist_total_wav_file()
         if self.index == 0:
             os.remove(self.total_wav_filename)        
+        self.rejudge_recording(callback)
 
         comparison_wav_file = wave.open(self.comparison_wav_filename, 'wb')
         comparison_wav_file.setnchannels(CHANNELS)
@@ -188,10 +200,10 @@ class StreamRecorder:
         comparison_wav_file.setframerate(RATE)
         post_processing(self.detection_frames, self.detection_state, self.srt_filename, self.thresholds_filename, callback, comparison_wav_file)
         self.stream.close()
-        self.audio.terminate()
         self.detection_frames = []
 
     # Do all post processing related tasks that cannot be done during runtime
     def post_processing(self, callback = None, comparison_wav_file: wave.Wave_write = None):
         self.persist_total_wav_file()
+        self.rejudge_recording(callback)
         post_processing(self.detection_frames, self.detection_state, self.srt_filename, self.thresholds_filename, callback, comparison_wav_file)

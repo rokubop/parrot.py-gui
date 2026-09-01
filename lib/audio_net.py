@@ -64,6 +64,7 @@ class TinyAudioNetEnsemble(nn.Module):
         return out / self.model_length
             
 class AudioNetTrainer:
+    dataset_labels = []
     dataset_size = 0
     
     criterion = nn.NLLLoss()
@@ -75,7 +76,9 @@ class AudioNetTrainer:
     dataset = False
     input_size = 120
     
-    def __init__(self, dataset, net_count = 1, audio_settings = None):
+    def __init__(self, dataset, net_count = 1, audio_settings = None,
+                 run_settings = None, source_mics = None):
+        # Instance state: class-level lists would be shared between trainers.
         self.nets = []
         self.optimizers = []
         self.random_seeds = []
@@ -90,6 +93,11 @@ class AudioNetTrainer:
         self.dataset = dataset
         self.dataset_size = len(dataset)
         self.audio_settings = audio_settings
+        # Recorded into the checkpoint so a model can say how it was made.
+        # run_settings: the data-shaping choices load_pytorch_data consumed.
+        # source_mics: which mics the recordings came from, scanned by the caller.
+        self.run_settings = run_settings or {}
+        self.source_mics = source_mics or {}
         self.dataset_size = len(dataset)
         
         split = int(np.floor(self.validation_split * self.dataset_size))
@@ -111,7 +119,7 @@ class AudioNetTrainer:
             self.train_loaders.append(torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, sampler=train_sampler, pin_memory=False, num_workers=0))
             self.validation_loaders.append(torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, sampler=valid_sampler, pin_memory=False, num_workers=0))
         
-    def train(self, filename):
+    def train(self, filename, progress_callback=None, stop_check=None):
         best_accuracy = []
         combined_classifier_map = {}
         for i in range(self.net_count):
@@ -123,6 +131,11 @@ class AudioNetTrainer:
         
         input_size = 120
         
+        # Per-label frame counts after balancing.
+        label_frames = {label: 0 for label in self.dataset_labels}
+        for sample in self.dataset.samples:
+            label_frames[self.dataset_labels[sample[1]]] += 1
+
         os.makedirs(REPLAYS_FOLDER, exist_ok=True)
         with open(REPLAYS_FOLDER + "/model_training_" + filename + str(starttime) + ".csv", 'a', newline='') as csvfile:	
             headers = ['epoch', 'loss', 'avg_validation_accuracy']
@@ -130,6 +143,11 @@ class AudioNetTrainer:
             writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
             writer.writeheader()
             for epoch in range(self.max_epochs):
+                if stop_check is not None and stop_check():
+                    print("External stop requested - Stopped training loop")
+                    print( "------------------------------------------------------")
+                    return
+
                 # Training
                 self.dataset.set_training(True)
                 epoch_loss = 0.0
@@ -142,6 +160,11 @@ class AudioNetTrainer:
                     with torch.set_grad_enabled(True):
                         st_batch= time.time()
                         for local_batch, local_labels in self.train_loaders[j]:
+                            # BatchNorm1d needs 2+ samples for a variance. drop_last
+                            # would train on nothing if the dataset is under one batch.
+                            if local_batch.size(0) < 2:
+                                continue
+
                             # Transfer to GPU
                             local_batch, local_labels = local_batch.to(self.device), local_labels.to(self.device)
                             
@@ -226,14 +249,18 @@ class AudioNetTrainer:
                 mean_label_accuracy = {}
                 for dataset_label in self.dataset_labels:
                     scores = [p[dataset_label] for p in label_accuracy]
-                    mean_label_accuracy[dataset_label] = sum(scores) / len(scores)
+                    mean_label_accuracy[dataset_label] = (
+                        sum(scores) / len(scores) if scores else 0)
                 
                 for j in range(self.net_count):
                     epoch_loss.append(epoch_validation_loss[j] / ( self.dataset_size * self.validation_split ) )
                     accuracy.append( correct[j] / ( self.dataset_size * self.validation_split ) )
                     print('[Net: %d] Validation loss: %.4f accuracy %.3f' % (j + 1, epoch_loss[j], accuracy[j]))
 
-                print('[Combined] Sum validation loss: %.4f average accuracy %.3f' % (np.sum(epoch_loss), combined_correct / ( self.dataset_size * self.validation_split )))
+                # This epoch's nets together; the written pkl combines each
+                # net's BEST weights.
+                combined_accuracy = combined_correct / ( self.dataset_size * self.validation_split )
+                print('[Combined] Sum validation loss: %.4f average accuracy %.3f' % (np.sum(epoch_loss), combined_accuracy))
                 
                 csv_row = { 'epoch': epoch, 'loss': np.sum(epoch_loss), 'avg_validation_accuracy': np.average(accuracy) }
                 for dataset_label in self.dataset_labels:
@@ -249,14 +276,24 @@ class AudioNetTrainer:
                         current_filename = filename + '_' + str(j+1) + '-BEST'
                         new_best = True
                         
+                    # trained_at rides inside the checkpoint; file mtimes do not
+                    # survive the data dir being copied or restored.
                     torch.save({'state_dict': self.nets[j].state_dict(), 
                         'input_size': self.input_size,
                         'labels': self.dataset_labels,
                         'accuracy': accuracy[j],
+                        # This net's own, per sound. last_row holds the means.
+                        'label_accuracy': label_accuracy[j],
+                        'combined_accuracy': combined_accuracy,
+                        'label_frames': label_frames,
                         'last_row': csv_row,
                         'loss': epoch_loss[j],
                         'epoch': epoch,
                         'random_seed': self.random_seeds[j],
+                        'trained_at': starttime,
+                        'run_settings': self.run_settings,
+                        'audio_settings': self.audio_settings,
+                        'source_mics': self.source_mics,
                         }, os.path.join(CLASSIFIER_FOLDER, current_filename) + '-weights.pth.tar')
                 
                 # Persist a new combined model with the best weights if new best weights are given
@@ -266,6 +303,14 @@ class AudioNetTrainer:
                     print( "------------------------------------------------------")                    
                     connect_model( filename, combined_classifier_map, "ensemble_torch", True, self.audio_settings )
                 
+                if progress_callback is not None:
+                    progress_callback(epoch, np.sum(epoch_loss), np.average(accuracy), mean_label_accuracy, new_best)
+
+                if stop_check is not None and stop_check():
+                    print("External stop requested - Stopped training loop")
+                    print( "------------------------------------------------------")
+                    return
+
                 with KeyPoller() as key_poller:
                     ESCAPEKEY = '\x1b'
                     character = key_poller.poll()

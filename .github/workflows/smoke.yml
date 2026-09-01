@@ -23,23 +23,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 3.12 because lib/wav.py imports audioop, gone from 3.13.
+      # 3.13, the version run.sh and run.bat install. audioop left the stdlib
+      # there, so requirements pull audioop-lts.
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
           cache: pip
           cache-dependency-path: requirements-*.txt
 
-      # portaudio builds pyaudio, xvfb is for the pyautogui import.
+      # sounddevice needs portaudio at run time, xvfb is for the pyautogui
+      # import. The wheel bundles portaudio on macOS and Windows, not on Linux.
       - name: Install system libraries (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y portaudio19-dev libasound2-dev xvfb
-
-      - name: Install system libraries (macOS)
-        if: runner.os == 'macOS'
-        run: brew install portaudio
+          sudo apt-get install -y libportaudio2 xvfb
 
       # The torch on PyPI is the CUDA build here, ~2.5 GB of nvidia wheels.
       # Only sticks while requirements-posix.txt asks for a torch this one

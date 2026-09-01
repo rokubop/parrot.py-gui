@@ -67,3 +67,4 @@ class DetectionState:
     spectral_onset_threshold: float = None # Threshold for detecting onsets
     upper_bound_dBFS_threshold: float = None # Determined upper bound for dynamic dBFS threshold
     dBFS_error_margin: float = 0
+    frozen: bool = False # Thresholds are settled and must not be recalculated (second pass of two-pass detection)
