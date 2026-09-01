@@ -22,6 +22,7 @@ from lib.stream_warmup import StreamWarmup
 import joblib
 from lib.audio_model import AudioModel
 from lib.stream_controls import manage_loop_state
+from lib.audio_input import open_input_stream
 from lib.key_poller import KeyPoller
 STATE_POLLING_THRESHOLD = 0.2
     
@@ -213,12 +214,11 @@ def start_nonblocking_listen_loop( classifier, mode_switcher = False, persist_re
         print ( "Listening for " + str( amount_of_seconds ) + " seconds..." )
     print ( "" )
     
-    listening_state['stream'] = sd.InputStream(
-        samplerate=classifier.get_setting('RATE', RATE),
+    listening_state['stream'] = open_input_stream(INPUT_DEVICE_INDEX,
+        rate=classifier.get_setting('RATE', RATE),
         channels=classifier.get_setting('CHANNELS', CHANNELS),
-        dtype='int16',
-        device=INPUT_DEVICE_INDEX,
-        blocksize=round( classifier.get_setting('RATE', RATE) * classifier.get_setting('RECORD_SECONDS', RECORD_SECONDS) / classifier.get_setting('SLIDING_WINDOW_AMOUNT', SLIDING_WINDOW_AMOUNT) ),
+        record_seconds=classifier.get_setting('RECORD_SECONDS', RECORD_SECONDS),
+        sliding_window_amount=classifier.get_setting('SLIDING_WINDOW_AMOUNT', SLIDING_WINDOW_AMOUNT),
         callback=nonblocking_record)
                 
     classificationConsumer = threading.Thread(name='classification_consumer', target=classification_consumer, args=(listening_state['stream'], classifier, persist_files, high_speed) )

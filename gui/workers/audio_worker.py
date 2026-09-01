@@ -11,6 +11,7 @@ from config.config import (
     RECORDINGS_FOLDER, INPUT_DEVICE_INDEX
 )
 from lib.stream_processing import CURRENT_VERSION, CURRENT_DETECTION_STRATEGY
+from lib.audio_input import open_input_stream
 from lib.typing import DetectionLabel, DetectionState
 from lib.stream_recorder import StreamRecorder
 from lib.stream_warmup import StreamWarmup
@@ -87,12 +88,9 @@ class AudioWorker(QThread):
         except Exception:
             mic_name = ""
 
-        stream = sd.InputStream(
-            samplerate=RATE, channels=CHANNELS,
-            dtype='int16', device=self.mic_index,
-            blocksize=round(RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT),
-            callback=callback
-        )
+        stream = open_input_stream(self.mic_index,
+            rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
+            sliding_window_amount=SLIDING_WINDOW_AMOUNT, callback=callback)
 
         self.recorder = StreamRecorder(stream, self.wav_path, self.srt_path, detection_state)
         warmup = StreamWarmup()

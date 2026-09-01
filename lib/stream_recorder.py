@@ -10,6 +10,25 @@ from lib.typing import DetectionState, DetectionFrame
 from typing import List
 import io
 
+def rewrite_wav_sizes(wav_file):
+    CHUNK_SIZE_OFFSET = 4
+    DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
+    RIFF_PREFIX_SIZE = 8
+    WAV_HEADER_SIZE = DATA_SUB_CHUNK_SIZE_SIZE_OFFSET + 4
+    LITTLE_ENDIAN_INT = struct.Struct('<I')
+
+    wav_file.seek(0, 2)
+    file_size = wav_file.tell()
+
+    riff_chunk_size = file_size - RIFF_PREFIX_SIZE
+    wav_file.seek(CHUNK_SIZE_OFFSET)
+    wav_file.write(LITTLE_ENDIAN_INT.pack(riff_chunk_size))
+
+    data_chunk_size = file_size - WAV_HEADER_SIZE
+    wav_file.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
+    wav_file.write(LITTLE_ENDIAN_INT.pack(data_chunk_size))
+
+
 class StreamRecorder:
     total_wav_filename: str
     srt_filename: str
@@ -74,12 +93,6 @@ class StreamRecorder:
             self.persist_total_wav_file()
     
     def persist_total_wav_file(self):    
-        # This is used to modify the wave file directly
-        CHUNK_SIZE_OFFSET = 4
-        DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
-        DATA_OFFSET = 44   # canonical PCM header
-        LITTLE_ENDIAN_INT = struct.Struct('<I')
-    
         byteString = b''.join(self.total_audio_frames)
         self.total_audio_frames = []
         appendTotalFile = open(self.total_wav_filename, 'ab')
@@ -91,15 +104,7 @@ class StreamRecorder:
         # Which wouldn't be needed if the wave package supported appending properly                        
         # Thanks to hydrogen18.com for the explanation and code
         appendTotalFile = open(self.total_wav_filename, 'r+b')
-        appendTotalFile.seek(0,2)
-        file_size = appendTotalFile.tell()
-        chunk_size = file_size - 8
-        appendTotalFile.seek(CHUNK_SIZE_OFFSET)
-        appendTotalFile.write(LITTLE_ENDIAN_INT.pack(chunk_size))
-        appendTotalFile.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-        sample_length = file_size - DATA_OFFSET
-        
-        appendTotalFile.write(LITTLE_ENDIAN_INT.pack(sample_length))
+        rewrite_wav_sizes(appendTotalFile)
         appendTotalFile.close()
 
     # Resume playing
@@ -153,19 +158,7 @@ class StreamRecorder:
                 f.truncate()
                 
                 # Overwrite the total recording length
-                CHUNK_SIZE_OFFSET = 4
-                DATA_SUB_CHUNK_SIZE_SIZE_OFFSET = 40
-                DATA_OFFSET = 44   # canonical PCM header
-                LITTLE_ENDIAN_INT = struct.Struct('<I')
-
-                f.seek(0,2)
-                file_size = f.tell()
-                chunk_size = file_size - 8
-                f.seek(CHUNK_SIZE_OFFSET)
-                f.write(LITTLE_ENDIAN_INT.pack(chunk_size))
-                f.seek(DATA_SUB_CHUNK_SIZE_SIZE_OFFSET)
-                sample_length = file_size - DATA_OFFSET   # see persist_total_wav_file
-                f.write(LITTLE_ENDIAN_INT.pack(sample_length))        
+                rewrite_wav_sizes(f)
         
         return should_resume
     

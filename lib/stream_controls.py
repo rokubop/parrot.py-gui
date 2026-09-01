@@ -4,6 +4,7 @@ import sounddevice as sd
 import time
 from queue import *
 import lib.ipc_manager as ipc_manager
+from lib.audio_input import open_input_stream
 DISCONNECTION_DETECTION_THRESHOLD = 1.0
 
 LOOP_STATE_CONTINUE = 1 # Continue the listening loop
@@ -85,11 +86,9 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
         global poll_counter
         if (requested_state == False):
             try:
-                stream = sd.InputStream(
-                    samplerate=RATE, channels=CHANNELS,
-                    dtype='int16',
-                    device=INPUT_DEVICE_INDEX,
-                    blocksize=round( RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT ))
+                stream = open_input_stream(INPUT_DEVICE_INDEX,
+                    rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
+                    sliding_window_amount=SLIDING_WINDOW_AMOUNT)
                 stream.start()
                 print( "" )
                 print( "Did not receive errors during reconnection to mic, restarting stream" )

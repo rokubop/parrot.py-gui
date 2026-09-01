@@ -5,11 +5,11 @@ worker drives it with recorded segments, the live worker with mic chunks.
 import math
 from queue import Queue, Empty
 
-import sounddevice as sd
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from config.config import RATE, CHANNELS, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from lib.signal_processing import determine_dBFS
+from lib.audio_input import open_input_stream
 from lib.stream_warmup import StreamWarmup
 from gui.services import model_eval
 
@@ -68,11 +68,9 @@ class LiveTestWorker(QThread):
             queue.put(bytes(indata.tobytes()))
 
         try:
-            stream = sd.InputStream(
-                samplerate=RATE, channels=CHANNELS, dtype="int16",
-                device=self.mic_index,
-                blocksize=round(RATE * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT),
-                callback=callback)
+            stream = open_input_stream(self.mic_index,
+                rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
+                sliding_window_amount=SLIDING_WINDOW_AMOUNT, callback=callback)
             stream.start()
         except Exception as exc:
             self.failed.emit(f"Couldn't open the microphone: {exc}")
