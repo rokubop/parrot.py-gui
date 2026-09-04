@@ -11,7 +11,7 @@ brew --version
 
 If it isn't returning a version, you need to install it. Follow the instructions here: [Homebrew installation](https://docs.brew.sh/Installation)
 
-After you have installed homebrew, you need to install Python 3.8. This can be done using the following commands
+After you have installed homebrew, you need to install Python 3.12. This can be done using the following commands
 
 ```
 brew install python@3.12
