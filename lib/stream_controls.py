@@ -90,9 +90,7 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
                     rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
                     sliding_window_amount=SLIDING_WINDOW_AMOUNT)
 
-                # An InputStream does not touch the device until it starts,
-                # so the probe starts it to find out whether the mic is back.
-                # Closing in a finally, since this runs on every attempt.
+                # Start the stream to probe the mic, then close.
                 try:
                     stream.start()
                     print( "" )
