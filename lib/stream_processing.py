@@ -433,17 +433,7 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
                     # This progress partitioning is completely arbitrary
                     progress_callback(0.75 + ( progress * 0.25 ), detection_state)
 
-        if unlabeled > 0:
-            ms = detection_state.ms_per_frame
-            silenced = unlabeled * ms / 1000
-            total = len(frames) * ms / 1000
-            span = "%.1fs of %.1fs" % (silenced, total)
-            print( "Silenced " + span + " recorded" )
-            print( "The final threshold ended up above them" )
-            print( "Usually clipping (gain too high)" )
-            print( "Lower the gain and record again" )
-            print( "Or set min_dbfs and restart:" )
-            print( thresholds_filename )
+        detection_state.unlabeled_frames += unlabeled
 
     # Persist the SRT file
     events = detection_frames_to_events(frames)

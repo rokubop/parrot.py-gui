@@ -161,15 +161,14 @@ clipped_state = DetectionState(
 clipped_state.upper_bound_dBFS_threshold = SETTLED
 clipped_state.current_dBFS_threshold = SETTLED
 clipped_state.dBFS_error_margin = 1.5
-spoken = io.StringIO()
 try:
-    with contextlib.redirect_stdout(spoken):
+    with contextlib.redirect_stdout(io.StringIO()):
         post_processing(clipped, clipped_state, os.path.join(workdir, "stamped"),
                         os.path.join(workdir, "stamped_thresholds.txt"))
     check("a stamp with nothing to label it does not crash",
           not any(frame.positive for frame in clipped))
-    check("and it says the whole take went", "Silenced 0.9s of 0.9s" in spoken.getvalue(),
-          spoken.getvalue().splitlines()[0])
+    check("and it counts what it silenced", clipped_state.unlabeled_frames == 60,
+          "(%d frames)" % clipped_state.unlabeled_frames)
 except Exception as error:
     check("a stamp with nothing to label it does not crash", False,
           "%s: %s" % (type(error).__name__, error))
