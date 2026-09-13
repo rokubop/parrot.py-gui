@@ -11,11 +11,10 @@ brew --version
 
 If it isn't returning a version, you need to install it. Follow the instructions here: [Homebrew installation](https://docs.brew.sh/Installation)
 
-After you have installed homebrew, you need to install Python 3.12. This can be done using the following commands
+After you have installed homebrew, you need to install Python 3.12. This can be done using the following command
 
 ```
 brew install python@3.12
-brew install six
 ```
 
 Test if your python version is correct by typing ```python --version``` in your Terminal, if it shows 3.12, you're good to go!
