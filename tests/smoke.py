@@ -147,6 +147,32 @@ check("a discrete drop stops at the noise floor",
       spiky_state.current_dBFS_threshold == FLOOR,
       "(%.2f, unclamped would be %.2f)" % (spiky_state.current_dBFS_threshold,
                                            BOUND - MARGIN * 3))
+
+t = stage("Post processing frames stamped under a lower threshold")
+# The live pass marked these detected against a lower bar. Nothing
+# matches the settled one, so there is no label to write them under
+SETTLED = 0.63
+clipped = [DetectionFrame(index + 1, 15, True, False, 1.0, -20.0, [], 0.0, LABELS[0])
+           for index in range(60)]
+clipped_state = DetectionState(
+    config.config.CURRENT_DETECTION_STRATEGY, "recording", 15, 900, False,
+    -20.0, 0.0, 30.0, -60.0,
+    [DetectionLabel(LABELS[0], 0, 0, "", 0, -96, -96, 0, 0)], [])
+clipped_state.upper_bound_dBFS_threshold = SETTLED
+clipped_state.current_dBFS_threshold = SETTLED
+clipped_state.dBFS_error_margin = 1.5
+spoken = io.StringIO()
+try:
+    with contextlib.redirect_stdout(spoken):
+        post_processing(clipped, clipped_state, os.path.join(workdir, "stamped"),
+                        os.path.join(workdir, "stamped_thresholds.txt"))
+    check("a stamp with nothing to label it does not crash",
+          not any(frame.positive for frame in clipped))
+    check("and it says the whole take went", "Silenced 0.9s of 0.9s" in spoken.getvalue(),
+          spoken.getvalue().splitlines()[0])
+except Exception as error:
+    check("a stamp with nothing to label it does not crash", False,
+          "%s: %s" % (type(error).__name__, error))
 print("  took %.1fs" % (time.time() - t))
 
 t = stage("Loading that segmentation as training data")

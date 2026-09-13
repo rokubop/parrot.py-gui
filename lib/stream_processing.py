@@ -321,6 +321,7 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
         false_occurrence = []
         current_label = None
         detected_label = None
+        unlabeled = 0
         
         dominant_label_type = "continuous"
         # Recalculate the MS detection and duration type
@@ -355,6 +356,15 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
                     label.ms_detected += detection_state.ms_per_frame
                     current_label = label
                     break
+
+            # Example: a clipped take (gain too high) drags
+            # the threshold above sounds the live pass had
+            # already detected. current_label is only set by
+            # a match here, so there is none to write, and a
+            # frame with no label is not a detection.
+            if current_label is None:
+                unlabeled += 1 if detected else 0
+                detected = False
         
             # Do a secondary pass if the previous label was negative
             # As we can use its thresholds for correcting late starts
@@ -423,6 +433,17 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
                     # This progress partitioning is completely arbitrary
                     progress_callback(0.75 + ( progress * 0.25 ), detection_state)
 
+        if unlabeled > 0:
+            ms = detection_state.ms_per_frame
+            silenced = unlabeled * ms / 1000
+            total = len(frames) * ms / 1000
+            span = "%.1fs of %.1fs" % (silenced, total)
+            print( "Silenced " + span + " recorded" )
+            print( "The final threshold ended up above them" )
+            print( "Usually clipping (gain too high)" )
+            print( "Lower the gain and record again" )
+            print( "Or set min_dbfs and restart:" )
+            print( thresholds_filename )
 
     # Persist the SRT file
     events = detection_frames_to_events(frames)
