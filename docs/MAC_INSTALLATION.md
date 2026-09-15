@@ -11,13 +11,13 @@ brew --version
 
 If it isn't returning a version, you need to install it. Follow the instructions here: [Homebrew installation](https://docs.brew.sh/Installation)
 
-After you have installed homebrew, you need to install Python 3.12. This can be done using the following command
+After you have installed homebrew, you need to install Python 3.13. This can be done using the following command
 
 ```
-brew install python@3.12
+brew install python@3.13
 ```
 
-Test if your python version is correct by typing ```python --version``` in your Terminal, if it shows 3.12, you're good to go!
+Test if your python version is correct by typing ```python --version``` in your Terminal, if it shows 3.13, you're good to go!
 
 On the M1, some libraries can fail to build. A possible fix is outlined here:
 - [MacOS Brew install libsndfile but still not found](https://stackoverflow.com/questions/70737503/macos-brew-install-libsndfile-but-still-not-found)
@@ -58,7 +58,7 @@ export CPATH=/opt/homebrew/include
 export LIBRARY_PATH=/opt/homebrew/lib
 export DYLD_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_LIBRARY_PATH"
 export PATH=$PATH:/opt/homebrew/Cellar/libsndfile/1.1.0/bin
-export PATH="/opt/homebrew/opt/python@3.12/libexec/bin:$PATH"
+export PATH="/opt/homebrew/opt/python@3.13/libexec/bin:$PATH"
 python3 settings.py
 ```
 
