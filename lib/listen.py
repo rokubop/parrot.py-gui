@@ -379,7 +379,7 @@ def load_running_classifier( classifier_name ):
 # Validate and print the currently used microphone
 def validate_microphone_input():
     try:
-        micDict = sd.query_devices(INPUT_DEVICE_INDEX)
+        micDict = sd.query_devices( INPUT_DEVICE_INDEX )
         if (micDict and micDict['max_input_channels'] > 0):
             print( "Using input from " + micDict['name'] )
             return True

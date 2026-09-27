@@ -3,7 +3,20 @@ import os
 import sys
 
 import numpy as np
-import sounddevice as sd
+
+try:
+    import sounddevice as sd
+except ImportError:
+    raise SystemExit(
+        "Parrot records audio through sounddevice.\n"
+        "Update your environment with: pip install -r requirements-" +
+        ("windows" if sys.platform == "win32" else "posix") + ".txt")
+except OSError as error:
+    # sounddevice needs PortAudio itself at run time. Its wheel carries a copy
+    # on Windows and macOS, so only Linux can arrive here.
+    raise SystemExit(
+        "sounddevice could not load PortAudio: " + str(error) + "\n"
+        "On Debian and Ubuntu: sudo apt-get install libportaudio2")
 
 if sys.platform == "darwin":
     # This is necessary to import before pyautogui
@@ -17,15 +30,15 @@ except Exception:
     pyautogui = None
 
 try:
-    default_audio = sd.query_devices(kind='input')
-except sd.PortAudioError:
+    default_audio = sd.query_devices(kind="input")
+except (sd.PortAudioError, ValueError):
     default_audio = None
 REPEAT_DELAY = 0.5
 REPEAT_RATE = 33
 SPEECHREC_ENABLED = False
 
-FORMAT = np.int16
-SAMPLE_WIDTH = 2  # 16-bit = 2 bytes
+FORMAT = "int16"
+SAMPLE_WIDTH = np.dtype(FORMAT).itemsize
 CHANNELS = 1
 # Every existing recording and trained model assumes 16000. Recordings at
 # other rates are resampled to RATE on read.
@@ -81,6 +94,7 @@ if( SPEECHREC_ENABLED == True ):
 
 BACKGROUND_LABEL = "silence"
 AUTOMATIC_DATASET_BALANCING = True
+SILENCE_TRAINING_MODE = "all" # how much silence is used in training - "all", "balanced", "none"
 SHOULD_FIT_INSIDE_RAM = True # Ensure the dataset fits inside RAM for faster training
 # Turning this to FALSE might crash the dataloading
 MAX_RAM = 7000000000 # 7GB of usable RAM is assumed to be the maximum size to be loaded in for data

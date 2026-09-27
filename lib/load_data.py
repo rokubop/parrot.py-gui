@@ -24,23 +24,20 @@ def get_grouped_data_directories( labels ):
         grouped_data_directories[ category_name ].append( data_directory )
     return grouped_data_directories
 
-def resolved_balance(silence="all", balance_sounds=None):
+def resolved_balance(silence=None, balance_sounds=None):
     """The values load_pytorch_data will actually apply given the same
     arguments, so callers can record them without restating the defaults."""
-    return {"silence": silence,
+    return {"silence": SILENCE_TRAINING_MODE if silence is None else silence,
             "balance_sounds": (AUTOMATIC_DATASET_BALANCING
                                if balance_sounds is None
                                else bool(balance_sounds))}
 
 
-def generate_data_balance_strategy_map(grouped_data_directories, silence="all",
-                                       balance_sounds=None):
-    """balance_sounds: oversample thin labels (2x cap), undersample fat ones.
-    None means AUTOMATIC_DATASET_BALANCING, which is what the CLI does.
-
-    silence: "all" keeps every quiet frame (the default since 0dac680e),
-    "balanced" gives it one label's ration, "none" leaves the class out.
-    """
+def generate_data_balance_strategy_map(grouped_data_directories, silence=None, balance_sounds=None):
+    if silence is None:
+        silence = SILENCE_TRAINING_MODE
+    if silence not in ("all", "balanced", "none"):
+        raise ValueError(f'SILENCE_TRAINING_MODE must be "all", "balanced" or "none", not {silence!r}')
     if balance_sounds is None:
         balance_sounds = AUTOMATIC_DATASET_BALANCING
     ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
@@ -98,8 +95,6 @@ def generate_data_balance_strategy_map(grouped_data_directories, silence="all",
     return rebalance_sampling_strategies_for_memory(sampling_strategies, balance_sounds)
 
 def rebalance_sampling_strategies_for_memory(sampling_strategies, balance_sounds=None):
-    # Coupled on purpose: the RAM pass below reassigns strategies, which
-    # would rebalance data the caller asked to leave alone.
     if balance_sounds is None:
         balance_sounds = AUTOMATIC_DATASET_BALANCING
     if not SHOULD_FIT_INSIDE_RAM or not balance_sounds:
@@ -148,7 +143,7 @@ def rebalance_sampling_strategies_for_memory(sampling_strategies, balance_sounds
     
     return sampling_strategies
 
-def sample_data_from_label(label, grouped_data_directories, sample_strategies, input_type):
+def sample_data_from_label(label, grouped_data_directories, sample_strategies, input_type, silence):
     warnings.filterwarnings("ignore", "n_fft=2048 is too small for input signal")
     directories = grouped_data_directories[ label ]
 
@@ -194,7 +189,9 @@ def sample_data_from_label(label, grouped_data_directories, sample_strategies, i
     if label in sample_strategies:
         strategy = sample_strategies[label]["strategy"]
         truncate_after = sample_strategies[label]["truncate_after"]
-        if strategy == "oversample":
+        if sample_strategies[label]["total_size"] == 0:
+            print( f"Found no segmented audio for {label}" )
+        elif strategy == "oversample":
             print( f"Loading in {label} using oversampling: +" + str(abs(round(sample_strategies[label]["total_loaded"] / sample_strategies[label]["total_size"] * 100) - 100)) + "%" )
         elif strategy == "undersample":
             print( f"Loading in {label} using undersampling: -" + str(abs(round(sample_strategies[label]["total_loaded"] / sample_strategies[label]["total_size"] * 100) - 100)) + "%" )
@@ -228,8 +225,8 @@ def sample_data_from_label(label, grouped_data_directories, sample_strategies, i
 
         seed = round(time.time() * 1000)
 
-        # Same seed both times, so augmented samples keep matching by index.
-        if BACKGROUND_LABEL in sample_strategies and len(total_background_samples) > sample_strategies[BACKGROUND_LABEL]["sample_from_each"]:
+        # Truncate the background label samples
+        if silence == "balanced" and len(total_background_samples) > sample_strategies[BACKGROUND_LABEL]["sample_from_each"]:
             random.seed(seed)
             total_background_samples = random.sample(total_background_samples, sample_strategies[BACKGROUND_LABEL]["sample_from_each"])
             random.seed(seed)
@@ -254,20 +251,22 @@ def shannon_entropy(label_counts):
     h = -sum([(count / n) * np.log((count / n)) for count in totals])
     return h / np.log(len(totals))
 
-def load_sklearn_data( filtered_data_directory_names, input_type, silence="all", balance_sounds=None ):
+def load_sklearn_data( filtered_data_directory_names, input_type, silence=None, balance_sounds=None ):
+    if silence is None:
+        silence = SILENCE_TRAINING_MODE
     grouped_data_directories = get_grouped_data_directories( filtered_data_directory_names )
     sample_strategies = generate_data_balance_strategy_map(grouped_data_directories, silence, balance_sounds )
     
     dataset = {}
-    keep_silence = silence != "none"
-    if keep_silence:
+    include_silence = silence != "none"
+    if include_silence:
         dataset[BACKGROUND_LABEL] = []
     for label in grouped_data_directories:
         if label != BACKGROUND_LABEL:
-            data_sample = sample_data_from_label( label, grouped_data_directories, sample_strategies, input_type)
+            data_sample = sample_data_from_label( label, grouped_data_directories, sample_strategies, input_type, silence)
             dataset[label] = [x[1] for x in data_sample["label"]]
             dataset[label].extend([x[1] for x in data_sample["augmented"]])
-            if keep_silence:
+            if include_silence:
                 dataset[BACKGROUND_LABEL].extend([x[1] for x in data_sample["background"]])
                 dataset[BACKGROUND_LABEL].extend([x[1] for x in data_sample["background_augmented"]])
 
@@ -282,7 +281,9 @@ def load_sklearn_data( filtered_data_directory_names, input_type, silence="all",
 
     return dataset_x, dataset_labels, grouped_data_directories.keys()
     
-def load_pytorch_data( filtered_data_directory_names, input_type, silence="all", balance_sounds=None):
+def load_pytorch_data( filtered_data_directory_names, input_type, silence=None, balance_sounds=None):
+    if silence is None:
+        silence = SILENCE_TRAINING_MODE
     import torch
 
     grouped_data_directories = get_grouped_data_directories( filtered_data_directory_names )
@@ -290,18 +291,16 @@ def load_pytorch_data( filtered_data_directory_names, input_type, silence="all",
 
     dataset = {}
     augmented = {}
-    # "none" drops the class outright; listen.py fills a silence probability
-    # in when a model lacks it.
-    keep_silence = silence != "none"
-    if keep_silence:
+    include_silence = silence != "none"
+    if include_silence:
         dataset[BACKGROUND_LABEL] = []
         augmented[BACKGROUND_LABEL] = []
     for label in grouped_data_directories:
         if label != BACKGROUND_LABEL:
-            data_sample = sample_data_from_label( label, grouped_data_directories, sample_strategies, input_type)
+            data_sample = sample_data_from_label( label, grouped_data_directories, sample_strategies, input_type, silence)
             dataset[label] = [[x[0], torch.tensor(x[1]).float()] for x in data_sample["label"]]
             augmented[label] =[[x[0], torch.tensor(x[1]).float()] for x in data_sample["augmented"]]
-            if keep_silence:
+            if include_silence:
                 dataset[BACKGROUND_LABEL].extend([[x[0], torch.tensor(x[1]).float()] for x in data_sample["background"]])
                 augmented[BACKGROUND_LABEL].extend([[x[0], torch.tensor(x[1]).float()] for x in data_sample["background_augmented"]])
     

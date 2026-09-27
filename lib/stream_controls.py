@@ -89,11 +89,14 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
                 stream = open_input_stream(INPUT_DEVICE_INDEX,
                     rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
                     sliding_window_amount=SLIDING_WINDOW_AMOUNT)
-                stream.start()
-                print( "" )
-                print( "Did not receive errors during reconnection to mic, restarting stream" )
-                stream.stop()
-                stream.close()
+
+                # Start the stream to probe the mic, then close.
+                try:
+                    stream.start()
+                    print( "" )
+                    print( "Did not receive errors during reconnection to mic, restarting stream" )
+                finally:
+                    stream.close()
                     
                 # Reset the stream
                 listening_state['restart_listen_loop'] = True
@@ -123,7 +126,7 @@ def transition_state(listening_state, modeSwitcher, current_state, requested_sta
                         listening_state['warmup'].restart()
                     set_loop_state(requested_state)                    
                     return LOOP_STATE_CONTINUE                    
-                except Exception as e:
+                except (IOError, sd.PortAudioError) as e:
                     print( "An error occured during the resuming of the listening")
                     return LOOP_STATE_CONTINUE
     

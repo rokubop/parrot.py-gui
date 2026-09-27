@@ -210,8 +210,7 @@ def record_sound():
     # Note - this assumes a maximum of 10 possible input devices, which is probably wrong but eh
     print("What microphone do you want to record with? ( Empty is the default system mic, [X] exits the recording menu )")
     print("You can put a space in between numbers to record with multiple microphones")
-    devices = sd.query_devices()
-    for index, device_info in enumerate(devices):
+    for index, device_info in enumerate(sd.query_devices()):
         if (device_info and device_info['name'] and device_info['max_input_channels'] > 0):
             default_mic = " - " if index != INPUT_DEVICE_INDEX else " DEFAULT - "
             host_api = sd.query_hostapis(device_info['hostapi'])
@@ -290,7 +289,8 @@ def record_sound():
     
     if currently_recording != -1:    
         main_state.state = "processed"
-        print_status(main_state, secondary_states)    
+        print_status(main_state, secondary_states)
+        print_unlabeled_warning(recorders)    
 
 # Consumes the recordings in a sliding window fashion - Always combining the two latest chunks together    
 def record_consumer(labels, FULL_WAVE_OUTPUT_FILENAME, SRT_FILE, MICROPHONE_INPUT_INDEX, print_stuff=False):
@@ -353,12 +353,10 @@ def non_blocking_record(labels, FULL_WAVE_OUTPUT_FILENAME, SRT_FILE, MICROPHONE_
     for label in list(labels.keys()):
         detection_labels.append(DetectionLabel(label, 0, labels[label], "", 0, 0, 0, 0, 0))
     
-    stream = open_input_stream(MICROPHONE_INPUT_INDEX,
-        rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
-        sliding_window_amount=SLIDING_WINDOW_AMOUNT, callback=micindexed_lambda)
-
     recorders[mic_index] = StreamRecorder(
-        stream,
+        open_input_stream(MICROPHONE_INPUT_INDEX,
+            rate=RATE, channels=CHANNELS, record_seconds=RECORD_SECONDS,
+            sliding_window_amount=SLIDING_WINDOW_AMOUNT, callback=micindexed_lambda),
         FULL_WAVE_OUTPUT_FILENAME,
         SRT_FILE,
         DetectionState(detection_strategy, "recording", ms_per_frame, 0, True, 0, 0, 0, 0, detection_labels, None, [])
@@ -375,10 +373,28 @@ def print_status(detection_state: DetectionState, extra_states: List[DetectionSt
     for line in current_status:
         print( line )
 
+def print_unlabeled_warning(recorders):
+    for mic_index in recorders:
+        recorder = recorders[mic_index]
+        state = recorder.get_detection_state()
+        if state.unlabeled_frames == 0:
+            continue
+        silenced = state.unlabeled_frames * state.ms_per_frame / 1000
+        span = "%.1fs of %.1fs" % (silenced, state.ms_recorded / 1000)
+        print( "" )
+        print( "Silenced " + span + " recorded" )
+        print( "The final threshold ended up above them" )
+        print( "Usually clipping (gain too high)" )
+        print( "Lower the gain and record again" )
+        print( "Or set min_dbfs and restart:" )
+        print( recorder.thresholds_filename )
+        print( "" )
+
 def validate_microphone_index(input_index):
+    micDict = {'name': 'Missing Microphone index ' + str(input_index)}
     try:
-        micDict = sd.query_devices(input_index)
-        if (micDict and micDict['max_input_channels'] > 0):
+        micDict = sd.query_devices( input_index )
+        if (micDict and micDict['max_input_channels'] > 0):            
             host_api = sd.query_hostapis(micDict['hostapi'])
             host_api_string = " " + host_api["name"] if host_api else ""
             print( "Using input from " + micDict['name'] + host_api_string )
@@ -386,5 +402,5 @@ def validate_microphone_index(input_index):
         else:
             raise IOError( "Invalid number of channels" )
     except (IOError, sd.PortAudioError) as e:
-        print("Could not connect enough audio channels to device " + str(input_index) + ", disabling this mic for recording")
+        print("Could not connect enough audio channels to " + micDict['name'] + ", disabling this mic for recording")
         return False

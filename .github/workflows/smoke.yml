@@ -32,7 +32,7 @@ jobs:
           cache-dependency-path: requirements-*.txt
 
       # sounddevice needs portaudio at run time, xvfb is for the pyautogui
-      # import. The wheel bundles portaudio on macOS and Windows, not on Linux.
+      # import. The wheel carries portaudio on Windows and macOS, not on Linux.
       - name: Install system libraries (Linux)
         if: runner.os == 'Linux'
         run: |
