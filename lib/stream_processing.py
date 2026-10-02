@@ -1,5 +1,6 @@
 from .typing import DetectionLabel, DetectionFrame, DetectionEvent, DetectionState
 from config.config import BACKGROUND_LABEL, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, RATE, CURRENT_VERSION, CURRENT_DETECTION_STRATEGY, THRESHOLD_DETECTION
+from .frame_stats import stat_arrays
 from typing import List
 import wave
 import math
@@ -12,12 +13,6 @@ import os
 snr_cutoff = 30
 
 def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels, progress_callback = None, comparison_srt_file = None, override_file = None, print_statistics = False):
-    audioFrames = []
-    wf = wave.open(input_file, 'rb')
-    number_channels = wf.getnchannels()
-    total_frames = wf.getnframes()
-    frame_rate = wf.getframerate()
-    frames_to_read = round( frame_rate * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT )
     ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
     sample_width = 2# 16 bit = 2 bytes
     
@@ -47,19 +42,39 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
             override_labels.append(DetectionLabel(override_label, 0, 0, duration_type, 0, min_dBFS, 0, 0, 0))    
     detection_state.override_labels = override_labels
 
+    if progress_callback is not None:
+        progress_callback(0, detection_state)
+
+    detection_frames, number_channels = detect_wav_frames(input_file, detection_state, progress_callback)
+
+    output_wave_file = wave.open(output_file, 'wb')
+    output_wave_file.setnchannels(number_channels)
+    output_wave_file.setsampwidth(sample_width)
+    output_wave_file.setframerate(RATE)
+    
+    post_processing(detection_frames, detection_state, srt_file, thresholds_file, progress_callback, output_wave_file, comparison_srt_file, print_statistics )
+    progress = 1
+    if progress_callback is not None:
+        progress_callback(progress, detection_state)
+
+def detect_wav_frames(input_file, detection_state, progress_callback = None):
+    """Run the online detection over a wav file, frame by frame like a live
+    recording, and return the detection frames."""
+    audioFrames = []
     false_occurrence = []
     current_occurrence = []
     index = 0    
     detection_frames = []
-
-    if progress_callback is not None:
-        progress_callback(0, detection_state)
+    wf = wave.open(input_file, 'rb')
+    number_channels = wf.getnchannels()
+    total_frames = wf.getnframes()
+    frame_rate = wf.getframerate()
+    frames_to_read = round( frame_rate * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT )
     
     while( wf.tell() < total_frames ):
         index = index + 1
         raw_wav = wf.readframes(frames_to_read * number_channels)
-        detection_state.ms_recorded += ms_per_frame
-        detected = False
+        detection_state.ms_recorded += detection_state.ms_per_frame
         
         # If our wav file is shorter than the amount of bytes ( assuming 16 bit ) times the frames, we discard it and assume we arrived at the end of the file
         if (len(raw_wav) != 2 * frames_to_read * number_channels ):
@@ -81,17 +96,8 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
             progress_callback(progress * 0.75, detection_state)
 
     wf.close()
+    return detection_frames, number_channels
     
-    output_wave_file = wave.open(output_file, 'wb')
-    output_wave_file.setnchannels(number_channels)
-    output_wave_file.setsampwidth(sample_width)
-    output_wave_file.setframerate(RATE)
-    
-    post_processing(detection_frames, detection_state, srt_file, thresholds_file, progress_callback, output_wave_file, comparison_srt_file, print_statistics )
-    progress = 1
-    if progress_callback is not None:
-        progress_callback(progress, detection_state)
-
 def process_audio_frame(index, audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence):
     current_detection_frame = determine_detection_frame(index, detection_state, audioFrames, detection_frames)    
     detection_frames.append(current_detection_frame)
@@ -523,12 +529,12 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
     return frames
 
 def determine_detection_state(detection_frames: List[DetectionFrame], detection_state: DetectionState) -> DetectionState:
-    dBFS_frames = [x.dBFS for x in detection_frames]
+    dBFS_frames, spectral_flux_frames = stat_arrays(detection_state, detection_frames)
     threshold_confidence = 1 if THRESHOLD_DETECTION == "strict" else 0.5
     
     # Calculate the onset thresholds using spectral flux
-    spectral_flux_max = np.percentile([frame.spectral_flux for frame in detection_frames], 95)
-    spectral_flux_min = np.percentile([frame.spectral_flux for frame in detection_frames], 5)
+    spectral_flux_max = np.percentile(spectral_flux_frames, 95)
+    spectral_flux_min = np.percentile(spectral_flux_frames, 5)
     detection_state.spectral_onset_threshold = (spectral_flux_max - spectral_flux_min) * 0.5
 
     # Calculate the signal variance
@@ -537,8 +543,8 @@ def determine_detection_state(detection_frames: List[DetectionFrame], detection_
     detection_state.expected_noise_floor = np.percentile(dBFS_frames, 10)
     
     # Determine an error margin of about 4% of the rough dBFS range
-    dBFS_max = np.percentile([frame.dBFS for frame in detection_frames], 95)
-    dBFS_min = np.percentile([frame.dBFS for frame in detection_frames], 5)
+    dBFS_max = np.percentile(dBFS_frames, 95)
+    dBFS_min = np.percentile(dBFS_frames, 5)
     detection_state.dBFS_error_margin = abs(dBFS_min - dBFS_max) / 25
 
     # Determine a upper bound of dBFS threshold based on the known valleys determined by the onset detection
