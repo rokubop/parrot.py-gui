@@ -111,7 +111,10 @@ class AudioNetTrainer:
             self.train_loaders.append(torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, sampler=train_sampler, pin_memory=False, num_workers=0))
             self.validation_loaders.append(torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, sampler=valid_sampler, pin_memory=False, num_workers=0))
         
-    def train(self, filename):
+    # The callbacks let a caller follow and stop training without a terminal.
+    # batch_callback(net, epoch, batch, loss, accuracy) fires with the batch print,
+    # epoch_callback(epoch, loss, net_accuracies, label_accuracy, new_best) after each epoch.
+    def train(self, filename, batch_callback=None, epoch_callback=None, stop_check=None):
         best_accuracy = []
         combined_classifier_map = {}
         for i in range(self.net_count):
@@ -170,7 +173,13 @@ class AudioNetTrainer:
                             if( i % 10 == 0 ):
                                 correct_in_minibatch = ( local_labels == output.max(dim = 1)[1] ).sum()
                                 print('[Net: %d, %d, %5d] loss: %.3f acc: %.3f' % (j + 1, epoch + 1, i + 1, (running_loss[j] / 10), correct_in_minibatch.item()/local_labels.size(0)))
+                                if batch_callback is not None:
+                                    batch_callback(j + 1, epoch + 1, i + 1, running_loss[j] / 10, correct_in_minibatch.item()/local_labels.size(0))
                                 running_loss[j] = 0.0
+                                if stop_check is not None and stop_check():
+                                    print("Stop requested - Stopped training loop")
+                                    print( "------------------------------------------------------")
+                                    return
                     
                 epoch_loss = epoch_loss / ( self.dataset_size * (1 - self.validation_split) )
                 print('Training loss: {:.4f}'.format(epoch_loss))
@@ -270,6 +279,13 @@ class AudioNetTrainer:
                     print( "------------------------------------------------------")                    
                     connect_model( filename, combined_classifier_map, "ensemble_torch", True, self.audio_settings )
                 
+                if epoch_callback is not None:
+                    epoch_callback(epoch, np.sum(epoch_loss), accuracy, mean_label_accuracy, new_best)
+                if stop_check is not None and stop_check():
+                    print("Stop requested - Stopped training loop")
+                    print( "------------------------------------------------------")
+                    return
+
                 with KeyPoller() as key_poller:
                     ESCAPEKEY = '\x1b'
                     character = key_poller.poll()

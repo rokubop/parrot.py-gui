@@ -233,8 +233,25 @@ check("the dataset holds the fixture labels", sorted(dataset.get_labels()) == so
 
 trainer = AudioNetTrainer(dataset, NET_COUNT, settings)
 trainer.max_epochs = EPOCHS
-trainer.train("smoke_net")
+batches = []
+epochs = []
+trainer.train("smoke_net", batch_callback=lambda *args: batches.append(args), epoch_callback=lambda *args: epochs.append(args))
 print("  took %.1fs" % (time.time() - t))
+check("the epoch callback fired once per epoch", len(epochs) == EPOCHS, "(%d)" % len(epochs))
+check("it reported every net's accuracy", all(len(epoch[2]) == NET_COUNT for epoch in epochs))
+check("the first epoch is a new best", bool(epochs) and epochs[0][4])
+
+t = stage("Stopping an audio net mid epoch")
+# Batches are only reported every 10, more than the fixtures fill at full size.
+class SmallBatchTrainer(AudioNetTrainer):
+    batch_size = 8
+
+stopped_epochs = []
+trainer = SmallBatchTrainer(dataset, NET_COUNT, settings)
+trainer.train("smoke_net_stopped", batch_callback=lambda *args: batches.append(args), epoch_callback=lambda *args: stopped_epochs.append(args), stop_check=lambda: len(batches) > 0)
+print("  took %.1fs" % (time.time() - t))
+check("the batch callback fired", len(batches) == 1, "(%d)" % len(batches))
+check("it stopped before finishing an epoch", len(stopped_epochs) == 0, "(%d)" % len(stopped_epochs))
 
 net_file = os.path.join(models_dir, "smoke_net")
 check("the audio net model saved", os.path.exists(net_file))
