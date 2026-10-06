@@ -40,7 +40,7 @@ PROFILES_DIR = os.path.join(DATA_ROOT, "data-profiles")
 _env_data_dir = os.environ.get("PARROT_DATA_DIR")
 _current_profile = None if _env_data_dir else _read_current_profile(PROFILES_DIR)
 if _env_data_dir:
-    DATA_DIR = _env_data_dir
+    DATA_DIR = os.path.abspath(_env_data_dir)
 elif _current_profile:
     DATA_DIR = os.path.join(PROFILES_DIR, _current_profile)
 else:

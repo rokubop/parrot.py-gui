@@ -62,17 +62,19 @@ TYPE_FEATURE_ENGINEERING_NORM_MFCC = 3
 TYPE_FEATURE_ENGINEERING_NORM_MFSC = 4
 FEATURE_ENGINEERING_TYPE = TYPE_FEATURE_ENGINEERING_NORM_MFSC
 
-# Every user data path derives from DATA_DIR; see lib/data_root.py.
+# DATA_DIR also follows the active profile; see lib/data_root.py.
 from lib.data_root import DATA_ROOT, PROFILES_DIR, DATA_DIR
-DATASET_FOLDER = os.path.join(DATA_DIR, "recordings")
-RECORDINGS_FOLDER = DATASET_FOLDER
-REPLAYS_FOLDER = os.path.join(DATA_DIR, "replays")
-REPLAYS_AUDIO_FOLDER = os.path.join(REPLAYS_FOLDER, "audio")
-REPLAYS_FILE = os.path.join(REPLAYS_FOLDER, "run.csv")
-CLASSIFIER_FOLDER = os.path.join(DATA_DIR, "models")
-OVERLAY_FOLDER = os.path.join(DATA_DIR, "overlays")
+DATASET_FOLDER = DATA_DIR + "/recordings"
+RECORDINGS_FOLDER = DATA_DIR + "/recordings"
+REPLAYS_FOLDER = DATA_DIR + "/replays"
+REPLAYS_AUDIO_FOLDER = DATA_DIR + "/replays/audio"
+REPLAYS_FILE = REPLAYS_FOLDER + "/run.csv"
+CLASSIFIER_FOLDER = DATA_DIR + "/models"
+CODE_FOLDER = DATA_DIR + "/code"
+# Ships with parrot, not user data
+OVERLAY_FOLDER = "data/overlays"
 COORDINATE_FILEPATH = "config/current-coordinate.txt"
-CONVERSION_OUTPUT_FOLDER = os.path.join(DATA_DIR, "output")
+CONVERSION_OUTPUT_FOLDER = DATA_DIR + "/output"
 PATH_TO_FFMPEG = "ffmpeg/bin/ffmpeg"
 
 DEFAULT_CLF_FILE = ""
