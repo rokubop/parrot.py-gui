@@ -3,9 +3,23 @@ This program is a prototype meant to explore ways to interact with computer syst
 
 It's name is inspired by the way parrots and parakeets communicate, using chirps, clicks and sometimes speech. 
 
+# Desktop app
+
+A GUI for recording, training and testing sounds, covering what `settings.py` does.
+New in this fork.
+
+Start it with `run.bat` on Windows, `./run.sh` on macOS and Linux.
+Both find or download Python, build a venv, install the requirements and launch.
+Nothing is installed system wide. With a venv already set up: `python -m gui`.
+
+Same `data/` folder as the CLI. `settings.py` and `play.py` are unchanged.
+
+**Already have recordings?** First launch offers "Find my setup" on the Home screen,
+or Settings > Manage profiles. It copies your folder in. The original is never written to.
+
 # Software requirements
 * Windows version 7 and up, MacOS or Linux (X11)
-* Python 3.12 (64 bit)
+* Python 3.13 (64 bit). `run.bat` and `run.sh` fetch it for you if it isn't there
 * Project IRIS ( OPTIONAL - Used for turning the eyetracker into a mouse cursor )
 
 Python packages such as

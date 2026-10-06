@@ -24,6 +24,15 @@ def get_grouped_data_directories( labels ):
         grouped_data_directories[ category_name ].append( data_directory )
     return grouped_data_directories
 
+def resolved_balance(silence=None, balance_sounds=None):
+    """The values load_pytorch_data will actually apply given the same
+    arguments, so callers can record them without restating the defaults."""
+    return {"silence": SILENCE_TRAINING_MODE if silence is None else silence,
+            "balance_sounds": (AUTOMATIC_DATASET_BALANCING
+                               if balance_sounds is None
+                               else bool(balance_sounds))}
+
+
 def generate_data_balance_strategy_map(grouped_data_directories, silence=None, balance_sounds=None):
     if silence is None:
         silence = SILENCE_TRAINING_MODE
