@@ -33,6 +33,7 @@ try:
     default_audio = sd.query_devices(kind="input")
 except (sd.PortAudioError, ValueError):
     default_audio = None
+
 REPEAT_DELAY = 0.5
 REPEAT_RATE = 33
 SPEECHREC_ENABLED = False

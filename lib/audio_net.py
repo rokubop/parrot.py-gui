@@ -66,7 +66,6 @@ class TinyAudioNetEnsemble(nn.Module):
         return out / self.model_length
             
 class AudioNetTrainer:
-    dataset_labels = []
     dataset_size = 0
     
     criterion = nn.NLLLoss()
@@ -256,8 +255,7 @@ class AudioNetTrainer:
                 mean_label_accuracy = {}
                 for dataset_label in self.dataset_labels:
                     scores = [p[dataset_label] for p in label_accuracy]
-                    mean_label_accuracy[dataset_label] = (
-                        sum(scores) / len(scores) if scores else 0)
+                    mean_label_accuracy[dataset_label] = sum(scores) / len(scores)
                 
                 for j in range(self.net_count):
                     epoch_loss.append(epoch_validation_loss[j] / ( self.dataset_size * self.validation_split ) )

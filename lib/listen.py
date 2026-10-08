@@ -393,3 +393,5 @@ def validate_microphone_input():
         print( "---------------------------------------------------------------")
         
     return False
+
+    
