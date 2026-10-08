@@ -189,6 +189,7 @@ class TrainingWorker(QThread):
         from lib.audio_dataset import AudioDataset
         from lib.load_data import load_pytorch_data, resolved_balance
         from lib.combine_models import get_current_default_settings
+        import numpy as np
 
         audio_settings = get_current_default_settings()
 
@@ -212,8 +213,9 @@ class TrainingWorker(QThread):
         self._training = True
         self.run_started.emit(trainer.max_epochs)
 
-        def progress_callback(epoch, loss, accuracy, per_label_accuracy, is_new_best):
-            self.epoch_complete.emit(epoch, loss, accuracy, per_label_accuracy, is_new_best)
+        def epoch_callback(epoch, loss, net_accuracies, per_label_accuracy, is_new_best):
+            self.epoch_complete.emit(epoch, loss, float(np.average(net_accuracies)),
+                                     per_label_accuracy, is_new_best)
 
         def stop_check():
             return self._stop_requested
@@ -222,7 +224,7 @@ class TrainingWorker(QThread):
         # expects <name>.pkl + <name>.pkl_<i>-BEST-weights.pth.tar - so the
         # extension belongs in the filename, exactly as the CLI passes it.
         trainer.train(self.model_name + ".pkl",
-                      progress_callback=progress_callback,
+                      epoch_callback=epoch_callback,
                       stop_check=stop_check)
 
     def request_stop(self):

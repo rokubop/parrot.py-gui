@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Literal, TypedDict
 
 @dataclass
 class TransitionEvent:
@@ -69,3 +69,7 @@ class DetectionState:
     dBFS_error_margin: float = 0
     frozen: bool = False # Thresholds are settled and must not be recalculated (second pass of two-pass detection)
     unlabeled_frames: int = 0 # Detected live, no label matched afterwards
+
+class RunSettings(TypedDict):
+    silence: Literal["all", "balanced", "none"]
+    balance_sounds: bool
