@@ -1,2 +1,2 @@
-pop_duration_type=continuous
+pop_duration_type=discrete
 pop_min_dbfs=-69.78
