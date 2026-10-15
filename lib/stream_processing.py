@@ -12,6 +12,49 @@ import os
 
 snr_cutoff = 30
 
+def detect_wav_frames(input_file, detection_state, progress_callback = None, progress_start = 0, progress_end = 0.75):
+    """Run live detection over a wav, frame by frame. Updates detection_state as it goes."""
+    audioFrames = []
+    wf = wave.open(input_file, 'rb')
+    number_channels = wf.getnchannels()
+    total_frames = wf.getnframes()
+    frame_rate = wf.getframerate()
+    frames_to_read = round( frame_rate * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT )
+
+    false_occurrence = []
+    current_occurrence = []
+    index = 0    
+    detection_frames = []
+
+    if progress_callback is not None:
+        progress_callback(progress_start, detection_state)
+    
+    while( wf.tell() < total_frames ):
+        index = index + 1
+        raw_wav = wf.readframes(frames_to_read * number_channels)
+        detection_state.ms_recorded += detection_state.ms_per_frame
+        detected = False
+        
+        # If our wav file is shorter than the amount of bytes ( assuming 16 bit ) times the frames, we discard it and assume we arrived at the end of the file
+        if (len(raw_wav) != 2 * frames_to_read * number_channels ):
+            break;        
+        
+        # Do online downsampling if the files frame rate is higher than our 16k Hz rate
+        # To make sure all the calculations stay accurate
+        raw_wav = resample_audio(raw_wav, frame_rate, number_channels)
+
+        audioFrames.append(raw_wav)
+        audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence = \
+            process_audio_frame(index, audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence)
+        
+        # Convert from different byte sizes to 16bit for proper progress
+        progress = wf.tell() / total_frames
+        if progress_callback is not None and progress < 1:
+            progress_callback(progress_start + progress * (progress_end - progress_start), detection_state)
+
+    wf.close()
+    return detection_frames, number_channels
+
 def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels, progress_callback = None, comparison_srt_file = None, override_file = None, print_statistics = False, two_pass = None, strategy = None):
     if two_pass is None:
         two_pass = TWO_PASS_DETECTION
@@ -44,9 +87,6 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
             override_labels.append(DetectionLabel(override_label, 0, 0, duration_type, 0, min_dBFS, 0, 0, 0))    
     detection_state.override_labels = override_labels
 
-    if progress_callback is not None:
-        progress_callback(0, detection_state)
-
     # The pass(es) fill 75% of the progress, post processing the remaining 25%
     # This progress partitioning is completely arbitrary
     first_pass_end = 0.375 if two_pass else 0.75
@@ -68,45 +108,6 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
     if progress_callback is not None:
         progress_callback(progress, detection_state)
 
-def detect_wav_frames(input_file, detection_state, progress_callback = None, progress_start = 0, progress_end = 0.75):
-    """A full detection pass over a wav file with the same online state machine
-    used during live recording, returning the detection frames.
-    When detection_state.frozen is set the settled thresholds are kept as-is."""
-    audioFrames = []
-    false_occurrence = []
-    current_occurrence = []
-    detection_frames = []
-    index = 0    
-    wf = wave.open(input_file, 'rb')
-    number_channels = wf.getnchannels()
-    total_frames = wf.getnframes()
-    frame_rate = wf.getframerate()
-    frames_to_read = round( frame_rate * RECORD_SECONDS / SLIDING_WINDOW_AMOUNT )
-    
-    while( wf.tell() < total_frames ):
-        index = index + 1
-        raw_wav = wf.readframes(frames_to_read * number_channels)
-        detection_state.ms_recorded += detection_state.ms_per_frame
-        
-        # If our wav file is shorter than the amount of bytes ( assuming 16 bit ) times the frames, we discard it and assume we arrived at the end of the file
-        if (len(raw_wav) != 2 * frames_to_read * number_channels ):
-            break;        
-        
-        # Do online downsampling if the files frame rate is higher than our 16k Hz rate
-        # To make sure all the calculations stay accurate
-        raw_wav = resample_audio(raw_wav, frame_rate, number_channels)
-
-        audioFrames.append(raw_wav)
-        audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence = \
-            process_audio_frame(index, audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence)
-        
-        progress = wf.tell() / total_frames
-        if progress_callback is not None and progress < 1:
-            progress_callback(progress_start + progress * (progress_end - progress_start), detection_state)
-
-    wf.close()
-    return detection_frames, number_channels
-    
 def settle_detection_state(detection_frames: List[DetectionFrame], detection_state: DetectionState):
     """Prepare the second detection pass - settle the thresholds over the WHOLE
     recording, freeze them, and reset the counters so every frame can be
