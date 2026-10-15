@@ -72,7 +72,7 @@ For examples and explanation of how to interact with a running Parrot instance f
 
 # Desktop app (work in progress)
 
-Not ready for use yet. Being contributed in pieces; for now it only browses your sounds and models, read-only.
+Not ready for use yet. Being added in pieces; for now it only browses your sounds and models, read-only.
 
 ```
 pip install -r requirements-gui.txt
