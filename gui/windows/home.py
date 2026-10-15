@@ -1,9 +1,9 @@
-"""Home landing page. Re-orients a user returning after months away:
-workflow steps with live state, expectations for new users, model status."""
+"""Home landing page. Re-orients a user returning after months away: the
+workflow steps, each with where it stands."""
 import os
 import time
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QScrollArea, QSizePolicy
@@ -28,27 +28,6 @@ def _ago(timestamp):
     if months < 24:
         return f"{int(months)} months ago"
     return f"{days / 365.25:.1f} years ago"
-
-
-_recordings_since = library_ops.recordings_since
-
-
-class _ModelSoundsWorker(QThread):
-    """Reads model labels off-thread (unpickling stutters the UI).
-    get_model_metadata because labels live in the pkl or the weight files."""
-    loaded = pyqtSignal(str, object)   # model name, labels or None
-
-    def __init__(self, app_state, name, parent=None):
-        super().__init__(parent)
-        self._app_state = app_state
-        self._name = name
-
-    def run(self):
-        try:
-            meta = self._app_state.get_model_metadata(self._name, load_weights=True)
-            self.loaded.emit(self._name, meta["labels"] or None)
-        except Exception:
-            self.loaded.emit(self._name, None)
 
 
 class _StepCard(QFrame):
@@ -125,8 +104,6 @@ class HomePage(QWidget):
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
         self.app_state = app_state
-        self._sounds_worker = None
-        self._loaded_sounds = {}   # model name -> labels ([] = unreadable)
 
         self._setup_ui()
 
@@ -166,9 +143,7 @@ class HomePage(QWidget):
         self.hero_sub.setWordWrap(True)
         v.addWidget(self.hero_sub)
 
-        self.steps_widget = QWidget()
-        steps_row = QHBoxLayout(self.steps_widget)
-        steps_row.setContentsMargins(0, 0, 0, 0)
+        steps_row = QHBoxLayout()
         steps_row.setSpacing(12)
         # Title says the step, button says where it happens.
         self.step_record = _StepCard(1, "Record sounds", "Open sounds")
@@ -179,32 +154,26 @@ class HomePage(QWidget):
         self.step_use.action.clicked.connect(self._on_open_models_folder)
         for card in (self.step_record, self.step_train, self.step_use):
             steps_row.addWidget(card, 1)
-        v.addWidget(self.steps_widget)
+        v.addLayout(steps_row)
 
-        status_title_row = QHBoxLayout()
-        self.status_title = QLabel("Where you're at")
-        status_title_row.addWidget(self.status_title)
-        status_title_row.addStretch()
-        self.open_data_btn = QPushButton("Open data folder")
-        self.open_data_btn.setFlat(True)
-        self.open_data_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.open_data_btn.setToolTip("Recordings and models, in one folder")
-        self.open_data_btn.clicked.connect(self._on_open_data_folder)
-        status_title_row.addWidget(self.open_data_btn)
-        v.addLayout(status_title_row)
-        self.status_row_widget = QWidget()
-        status_row = QHBoxLayout(self.status_row_widget)
-        status_row.setContentsMargins(0, 0, 0, 0)
-        status_row.setSpacing(12)
-        self.model_panel, self.model_panel_title, self.model_panel_body = \
-            self._make_panel("Active model")
-        status_row.addWidget(self.model_panel, 1)
-        v.addWidget(self.status_row_widget)
+        data_row = QHBoxLayout()
+        data_row.addStretch()
+        open_data_btn = QPushButton("Open data folder")
+        open_data_btn.setFlat(True)
+        open_data_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        open_data_btn.setToolTip("Recordings and models, in one folder")
+        open_data_btn.clicked.connect(self._on_open_data_folder)
+        data_row.addWidget(open_data_btn)
+        v.addLayout(data_row)
 
         # Non-zero factor: leftover height goes to the bottom of the page, not
         # into the step cards.
         v.addStretch(1)
-        self._apply_theme_styles()
+
+        t = theme.colors()
+        self.hero_title.setStyleSheet(components.heading_style("hero"))
+        self.hero_sub.setStyleSheet(
+            f"font-size: {theme.TYPE_SCALE['card']}px; color: {t['text_dim']};")
 
     def _on_open_data_folder(self):
         try:
@@ -218,51 +187,11 @@ class HomePage(QWidget):
         except library_ops.LibraryOpError:
             pass
 
-    def _make_panel(self, title):
-        panel = QFrame()
-        panel.setObjectName("homePanel")
-        pv = QVBoxLayout(panel)
-        pv.setContentsMargins(16, 12, 16, 14)
-        pv.setSpacing(4)
-        title_label = QLabel(title)
-        pv.addWidget(title_label)
-        body = QLabel("")
-        body.setWordWrap(True)
-        body.setTextFormat(Qt.TextFormat.RichText)
-        pv.addWidget(body)
-        pv.addStretch()
-        # A word-wrapped rich-text label reports its height for a much narrower
-        # width than it gets, which left the panel padded with dead space. Ask
-        # the layout for height-for-width and cap the panel at what it needs.
-        for w in (body, panel):
-            sp = w.sizePolicy()
-            sp.setHeightForWidth(True)
-            w.setSizePolicy(sp)
-        panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        return panel, title_label, body
-
-    def _apply_theme_styles(self):
-        t = theme.colors()
-        self.hero_title.setStyleSheet(components.heading_style("hero"))
-        self.hero_sub.setStyleSheet(
-            f"font-size: {theme.TYPE_SCALE['card']}px; color: {t['text_dim']};")
-        self.status_title.setStyleSheet(
-            components.heading_style("section") + " margin-top: 8px;")
-        self.model_panel.setStyleSheet(
-            f"QFrame#homePanel {{ background-color: {t['card']}; "
-            f"border: 1px solid {t['border']}; "
-            f"border-radius: {t['radius_card']}; }}")
-        self.model_panel_title.setStyleSheet(
-            components.heading_style("card") + " border: none;")
-
     # ---- content ----------------------------------------------------------
 
     def _refresh(self):
         labels = self.app_state.get_sound_labels()
         model_names = self.app_state.get_model_names()
-        t = theme.colors()
-
-        first_run = not labels and not model_names
 
         step1_done = len(labels) >= 2
         if not labels:
@@ -297,11 +226,6 @@ class HomePage(QWidget):
         self.step_use.action.setToolTip(
             "The folder holding your .pkl files, to copy one into an integration")
 
-        self.status_title.setVisible(not first_run)
-        self.status_row_widget.setVisible(not first_run)
-        if not first_run:
-            self._refresh_model_panel(labels, latest_name, latest_mtime, t)
-
     def _latest_model(self):
         best, best_mtime = None, 0
         for name in self.app_state.get_model_names():
@@ -311,64 +235,3 @@ class HomePage(QWidget):
                 if mtime > best_mtime:
                     best, best_mtime = name, mtime
         return best, best_mtime
-
-    def _refresh_model_panel(self, labels, latest_name, latest_mtime, t):
-        name = latest_name
-        if name is None:
-            self.model_panel_title.setText("Active model")
-            self.model_panel_body.setText(
-                f"<span style='color:{t['text_dim']};'>No models yet - train one "
-                f"from your recorded sounds.</span>")
-            return
-
-        pkl = os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
-        mtime = os.path.getmtime(pkl) if os.path.isfile(pkl) else latest_mtime
-        self.model_panel_title.setText("Latest model")
-
-        lines = [f"<b style='color:{t['text_bright']}; "
-                 f"font-size:{theme.TYPE_SCALE['card']}px;'>{name}</b>",
-                 f"<span style='color:{t['text_dim']};'>Trained {_ago(mtime)}</span>"]
-
-        stale = [(l, n) for l in labels
-                 if (n := _recordings_since(l, mtime)[0])]
-        if stale:
-            takes = sum(n for _, n in stale)
-            names = [l for l, _ in stale]
-            shown = ", ".join(names[:4]) + ("…" if len(names) > 4 else "")
-            noun = "recording" if takes == 1 else "recordings"
-            lines.append(
-                f"<span style='color:{t['text_dim']};'>{takes} new {noun} "
-                f"since this model was trained: {shown}</span>")
-
-        lines.append(self._model_sounds_html(name, labels, t))
-        self.model_panel_body.setText("<br>".join(lines))
-
-    def _model_sounds_html(self, name, labels, t):
-        if name not in self._loaded_sounds:
-            self._start_sounds_worker(name)
-            return f"<span style='color:{t['text_dim']};'>Reading its sounds…</span>"
-        model_labels = self._loaded_sounds[name]
-        if not model_labels:
-            return (f"<span style='color:{t['text_dim']};'>Couldn't read this "
-                    f"model's sound list.</span>")
-        listed = ", ".join(model_labels)
-        parts = [f"<span style='color:{t['text']};'>Knows {len(model_labels)} sounds:</span> "
-                 f"<span style='color:{t['text_dim']};'>{listed}</span>"]
-        unused = [l for l in labels if l not in model_labels]
-        if unused:
-            shown = ", ".join(unused[:4]) + ("…" if len(unused) > 4 else "")
-            parts.append(f"<br><span style='color:{t['text_dim']};'>Not in this model: "
-                         f"{shown}</span>")
-        return "".join(parts)
-
-    def _start_sounds_worker(self, name):
-        if self._sounds_worker is not None and self._sounds_worker.isRunning():
-            return
-        self._sounds_worker = _ModelSoundsWorker(self.app_state, name, self)
-        self._sounds_worker.loaded.connect(self._on_sounds_loaded)
-        self._sounds_worker.start()
-
-    def _on_sounds_loaded(self, name, sounds):
-        # [] = unreadable, prevents endless retry
-        self._loaded_sounds[name] = sounds if sounds is not None else []
-        self._refresh()
