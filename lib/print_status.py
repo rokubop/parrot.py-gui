@@ -15,6 +15,22 @@ PROGRESS_FILLED = '#' if sys.stdout.encoding != 'utf-8' else '\u2588'
 PROGRESS_AVAILABLE = '-' if sys.stdout.encoding != 'utf-8' else '\u2591'
 LINE_LENGTH = 50
 
+def get_quantity_rating(total_ms_detected: float):
+    """Rate how much usable sound has been recorded for a label.
+
+    Returns (quantity, percent_to_next, next_quantity). Thresholds are parrot's
+    established values: ~5000 30ms windows trains well, ~1000 decently, plus a
+    holdout margin -> 16500 / 41250 / 82500 ms of *detected* sound.
+    """
+    if total_ms_detected < 16500:
+        return "Not enough", (total_ms_detected / 16500) * 100, "Sufficient"
+    elif total_ms_detected < 41250:
+        return "Sufficient", ((total_ms_detected - 16500) / (41250 - 16500)) * 100, "Good"
+    elif total_ms_detected < 82500:
+        return "Good", ((total_ms_detected - 41250) / (82500 - 41250)) * 100, "Excellent"
+    return "Excellent", 100, ""
+
+
 def create_progress_bar(percentage: float = 1.0) -> str:
     filled_characters = round(max(0, min(LINE_LENGTH, LINE_LENGTH * percentage)))
     return "".rjust(filled_characters, PROGRESS_FILLED).ljust(LINE_LENGTH, PROGRESS_AVAILABLE)
@@ -80,21 +96,8 @@ def get_current_status(detection_state: DetectionState, extra_states: List[Detec
                 if extra_label.label == label.label:
                     total_ms_detected += extra_label.ms_detected + extra_label.previous_detected
         
-        percent_to_next = 0
-        quantity = ""
-        if total_ms_detected < 16500:
-            percent_to_next = (total_ms_detected / 16500 ) * 100
-            quantity = "Not enough"
-        elif total_ms_detected > 16500 and total_ms_detected < 41250:
-            percent_to_next = ((total_ms_detected - 16500) / (41250 - 16500) ) * 100
-            quantity = "Sufficient"
-        elif total_ms_detected >= 41250 and total_ms_detected < 82500:
-            percent_to_next = ((total_ms_detected - 41250) / (82500 - 41250) ) * 100        
-            quantity = "Good"
-        elif total_ms_detected >= 82500:
-            quantity = "Excellent"
-            
-        if percent_to_next != 0:
+        quantity, percent_to_next, _next_quantity = get_quantity_rating(total_ms_detected)
+        if quantity != "Excellent" and percent_to_next != 0:
             quantity += " (" + str(round(percent_to_next)) + "%)"
 
         lines.extend([
