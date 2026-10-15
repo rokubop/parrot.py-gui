@@ -60,6 +60,15 @@ You can fix that by starting windows speech rec, going to your C:\Users\YOURUSER
 The OSK program in Windows is a special program that doesn't trust the input that this python program is outputting. So if you try clicking on the OSK buttons, it doesn't respond.
 A way to mitigate that is by running your command line program as an administrator. You can do this by searching for your command line program in the start menu, and right clicking on the option 'Run as administrator'.
 
+# Desktop app (experimental)
+
+A read-only GUI to browse your sounds and models, from the same `data/` folder.
+
+```
+pip install -r requirements-gui.txt
+python -m gui
+```
+
 # Other related stuff
 
 For instructions on upgrading and the release notes, look on ![this page](docs/RELEASE_NOTES.md).
