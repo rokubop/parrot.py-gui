@@ -14,7 +14,7 @@ from gui.services import library_ops
 from gui.widgets import help_dialog
 from gui import components, theme
 from lib.srt import ms_to_srt_timestring
-from lib.print_status import get_quantity_rating
+from lib.print_status import get_quantity_rating, QUANTITIES
 from gui import content
 
 
@@ -265,7 +265,7 @@ class SoundLibraryPage(QWidget):
         for label in self.app_state.get_sound_labels():
             duration_ms = self.app_state.get_label_duration_ms(label)
             duration = ms_to_srt_timestring(duration_ms, False).split(",")[0]
-            quantity, _pct, _next = get_quantity_rating(duration_ms)
+            quantity, _pct = get_quantity_rating(duration_ms)
             item = QTreeWidgetItem([label, quantity, duration])
             item.setData(0, Qt.ItemDataRole.UserRole, label)
             color = self._QUANTITY_COLORS.get(quantity)
@@ -478,10 +478,12 @@ class SoundLibraryPage(QWidget):
             self._update_quantity(detected_ms)
 
     def _update_quantity(self, detected_ms):
-        quantity, percent_to_next, next_quantity = get_quantity_rating(detected_ms)
+        quantity, percent_to_next = get_quantity_rating(detected_ms)
         color = self._QUANTITY_COLORS.get(quantity, theme.colors()["text"])
         detected_str = ms_to_srt_timestring(int(detected_ms), False).split(",")[0]
-        if next_quantity:
+        names = list(QUANTITIES.values())
+        if quantity != QUANTITIES["excellent"]:
+            next_quantity = names[names.index(quantity) + 1]
             tail = f"   ·   {round(percent_to_next)}% toward “{next_quantity}”"
         else:
             tail = "   ·   plenty of data for training"

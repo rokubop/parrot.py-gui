@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QAction, QActionGroup, QShortcut, QKeySequence
 from PyQt6.QtCore import Qt, QTimer, QSize
-from gui.models.app_state import AppState
+from gui.state import AppState
 from gui.services import profiles
 from gui.windows.home import HomePage
 from gui.windows.library import SoundLibraryPage
@@ -51,6 +51,10 @@ class MainWindow(QMainWindow):
         # Toolbar navigation - checkable actions so the current tab is obvious.
         toolbar = QToolBar("Navigation")
         toolbar.setMovable(False)
+        # Without this, right-clicking the toolbar opens a Qt menu with a
+        # "Navigation" checkbox. Unticking it hides the tabs, with no way to
+        # get them back short of restarting.
+        toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
         # 16px against 13px text. The default 24 makes the two icons shout over
         # the six nav tabs, which carry no icon at all.
         toolbar.setIconSize(QSize(16, 16))

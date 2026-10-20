@@ -6,7 +6,7 @@ import time
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QSizePolicy
+    QScrollArea, QSizePolicy, QMessageBox
 )
 
 from config.config import CLASSIFIER_FOLDER
@@ -283,8 +283,8 @@ class HomePage(QWidget):
         from config.config import DATA_DIR
         try:
             library_ops.open_in_file_manager(os.path.abspath(DATA_DIR))
-        except library_ops.LibraryOpError:
-            pass
+        except library_ops.LibraryOpError as exc:
+            QMessageBox.warning(self, "Couldn't open folder", str(exc))
 
     def _on_connect_action(self):
         """Step 3's button. The tab says where the model file is."""
@@ -356,7 +356,7 @@ class HomePage(QWidget):
         if not labels:
             s1 = "No sounds yet."
         elif len(labels) == 1:
-            s1 = "1 sound - a model needs at least 2."
+            s1 = "1 sound. A model needs 2."
         else:
             s1 = f"{len(labels)} sounds recorded."
 
@@ -379,8 +379,11 @@ class HomePage(QWidget):
             (step1_done, step2_done, step3_done)) if not done), None)
         self.step_record.set_state(step1_done, current == 0, s1)
         self.step_train.set_state(step2_done, current == 1, s2)
+        # Bright once done, but only when no earlier step is unfinished:
+        # one accent button at a time.
         self.step_connect.set_state(
-            step3_done, current == 2, s3, action_primary=step3_done)
+            step3_done, current == 2, s3,
+            action_primary=step3_done and current is None)
         self.step_connect.action.setToolTip(
             "Where your model file is, and how to take it elsewhere")
 

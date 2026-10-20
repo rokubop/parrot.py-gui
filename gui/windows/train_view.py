@@ -939,7 +939,7 @@ class TrainView(QWidget):
         self._silence_item = None
         for label in self.app_state.get_sound_labels():
             ms = self.app_state.get_label_duration_ms(label)
-            quantity, _percent, _next = get_quantity_rating(ms)
+            quantity, _percent = get_quantity_rating(ms)
             item = QTreeWidgetItem([label, quantity, f"{ms / 1000:.0f}s", ""])
             item.setData(0, Qt.ItemDataRole.UserRole, label)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -1157,7 +1157,7 @@ class TrainView(QWidget):
     def _ratings(self, labels):
         counts = {}
         for label in labels:
-            quantity, _p, _n = get_quantity_rating(
+            quantity, _p = get_quantity_rating(
                 self.app_state.get_label_duration_ms(label))
             counts[quantity] = counts.get(quantity, 0) + 1
         return counts

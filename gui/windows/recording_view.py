@@ -38,7 +38,15 @@ from gui.workers.segment_worker import AppendWorker
 from gui.services import library_ops, strategies
 from gui.services.undo import UndoHistory
 from lib.srt import ms_to_srt_timestring, parse_srt_file
-from lib.print_status import get_quantity_rating
+from lib.print_status import get_quantity_rating, QUANTITIES
+
+
+def _toward_next(quantity, pct):
+    """The "(40% → Good)" after a rating; nothing once it is Excellent."""
+    names = list(QUANTITIES.values())
+    if quantity == QUANTITIES["excellent"]:
+        return ""
+    return f" ({round(pct)}% → {names[names.index(quantity) + 1]})"
 
 
 def _quality_from_snr(snr, ms_recorded):
@@ -465,8 +473,8 @@ class RecordingView(QWidget):
         self._live_sounds = sounds
         self.v_detected.setText(ms_to_srt_timestring(ms, False))
         self.v_sounds.setText(str(sounds))
-        quantity, pct, nxt = get_quantity_rating(ms)
-        tail = f" ({round(pct)}% → {nxt})" if nxt else ""
+        quantity, pct = get_quantity_rating(ms)
+        tail = _toward_next(quantity, pct)
         self.v_quantity.setText(quantity + tail)
 
     def _bind_review_detection(self):
@@ -1035,8 +1043,8 @@ class RecordingView(QWidget):
             lab = state.labels[0]
             detected = lab.ms_detected + lab.previous_detected
             self.v_detected.setText(ms_to_srt_timestring(detected, False))
-            quantity, pct, nxt = get_quantity_rating(detected)
-            tail = f" ({round(pct)}% → {nxt})" if nxt else ""
+            quantity, pct = get_quantity_rating(detected)
+            tail = _toward_next(quantity, pct)
             self.v_quantity.setText(quantity + tail)
             self.v_type.setText((lab.duration_type or "determining…").lower())
 

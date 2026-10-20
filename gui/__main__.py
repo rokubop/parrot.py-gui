@@ -18,7 +18,26 @@ def _preload():
             import torch  # noqa: F401
         except ImportError:
             pass
+    _claim_dpi_awareness()
     import gui.app  # noqa: F401
+
+
+def _claim_dpi_awareness():
+    """Per-monitor v2, Qt's own default, set before config imports pyautogui.
+
+    pyautogui sets system-aware on import and Windows lets only the first
+    caller set it, so Qt would fail with "Access is denied" and blur on a
+    second monitor. Taken here instead of building the QApplication first,
+    which would leave the window's imports out from under the splash.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        per_monitor_v2 = ctypes.c_void_p(-4)
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(per_monitor_v2)
+    except Exception:
+        pass
 
 
 def _claim_taskbar_identity():

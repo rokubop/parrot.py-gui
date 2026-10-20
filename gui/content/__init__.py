@@ -12,6 +12,8 @@ string; `gui.widgets.help_dialog` owns the drawings and the rendering.
 Numbers come from the config the app actually runs on, never typed twice.
 """
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from lib.print_status import (QUANTITY_SUFFICIENT_MS, QUANTITY_GOOD_MS,
+                              QUANTITY_EXCELLENT_MS)
 
 # A frame is one sliding window, not a whole sample - same arithmetic as
 # load_data, so help cannot quote a length the trainer does not use.
@@ -23,11 +25,11 @@ MS_PER_FRAME = int(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 MIN_TRAIN_SECONDS = 17
 GOOD_TRAIN_SECONDS = 40
 
-# The rating bands, mirrored from lib/print_status.get_quantity_rating so the
-# help and the live ratings always agree.
-SUFFICIENT_S = 16.5
-GOOD_S = 41.25
-EXCELLENT_S = 82.5
+# The bands get_quantity_rating uses, so the help and the live ratings always
+# agree.
+SUFFICIENT_S = QUANTITY_SUFFICIENT_MS / 1000
+GOOD_S = QUANTITY_GOOD_MS / 1000
+EXCELLENT_S = QUANTITY_EXCELLENT_MS / 1000
 
 TAGLINE = ("Train a model on the sounds you make - clicks, pops, vowels, "
            "hisses - and use them to control your computer.")

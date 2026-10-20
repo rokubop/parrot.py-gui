@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from config.config import CLASSIFIER_FOLDER
-from gui.models.app_state import AppState
+from gui.state import AppState
 from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
 
