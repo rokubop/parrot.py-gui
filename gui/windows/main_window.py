@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
         # (some query audio devices), so they build lazily on first use
         self.home_page = HomePage(self.app_state, self)
         self.stack.addWidget(self.home_page)
-        self.home_page.navigate.connect(self._go_to_tab)
+        self.home_page.navigate.connect(self._go_to_page)
 
         self.library_page = SoundLibraryPage(self.app_state, self)
         self.stack.addWidget(self.library_page)
@@ -71,9 +71,11 @@ class MainWindow(QMainWindow):
                      "Settings", "About"):
             action = QAction(text, self)
             action.setCheckable(True)
-            action.triggered.connect(lambda _checked, t=text: self._show_tab(t))
+            action.triggered.connect(lambda _checked, t=text: self._show_page(t))
             self._nav_group.addAction(action)
             toolbar.addAction(action)
+            # Qt default is NoFocus. TabFocus so a click doesn't leave a ring
+            toolbar.widgetForAction(action).setFocusPolicy(Qt.FocusPolicy.TabFocus)
             self.nav_actions[text] = action
         self.nav_actions["Home"].setChecked(True)
         self.stack.setCurrentWidget(self.home_page)
@@ -136,7 +138,7 @@ class MainWindow(QMainWindow):
             from gui.windows.models import ModelsPage
             self.models_page = ModelsPage(self.app_state, self)
             self.models_page.train_requested.connect(self._open_train)
-            self.models_page.navigate.connect(self._go_to_tab)
+            self.models_page.navigate.connect(self._go_to_page)
             self.stack.addWidget(self.models_page)
         return self.models_page
 
@@ -184,18 +186,18 @@ class MainWindow(QMainWindow):
             from gui.windows.train_view import TrainView
             self.train_view = TrainView(self.app_state, self)
             self.train_view.done.connect(self._return_to_models)
-            self.train_view.navigate.connect(self._go_to_tab)
+            self.train_view.navigate.connect(self._go_to_page)
             self.train_view.run_state.connect(self._on_training_state)
             self.stack.addWidget(self.train_view)
         return self.train_view
 
-    def _go_to_tab(self, name):
+    def _go_to_page(self, name):
         """Navigation from page buttons: keeps the toolbar checked state in sync."""
         if name in self.nav_actions:
             self.nav_actions[name].setChecked(True)
-            self._show_tab(name)
+            self._show_page(name)
 
-    def _show_tab(self, name):
+    def _show_page(self, name):
         if name == "Home":
             self.stack.setCurrentWidget(self.home_page)
         elif name == "Sounds":

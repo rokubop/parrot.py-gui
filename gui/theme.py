@@ -66,6 +66,7 @@ THEMES = {
         "control_border": "#8a929e",
         "button": "#4c5462",
         "button_hover": "#5c6577",
+        "focus": "#ffffff",
         # Cards are rounder than controls. A pill is always a half-circle.
         "radius_card": "8px",
         "radius_pill": "9px",
@@ -146,14 +147,19 @@ _STYLESHEET = Template("""
     }
     QToolBar QToolButton {
         color: $text_dim; padding: 6px 16px;
-        border-radius: $radius; font-weight: bold;
+        border-radius: $radius; font-weight: bold; outline: none;
     }
     QToolBar QToolButton:hover { background-color: $button_hover; color: $text_bright; }
     QToolBar QToolButton:checked { background-color: $accent; color: $accent_text; }
+    /* Border comes out of padding so focus doesn't resize. No :focus-visible
+       in Qt, TabFocus does that */
+    QToolBar QToolButton:focus { border: 2px solid $focus; padding: 4px 14px; }
     QPushButton {
         padding: 6px 16px; border-radius: $radius;
         background-color: $button; border: 1px solid $control_border; color: $text;
+        outline: none;
     }
+    QPushButton:focus { border: 2px solid $focus; padding: 5px 15px; }
     QPushButton:hover { background-color: $button_hover; }
     QPushButton:checked { background-color: $accent; color: $accent_text; border-color: $accent; }
     QPushButton:disabled {

@@ -79,7 +79,7 @@ class _StepCard(QFrame):
                              Qt.AlignmentFlag.AlignVCenter)
         self.help_btn = QPushButton("?  Help")
         self.help_btn.setFlat(True)
-        self.help_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.help_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         bubble_row.addWidget(self.help_btn, 0, Qt.AlignmentFlag.AlignTop)
         v.addLayout(bubble_row)
         # No blurb; longer copy belongs behind ? Help.
@@ -89,7 +89,7 @@ class _StepCard(QFrame):
         v.addStretch()
 
         self.action = QPushButton(action_text)
-        self.action.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.action.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         v.addWidget(self.action)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
@@ -117,10 +117,14 @@ class _StepCard(QFrame):
         self.help_btn.setStyleSheet(
             f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
             f"border: none; padding: 2px 6px; }} "
-            f"QPushButton:hover {{ color: {t['text_bright']}; }}")
+            f"QPushButton:hover {{ color: {t['text_bright']}; }} "
+            f"QPushButton:focus {{ border: 2px solid {t['focus']}; "
+            f"padding: 0px 4px; }}")
         self.status.setStyleSheet(
             f"color: {t['accent'] if done else t['text']}; border: none;")
         self.status.setText(status_text)
+        # Screen readers skip the label, so the button carries the status
+        self.action.setAccessibleDescription(status_text)
         if action_text is not None:
             self.action.setText(action_text)
         self.action.setObjectName(
@@ -155,6 +159,7 @@ class HomePage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
+        scroll.setAccessibleName("Home")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         outer.addWidget(scroll)
@@ -205,7 +210,7 @@ class HomePage(QWidget):
         guide_row.addWidget(self.guide_label)
         self.guide_btn = QPushButton("Read the guide")
         self.guide_btn.setFlat(True)
-        self.guide_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.guide_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.guide_btn.clicked.connect(lambda: self.navigate.emit("About"))
         guide_row.addWidget(self.guide_btn)
         guide_row.addStretch()
@@ -227,7 +232,7 @@ class HomePage(QWidget):
         import_row.addWidget(find_setup_btn)
         dismiss_btn = QPushButton("No thanks")
         dismiss_btn.setFlat(True)
-        dismiss_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        dismiss_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         dismiss_btn.clicked.connect(self._on_dismiss_import)
         import_row.addWidget(dismiss_btn)
         import_row.addStretch()
@@ -241,7 +246,7 @@ class HomePage(QWidget):
         status_title_row.addStretch()
         self.open_data_btn = QPushButton("Open data folder")
         self.open_data_btn.setFlat(True)
-        self.open_data_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.open_data_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.open_data_btn.setToolTip(program_content.DATA_FOLDER_SHORT)
         self.open_data_btn.clicked.connect(self._on_open_data_folder)
         status_title_row.addWidget(self.open_data_btn)
@@ -326,7 +331,9 @@ class HomePage(QWidget):
         self.guide_label.setStyleSheet(f"color: {t['text_dim']};")
         self.guide_btn.setStyleSheet(
             f"QPushButton {{ color: {t['accent']}; background: transparent; "
-            f"border: none; padding: 2px 4px; text-decoration: underline; }}")
+            f"border: none; padding: 2px 4px; text-decoration: underline; }} "
+            f"QPushButton:focus {{ border: 2px solid {t['focus']}; "
+            f"padding: 0px 2px; }}")
         self.status_title.setStyleSheet(
             components.heading_style("section") + " margin-top: 8px;")
         for panel in (self.model_panel, self.import_panel):

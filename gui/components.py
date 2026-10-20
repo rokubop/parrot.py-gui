@@ -173,6 +173,8 @@ def primary_button_style():
             f"border-radius: {t['radius']}; padding: 6px 18px; }} "
             f"QPushButton#primaryAction:hover {{ "
             f"background-color: {t['accent']}; }} "
+            f"QPushButton#primaryAction:focus {{ "
+            f"border: 2px solid {t['focus']}; padding: 4px 16px; }} "
             # Matches the app-wide disabled rule: sunken fill, disabled_text.
             f"QPushButton#primaryAction:disabled {{ "
             f"background-color: {t['disabled_bg']}; "
