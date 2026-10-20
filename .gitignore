@@ -16,3 +16,10 @@ ffmpeg
 lib/private/*
 data/code/*
 data/README.md
+.venv
+.python
+.python.tmp
+data/notes.json
+data/.import-card-dismissed
+data-profiles/
+.DS_Store
