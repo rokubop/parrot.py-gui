@@ -602,6 +602,7 @@ class TrainView(QWidget):
         v.addWidget(self.awake_check)
 
         self.train_btn = QPushButton("Start training")
+        self.train_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.train_btn.setObjectName("primaryAction")
         self.train_btn.setMinimumHeight(38)
         self.train_btn.setStyleSheet(primary_button_style())
@@ -899,6 +900,7 @@ class TrainView(QWidget):
         row = QHBoxLayout()
         row.setContentsMargins(0, 6, 0, 0)
         live = QPushButton("Test it live")
+        live.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         live.setObjectName("primaryAction")
         live.setMinimumHeight(32)
         live.setStyleSheet(primary_button_style())

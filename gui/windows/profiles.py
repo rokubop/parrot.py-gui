@@ -151,6 +151,7 @@ class ImportSetupDialog(QDialog):
         layout.addWidget(note)
 
         choose_btn = QPushButton("Choose your parrot.py folder...")
+        choose_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         choose_btn.setDefault(True)
         choose_btn.clicked.connect(self._on_choose)
         layout.addWidget(choose_btn)
@@ -166,15 +167,18 @@ class ImportSetupDialog(QDialog):
 
         scan_row = QHBoxLayout()
         self.home_btn = QPushButton("Search my home folder")
+        self.home_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.home_btn.setToolTip(os.path.expanduser("~"))
         self.home_btn.clicked.connect(self._on_scan_home)
         scan_row.addWidget(self.home_btn)
         self.scan_btn = QPushButton("Search another folder...")
+        self.scan_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.scan_btn.setToolTip(
             "Any folder or drive. Nothing is searched until you pick one.")
         self.scan_btn.clicked.connect(self._on_scan_folder)
         scan_row.addWidget(self.scan_btn)
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.stop_btn.clicked.connect(self._on_stop_scan)
         self.stop_btn.setVisible(False)
         scan_row.addWidget(self.stop_btn)
@@ -206,6 +210,7 @@ class ImportSetupDialog(QDialog):
         row.addWidget(self.status_label)
         self.import_btn = QPushButton("Use this folder" if pick_only
                                       else "Import")
+        self.import_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.import_btn.setToolTip(
             "Nothing is copied yet; this dialog closes with it chosen."
             if pick_only else
@@ -509,9 +514,11 @@ class _NameDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addStretch()
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(cancel_btn)
         self.ok_btn = QPushButton(action)
+        self.ok_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.ok_btn.setDefault(True)
         self.ok_btn.clicked.connect(self.accept)
         buttons.addWidget(self.ok_btn)
@@ -563,10 +570,12 @@ class _ConfirmDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addStretch()
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         cancel_btn.setDefault(True)
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(cancel_btn)
         self.ok_btn = QPushButton(action)
+        self.ok_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.ok_btn.clicked.connect(self.accept)
         buttons.addWidget(self.ok_btn)
         layout.addLayout(buttons)
@@ -643,6 +652,7 @@ class NewProfileDialog(QDialog):
         folder_row = QHBoxLayout()
         folder_row.addSpacing(26)
         self.choose_btn = QPushButton("Choose...")
+        self.choose_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.choose_btn.clicked.connect(self._on_choose)
         folder_row.addWidget(self.choose_btn)
         self.folder_label = QLabel("your parrot.py folder, or the data in it")
@@ -658,9 +668,11 @@ class NewProfileDialog(QDialog):
         self.status_label.setStyleSheet(f"color: {t['text_dim']};")
         buttons.addWidget(self.status_label)
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(cancel_btn)
         self.create_btn = QPushButton("Create")
+        self.create_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.create_btn.setDefault(True)
         self.create_btn.clicked.connect(self._on_create)
         buttons.addWidget(self.create_btn)
@@ -764,17 +776,20 @@ class ProfilesDialog(QDialog):
 
         actions = QHBoxLayout()
         self.switch_btn = QPushButton("Switch")
+        self.switch_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.switch_btn.setToolTip("Restart the app as this profile")
         self.switch_btn.clicked.connect(self._on_switch)
         actions.addWidget(self.switch_btn)
 
         self.new_btn = QPushButton("New profile...")
+        self.new_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.new_btn.setToolTip(
             "Empty, a copy of one here, or a parrot.py folder on this machine")
         self.new_btn.clicked.connect(self._on_new)
         actions.addWidget(self.new_btn)
 
         self.import_btn = QPushButton("Import into...")
+        self.import_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.import_btn.setToolTip(
             "Add another Parrot.py's sounds and models to a profile that "
             "already exists")
@@ -782,19 +797,23 @@ class ProfilesDialog(QDialog):
         actions.addWidget(self.import_btn)
 
         self.rename_btn = QPushButton("Rename")
+        self.rename_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.rename_btn.clicked.connect(self._on_rename)
         actions.addWidget(self.rename_btn)
 
         self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.reset_btn.setToolTip("Back to how this profile started")
         self.reset_btn.clicked.connect(self._on_reset)
         actions.addWidget(self.reset_btn)
 
         self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.delete_btn.clicked.connect(self._on_delete)
         actions.addWidget(self.delete_btn)
 
         self.open_btn = QPushButton("Open folder")
+        self.open_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.open_btn.clicked.connect(self._on_open_folder)
         actions.addWidget(self.open_btn)
 
@@ -809,6 +828,7 @@ class ProfilesDialog(QDialog):
             debug_form = QHBoxLayout(debug_group)
             debug_form.addStretch()
             test_btn = QPushButton("Create test profiles")
+            test_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             test_btn.setToolTip(
                 "One profile per app state: empty, 2 sounds, 10 sounds, "
                 "and two with a trained model")

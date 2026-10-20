@@ -906,6 +906,7 @@ def show_help(parent, key):
     v.addWidget(scrolled(panel, max_height=16777215))
 
     close = QPushButton("Close")
+    close.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     close.clicked.connect(dlg.accept)
     row = QHBoxLayout()
     row.addStretch()
@@ -926,6 +927,7 @@ def show_training_help(parent):
     v.addWidget(scrolled(sections, max_height=16777215))
     _fit_to_screen(dlg, sections)
     close = QPushButton("Close")
+    close.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     close.clicked.connect(dlg.accept)
     row = QHBoxLayout()
     row.addStretch()

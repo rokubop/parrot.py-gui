@@ -34,6 +34,7 @@ class MicPicker(QWidget):
         h.addWidget(self.input_combo)
 
         self.extras_btn = QPushButton("+")
+        self.extras_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.extras_btn.setToolTip("Record with additional mics at the same time")
         self.extras_btn.setMaximumWidth(48)
         self.extras_btn.clicked.connect(self._show_extras_menu)

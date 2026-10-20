@@ -228,6 +228,7 @@ class HomePage(QWidget):
         import_row = QHBoxLayout()
         import_row.setContentsMargins(0, 10, 0, 0)
         find_setup_btn = QPushButton("Import my setup...")
+        find_setup_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         find_setup_btn.clicked.connect(self._on_find_setup)
         import_row.addWidget(find_setup_btn)
         dismiss_btn = QPushButton("No thanks")

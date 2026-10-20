@@ -66,10 +66,12 @@ class TrainingPage(QWidget):
 
         btn_layout = QHBoxLayout()
         self.train_btn = QPushButton("Train")
+        self.train_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.train_btn.clicked.connect(self._on_train)
         btn_layout.addWidget(self.train_btn)
 
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._on_stop)
         btn_layout.addWidget(self.stop_btn)
