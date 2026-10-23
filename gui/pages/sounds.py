@@ -40,10 +40,7 @@ class SoundsPage(QWidget):
 
         # Arrowing down the list collapses to one build of where it stops,
         # not a build and teardown per sound passed.
-        self._select_timer = QTimer(self)
-        self._select_timer.setSingleShot(True)
-        self._select_timer.setInterval(15)
-        self._select_timer.timeout.connect(self._cards_show_selected)
+        self._select_timer = components.debounce(self, 15, self._cards_show_selected)
 
         # 0 ms: fires once the event loop is free, see _plots_queue_build
         self._plots_timer = QTimer(self)

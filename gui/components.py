@@ -3,7 +3,7 @@
 Imports nothing from ``pages/``, so anything may import it.
 Colours and type sizes come from ``theme``.
 """
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from gui import theme
@@ -78,3 +78,13 @@ def center_in(layout, panel):
     layout.insertStretch(layout.count() - 1)
     layout.insertWidget(layout.count() - 1, panel, 0,
                         Qt.AlignmentFlag.AlignHCenter)
+
+
+def debounce(parent, ms, slot):
+    """A timer to .start() on every change: slot runs once, ms after the
+    last one. Restarting is the point, so a burst of changes costs one call."""
+    timer = QTimer(parent)
+    timer.setSingleShot(True)
+    timer.setInterval(ms)
+    timer.timeout.connect(slot)
+    return timer

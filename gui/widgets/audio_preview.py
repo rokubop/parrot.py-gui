@@ -1,13 +1,13 @@
 import math
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt, QTimer, QRectF
+from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.srt import parse_srt_file
 from gui.services.wav_files import read_wav, UnreadableWav
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
-from gui import theme
+from gui import components, theme
 
 _MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
@@ -93,11 +93,8 @@ class AudioPreviewWidget(QWidget):
         self.plot.addItem(self.readout)
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
-        # Debounced re-render on zoom/pan
-        self._render_timer = QTimer(self)
-        self._render_timer.setSingleShot(True)
-        self._render_timer.setInterval(15)
-        self._render_timer.timeout.connect(self._render_waveform)
+        # Re-render once zooming or panning settles
+        self._render_timer = components.debounce(self, 15, self._render_waveform)
         self._vb.sigXRangeChanged.connect(lambda *_: self._render_timer.start())
         self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
 
