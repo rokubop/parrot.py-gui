@@ -10,7 +10,7 @@ from gui.widgets.recording_card import RecordingCard
 from gui.services.wav_files import wav_duration
 from gui.services import library_ops
 from gui import components, theme
-from gui.timing import debounced, one_per_tick
+from gui.timing import debounced, staggered
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating, QUANTITIES
 
@@ -43,8 +43,7 @@ class SoundsPage(QWidget):
 
         # One per tick: each takes 50-220 ms, and building them all at once
         # froze the window over a second on a sound with 25 recordings
-        self._audio_graphs_build = one_per_tick(
-            RecordingCard.build_audio_graph, owner=self)
+        self._audio_graphs_build = staggered(RecordingCard.build_audio_graph, owner=self)
 
         self._setup_ui()
         self._sound_list_populate()

@@ -21,7 +21,7 @@ def debounced(fn, wait_ms, owner):
     return call
 
 
-def one_per_tick(fn, owner):
+def staggered(fn, owner):
     """Returns run(items), which calls fn(item) for each item, one per event
     loop tick, so the window repaints and takes input in between. run() again
     replaces what's left. `.cancel()` drops the rest.
