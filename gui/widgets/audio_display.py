@@ -16,7 +16,7 @@ pg.setConfigOptions(antialias=True)
 
 
 
-class AudioPreviewWidget(QWidget):
+class AudioDisplay(QWidget):
     """A recording as a waveform or a spectrogram, with detection shaded over
     it. Both views share the time axis.
 

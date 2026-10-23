@@ -19,3 +19,35 @@ def debounced(fn, wait_ms, owner):
 
     call.cancel = timer.stop
     return call
+
+
+def one_per_tick(fn, owner):
+    """Returns run(items), which calls fn(item) for each item, one per event
+    loop tick, so the window repaints and takes input in between. run() again
+    replaces what's left. `.cancel()` drops the rest.
+
+    owner is the widget the timer belongs to, so it's deleted with it.
+    """
+    timer = QTimer(owner)
+    timer.setSingleShot(True)
+    timer.setInterval(0)    # the next tick, once waiting input and repaints are done
+    pending = []
+
+    def next_item():
+        if pending:
+            fn(pending.pop(0))
+        if pending:
+            timer.start()
+
+    timer.timeout.connect(next_item)
+
+    def run(items):
+        pending[:] = items
+        timer.start()
+
+    def cancel():
+        timer.stop()
+        pending.clear()
+
+    run.cancel = cancel
+    return run

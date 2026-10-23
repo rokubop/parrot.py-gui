@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
-from gui.widgets.audio_preview import AudioPreviewWidget
+from gui.widgets.audio_display import AudioDisplay
 from gui.services.wav_files import wav_duration
 from gui import theme
 
@@ -27,11 +27,11 @@ class RecordingCard(QFrame):
     """One recording: when it was made, how long it is, and a waveform or
     spectrogram with detection overlaid."""
 
-    PREVIEW_HEIGHT = 150
+    AUDIO_DISPLAY_HEIGHT = 150
 
     def __init__(self, name, wav_path, srt_path, parent=None):
         super().__init__(parent)
-        # The plot inside asks to grow even at a fixed height, so without
+        # The audio display inside asks to grow even at a fixed height, so without
         # this a lone card soaks up the page's spare height around its title
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.wav_path = wav_path
@@ -44,9 +44,9 @@ class RecordingCard(QFrame):
 
         # A pyqtgraph plot per recording is the expensive part of switching
         # sounds (~50-220 ms each). A placeholder of the same height shows
-        # instantly; the Sounds page calls load_preview() one card at a time.
-        self.preview = None
-        self._preview_tried = False
+        # instantly; the Sounds page calls build_audio_display() one card at a time.
+        self.audio_display = None
+        self._audio_display_tried = False
         self._mode = "waveform"
         self._normalized = False
 
@@ -56,7 +56,7 @@ class RecordingCard(QFrame):
         self._layout.addLayout(self._build_header(name))
 
         self._placeholder = QLabel("…")
-        self._placeholder.setFixedHeight(self.PREVIEW_HEIGHT)
+        self._placeholder.setFixedHeight(self.AUDIO_DISPLAY_HEIGHT)
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setStyleSheet(
             f"color: {t['text_dim']}; border: none; background: transparent;")
@@ -80,40 +80,40 @@ class RecordingCard(QFrame):
         row.addStretch()
         return row
 
-    def load_preview(self):
-        """Build the plot, or say the file can't be read. Runs once."""
-        if self._preview_tried:
+    def build_audio_display(self):
+        """Build it, or say the file can't be read. Runs once."""
+        if self._audio_display_tried:
             return
-        self._preview_tried = True
-        preview = AudioPreviewWidget()
-        preview.setFixedHeight(self.PREVIEW_HEIGHT)
-        problem = preview.load(self.wav_path, self.srt_path)
+        self._audio_display_tried = True
+        display = AudioDisplay()
+        display.setFixedHeight(self.AUDIO_DISPLAY_HEIGHT)
+        problem = display.load(self.wav_path, self.srt_path)
         if problem:
-            preview.deleteLater()
+            display.deleteLater()
             # The name, not the date: it's the file to go and look at
             name = os.path.basename(self.wav_path)
             self._placeholder.setText(f"Can't read {name}\n{problem}")
             return
-        self.preview = preview
-        self.preview.set_mode(self._mode)
-        self.preview.set_normalized(self._normalized)
-        self._layout.replaceWidget(self._placeholder, self.preview)
+        self.audio_display = display
+        self.audio_display.set_mode(self._mode)
+        self.audio_display.set_normalized(self._normalized)
+        self._layout.replaceWidget(self._placeholder, self.audio_display)
         self._placeholder.setParent(None)
         self._placeholder.deleteLater()
         self._placeholder = None
 
     def set_mode(self, mode):
-        # Remembered, so a preview built later starts in it
+        # Remembered, so an audio display built later starts in it
         self._mode = mode
-        if self.preview is not None:
-            self.preview.set_mode(mode)
+        if self.audio_display is not None:
+            self.audio_display.set_mode(mode)
 
     def set_normalized(self, normalized):
         self._normalized = normalized
-        if self.preview is not None:
-            self.preview.set_normalized(normalized)
+        if self.audio_display is not None:
+            self.audio_display.set_normalized(normalized)
 
     def cleanup(self):
         """Release plot items before deletion."""
-        if self.preview is not None:
-            self.preview.cleanup()
+        if self.audio_display is not None:
+            self.audio_display.cleanup()

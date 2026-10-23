@@ -12,7 +12,7 @@ from gui.widgets.recording_card import RecordingCard
 from gui.services.wav_files import wav_duration
 from gui.services import library_ops
 from gui import components, theme
-from gui.timing import debounced
+from gui.timing import debounced, one_per_tick
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating, QUANTITIES
 
@@ -27,11 +27,11 @@ class SoundsPage(QWidget):
     │                     │├ cards_scroll ───────────────────────────────────┤
     │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
     │                     ││ │ Aug 08, 2026, 10:55 AM   32.4s             │  │
-    │                     ││ │ .:|:..:||:...:|:.. plot ..:||:..:|:...:||: │  │
+    │                     ││ │ .:|:..:||:... audio display ..:||:..:|:... │  │
     │                     ││ └────────────────────────────────────────────┘  │
     │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
     │                     ││ │ Aug 08, 2026, 11:02 AM   18.9s             │  │
-    │                     ││ │ .:|:..:||:...:|:.. plot ..:||:..:|:...:||: │  │
+    │                     ││ │ .:|:..:||:... audio display ..:||:..:|:... │  │
     │                     ││ └────────────────────────────────────────────┘  │
     └─────────────────────┘└─────────────────────────────────────────────────┘
     """
@@ -43,12 +43,10 @@ class SoundsPage(QWidget):
         self._mode = "waveform"
         self._normalized = True
 
-        # 0 ms: fires once the event loop is free, see _plots_queue_build
-        self._plots_timer = QTimer(self)
-        self._plots_timer.setSingleShot(True)
-        self._plots_timer.setInterval(0)
-        self._plots_timer.timeout.connect(self._plots_build_next)
-        self._plots_pending = []
+        # One per tick: each takes 50-220 ms, and building them all at once
+        # froze the window over a second on a sound with 25 recordings
+        self._audio_displays_build = one_per_tick(
+            RecordingCard.build_audio_display, owner=self)
 
         self._setup_ui()
         self._sound_list_populate()
@@ -95,8 +93,8 @@ class SoundsPage(QWidget):
         self.cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
         # Else Tab stops on it with no ring
         self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        # Always on, and wide: somewhere to scroll the page from when plots
-        # fill the view, since the wheel over a plot zooms it.
+        # Always on, and wide: somewhere to scroll the page from when audio
+        # displays fill the view, since the wheel over one zooms it.
         self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.cards_scroll.setWidget(self._cards_container_new()[0])
         right_layout.addWidget(self.cards_scroll)
@@ -218,19 +216,19 @@ class SoundsPage(QWidget):
         self._cards_show_sound(self.sound_list.currentItem())
 
     def _cards_show_sound(self, item):
-        """Swap in the sound's cards at once; their plots fill in after."""
-        self._plots_cancel_pending()
+        """Swap in the sound's cards at once; their audio displays fill in after."""
+        self._audio_displays_build.cancel()
         label = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         recordings = self.app_state.get_recordings_for_label(label) if label else []
         self._sound_header_update(label, recordings)
         old_cards = self._cards
         container, self._cards = self._cards_build(label, recordings)
         old_container = self._cards_swap_in(container)
-        self._plots_queue_build(self._cards)
+        self._audio_displays_build(self._cards)
         self._cards_destroy_later(old_cards, old_container)
 
     def _cards_build(self, label, recordings):
-        """A placeholder card per recording, no plots. Or the empty state."""
+        """A placeholder card per recording, no audio displays. Or the empty state."""
         container, layout = self._cards_container_new()
         if label is None:
             components.center_in(layout, components.EmptyState(
@@ -267,7 +265,7 @@ class SoundsPage(QWidget):
         return old
 
     def _cards_destroy_later(self, cards, container):
-        """Once the new cards have painted: a loaded plot takes ~10 ms to free,
+        """Once the new cards have painted: a built audio display takes ~10 ms to free,
         and switching sounds shouldn't wait on the last one's cleanup."""
         QTimer.singleShot(0, lambda: self._cards_destroy(cards, container))
 
@@ -276,26 +274,6 @@ class SoundsPage(QWidget):
             card.cleanup()
         container.setParent(None)
         container.deleteLater()
-
-    # ---- plots: built one at a time ------------------------------------
-
-    def _plots_queue_build(self, cards):
-        """One plot per event loop tick, so the window repaints and takes
-        input in between. A plot takes 50-220 ms to build, and building all
-        at once froze the window over a second on a sound with 25 recordings.
-        """
-        self._plots_pending = list(cards)
-        self._plots_timer.start()
-
-    def _plots_build_next(self):
-        if self._plots_pending:
-            self._plots_pending.pop(0).load_preview()
-        if self._plots_pending:
-            self._plots_timer.start()
-
-    def _plots_cancel_pending(self):
-        self._plots_timer.stop()
-        self._plots_pending = []
 
     # ---- header --------------------------------------------------------
 
