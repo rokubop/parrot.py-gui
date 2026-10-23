@@ -8,7 +8,7 @@ from gui.pages.home import HomePage
 class MainWindow(QMainWindow):
     """
     ┌ toolbar ─────────────────────────────────────────────────┐
-    │ [ Home ] [ Sounds ] ...    nav_actions, one per page     │
+    │ [ Home ] [ Sounds ] ...    nav_actions                   │
     ├ page_stack ──────────────────────────────────────────────┤
     │ individual pages shown here by _show_page()              │
     │                                                          │
