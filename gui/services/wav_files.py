@@ -45,7 +45,7 @@ def read_wav(path):
     return data / 32768.0, rate
 
 
-def _frames_from_file_size(path, channels, sampwidth):
+def _get_frames_from_file_size(path, channels, sampwidth):
     """Recordings made before the wav header fix store a byte count in
     nframes, double the real length. The file size can't be wrong."""
     data_bytes = max(0, os.path.getsize(path) - 44)  # standard PCM header
@@ -58,7 +58,7 @@ def wav_duration(path):
     try:
         with wave.open(path, "rb") as wf:
             rate = wf.getframerate()
-            frames = min(wf.getnframes(), _frames_from_file_size(
+            frames = min(wf.getnframes(), _get_frames_from_file_size(
                 path, wf.getnchannels(), wf.getsampwidth()))
         return frames / rate if rate else 0.0
     except Exception:
