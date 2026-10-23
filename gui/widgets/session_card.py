@@ -2,7 +2,7 @@ import os
 import wave
 from datetime import datetime
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui import theme
 
@@ -51,6 +51,9 @@ class SessionCard(QFrame):
 
     def __init__(self, session_name, wav_path, srt_path, parent=None):
         super().__init__(parent)
+        # The plot inside asks to grow even at a fixed height, so without
+        # this a lone card soaks up the page's spare height around its title
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.wav_path = wav_path
         self.srt_path = srt_path
 
