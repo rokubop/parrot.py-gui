@@ -12,6 +12,7 @@ from gui.widgets.recording_card import RecordingCard
 from gui.services.wav_files import wav_duration
 from gui.services import library_ops
 from gui import components, theme
+from gui.timing import debounced
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating, QUANTITIES
 
@@ -37,10 +38,6 @@ class SoundsPage(QWidget):
         self._cards = []
         self._mode = "waveform"
         self._normalized = True
-
-        # Arrowing down the list collapses to one build of where it stops,
-        # not a build and teardown per sound passed.
-        self._sound_list_debounce = components.debounce(self, 15, self._cards_show_selected)
 
         # 0 ms: fires once the event loop is free, see _plots_queue_build
         self._plots_timer = QTimer(self)
@@ -75,7 +72,9 @@ class SoundsPage(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.sound_list.currentItemChanged.connect(lambda *_: self._sound_list_debounce.start())
+        # Holding an arrow key builds only the sound you stop on
+        self.sound_list.currentItemChanged.connect(
+            debounced(self._cards_show_selected, wait_ms=15, owner=self))
         left_layout.addWidget(self.sound_list)
 
         left.setMinimumWidth(280)

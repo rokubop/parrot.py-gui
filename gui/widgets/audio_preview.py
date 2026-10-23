@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.srt import parse_srt_file
 from gui.services.wav_files import read_wav, UnreadableWav
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
-from gui import components, theme
+from gui import theme
+from gui.timing import debounced
 
 _MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
@@ -93,9 +94,10 @@ class AudioPreviewWidget(QWidget):
         self.plot.addItem(self.readout)
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
-        # Re-render once zooming or panning settles
-        self._render_debounce = components.debounce(self, 15, self._render_waveform)
-        self._vb.sigXRangeChanged.connect(lambda *_: self._render_debounce.start())
+        # Redraw once zooming or panning settles
+        self._render_when_settled = debounced(
+            self._render_waveform, wait_ms=15, owner=self)
+        self._vb.sigXRangeChanged.connect(self._render_when_settled)
         self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
 
         self.plot.scene().sigMouseClicked.connect(self._on_clicked)
@@ -284,7 +286,7 @@ class AudioPreviewWidget(QWidget):
     def cleanup(self):
         """Tear down plot items before deletion, so pyqtgraph never paints an
         item whose ViewBox has already gone."""
-        self._render_debounce.stop()
+        self._render_when_settled.cancel()
         for signal in (self._vb.sigXRangeChanged, self.plot.scene().sigMouseMoved,
                        self.plot.scene().sigMouseClicked):
             try:
