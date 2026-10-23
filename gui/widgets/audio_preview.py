@@ -94,8 +94,8 @@ class AudioPreviewWidget(QWidget):
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
         # Re-render once zooming or panning settles
-        self._render_timer = components.debounce(self, 15, self._render_waveform)
-        self._vb.sigXRangeChanged.connect(lambda *_: self._render_timer.start())
+        self._render_debounce = components.debounce(self, 15, self._render_waveform)
+        self._vb.sigXRangeChanged.connect(lambda *_: self._render_debounce.start())
         self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
 
         self.plot.scene().sigMouseClicked.connect(self._on_clicked)
@@ -284,7 +284,7 @@ class AudioPreviewWidget(QWidget):
     def cleanup(self):
         """Tear down plot items before deletion, so pyqtgraph never paints an
         item whose ViewBox has already gone."""
-        self._render_timer.stop()
+        self._render_debounce.stop()
         for signal in (self._vb.sigXRangeChanged, self.plot.scene().sigMouseMoved,
                        self.plot.scene().sigMouseClicked):
             try:
