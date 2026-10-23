@@ -1,5 +1,3 @@
-"""Sounds tab. Read-only: every recorded sound with how much data it has, and
-each recording with what detection found in it."""
 import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
