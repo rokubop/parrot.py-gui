@@ -67,17 +67,6 @@ def _draw_person(painter, colour):
     painter.drawPath(shoulders)
 
 
-def _draw_note(painter, colour):
-    """A page with lines on it, outlined - a filled page at this size is a
-    blob, and the lines are what say "notes" rather than "file"."""
-    pen = QPen(colour, 0.085)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRoundedRect(QRectF(0.17, 0.11, 0.66, 0.78), 0.1, 0.1)
-    for y in (0.34, 0.5, 0.66):
-        painter.drawLine(QPointF(0.32, y), QPointF(0.68, y))
 
 
 def _button_icon(draw, size=14, dpr=None):
@@ -170,10 +159,6 @@ def _draw_check(painter, colour):
 
 def person(size=16, dpr=None):
     return _toolbar_icon(_draw_person, size, dpr)
-
-
-def note(size=16, dpr=None):
-    return _toolbar_icon(_draw_note, size, dpr)
 
 
 def play(size=14, dpr=None, colour=None):

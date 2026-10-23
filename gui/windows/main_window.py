@@ -55,13 +55,9 @@ class MainWindow(QMainWindow):
         # "Navigation" checkbox. Unticking it hides the tabs, with no way to
         # get them back short of restarting.
         toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
-        # 16px against 13px text. The default 24 makes the two icons shout over
-        # the six nav tabs, which carry no icon at all.
+        # 16px against 13px text. The default 24 makes the profile chip's icon
+        # shout over the six nav tabs, which carry no icon at all.
         toolbar.setIconSize(QSize(16, 16))
-        # A toolbar defaults to icon-only with text fallback; giving the profile
-        # chip and Notes an icon silently dropped both labels without this.
-        toolbar.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
         self._nav_group = QActionGroup(self)
         self._nav_group.setExclusive(True)
@@ -80,11 +76,6 @@ class MainWindow(QMainWindow):
         self.nav_actions["Home"].setChecked(True)
         self.stack.setCurrentWidget(self.home_page)
 
-        # notes drawer: hidden until toggled, closable via its X too
-        from gui.widgets.notes_dock import NotesDock
-        self.notes_dock = NotesDock(self.app_state, self)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.notes_dock)
-        self.notes_dock.hide()
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
@@ -102,11 +93,6 @@ class MainWindow(QMainWindow):
         self.profile_chip.setMenu(self._profile_menu)
         toolbar.addWidget(self.profile_chip)
         self._refresh_profile_chip()
-        notes_action = QAction(icons.note(), "Notes", self)
-        notes_action.setCheckable(True)
-        notes_action.toggled.connect(self.notes_dock.setVisible)
-        self.notes_dock.visibilityChanged.connect(notes_action.setChecked)
-        toolbar.addAction(notes_action)
 
         # Status bar: each page's keybindings. Nothing may call showMessage()
         # here - temporary messages hide the non-permanent widgets.

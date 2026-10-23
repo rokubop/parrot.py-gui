@@ -6,7 +6,7 @@ so a profile is simply a folder shaped like ``data/``:
     data-profiles/<name>/
         profile.json     marks the folder as a profile
         .baseline/       frozen copy of the data tree; Reset restores it
-        recordings/  models/  code/  notes.json  ...
+        recordings/  models/  code/  ...
 
 The original ``data/`` is the Main profile: it has no profile.json and no
 baseline, and can never be reset or deleted from the app. Switching sets
@@ -161,8 +161,8 @@ def import_into(dest_data_dir, source_data_dir):
     """Copy a whole data tree into an empty one.
 
     Empty only, deliberately. Merging into a library with content in it was
-    the one unrecoverable act here, and it silently replaced notes and
-    config along with the sounds. Every real path lands
+    the one unrecoverable act here, and it silently replaced config along
+    with the sounds. Every real path lands
     somewhere empty: a first launch, or a profile just made.
 
     Because the destination has nothing to lose, the copy takes the source

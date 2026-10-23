@@ -1,16 +1,13 @@
 import os
 import glob
 import math
-import json
 import filecmp
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
-from config.config import DATA_DIR, RECORDINGS_FOLDER, CLASSIFIER_FOLDER, REPLAYS_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER, REPLAYS_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from lib.srt import count_total_label_ms, ms_to_srt_timestring
 from lib.stream_processing import CURRENT_VERSION
 from gui.services import library_ops
-
-NOTES_PATH = os.path.join(DATA_DIR, "notes.json")
 
 
 class AppState(QObject):
@@ -286,22 +283,6 @@ class AppState(QObject):
     def is_first_run(self):
         """True if no recordings AND no models exist."""
         return len(self.get_sound_labels()) == 0 and len(self.get_model_names()) == 0
-
-    def load_notes(self):
-        """Load notes from data/notes.json."""
-        if os.path.isfile(NOTES_PATH):
-            try:
-                with open(NOTES_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {"global_notes": "", "model_notes": {}}
-
-    def save_notes(self, notes):
-        """Save notes to data/notes.json."""
-        os.makedirs(os.path.dirname(NOTES_PATH), exist_ok=True)
-        with open(NOTES_PATH, "w", encoding="utf-8") as f:
-            json.dump(notes, f, indent=2)
 
     def _invalidate_duration_cache(self):
         self._duration_cache.clear()

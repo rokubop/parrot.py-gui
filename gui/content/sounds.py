@@ -31,7 +31,6 @@ SOUNDS_ROWS = (
     ("Distractors", "Record the noises you want ignored - table bumps, throat "
                     "clears, keyboard - as their own sound, and map them to "
                     "nothing."),
-    ("Plan", "Use 📝 Notes to keep notes."),
 )
 
 RECORD_ROWS = (

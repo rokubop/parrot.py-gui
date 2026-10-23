@@ -8,12 +8,12 @@ from gui.content import tab, topic, MS_PER_FRAME
 # The one-line version, for the Home button and the Settings backup note.
 # Keep the list in step with DATA_ROWS below.
 DATA_FOLDER_SHORT = ("Everything you make, in one folder: sounds, models, "
-                     "settings, notes. Copy it anywhere, or make it a git "
+                     "settings. Copy it anywhere, or make it a git "
                      "repo, and you have all of it.")
 
 # A profile is a whole data folder, and user settings live inside it
 # (data/code/config.py), so switching profiles switches settings too.
-PROFILE_SHORT = ("A complete separate setup: sounds, models, notes and "
+PROFILE_SHORT = ("A complete separate setup: sounds, models and "
                  "settings kept apart. Switching restarts the app, about a "
                  "second.")
 
@@ -25,7 +25,6 @@ DATA_ROWS = (
                "<code>.pkl</code> carrying its own nets."),
     ("Settings", "<code>data/code/config.py</code>. Anything set in Settings "
                  "is written here, which is why it is per profile."),
-    ("Notes", "<code>data/notes.json</code>, global and per model."),
     ("Profiles", PROFILE_SHORT + " Use one per person, mic or experiment. "
                  "Switch from the toolbar chip; create one from Settings."),
     ("Backup", DATA_FOLDER_SHORT),

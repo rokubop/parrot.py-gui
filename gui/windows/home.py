@@ -170,7 +170,7 @@ class HomePage(QWidget):
         body = QWidget()
         body.setMaximumWidth(980)
         # heavy body stretch: side gutters absorb only the space past maxWidth,
-        # and collapse to ~0 when the window narrows (e.g. notes drawer open)
+        # and collapse to ~0 when the window narrows
         wrap_layout.addStretch(1)
         wrap_layout.addWidget(body, 1000)
         wrap_layout.addStretch(1)
