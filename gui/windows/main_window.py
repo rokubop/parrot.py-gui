@@ -3,6 +3,7 @@ from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt
 from gui.state import AppState
 from gui.windows.home import HomePage
+from gui.windows.sounds import SoundsPage
 
 
 class MainWindow(QMainWindow):
@@ -21,7 +22,7 @@ class MainWindow(QMainWindow):
         self.home_page.navigate.connect(self._go_to_page)
         self.pages = {
             "Home": self.home_page,
-            "Sounds": QWidget(),
+            "Sounds": SoundsPage(self.app_state, self),
             "Models": QWidget(),
         }
         for page in self.pages.values():
