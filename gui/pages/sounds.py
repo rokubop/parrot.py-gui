@@ -47,7 +47,7 @@ class SoundsPage(QWidget):
         self._plots_pending = []
 
         self._setup_ui()
-        self._populate_labels()
+        self._sound_list_populate()
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
@@ -84,7 +84,7 @@ class SoundsPage(QWidget):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
-        right_layout.addWidget(self._build_header())
+        right_layout.addWidget(self._sound_header_build())
 
         self.cards_scroll = QScrollArea()
         self.cards_scroll.setWidgetResizable(True)
@@ -94,7 +94,7 @@ class SoundsPage(QWidget):
         # Always on, and wide: somewhere to scroll the page from when plots
         # fill the view, since the wheel over a plot zooms it.
         self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.cards_scroll.setWidget(self._cards_new_container()[0])
+        self.cards_scroll.setWidget(self._cards_container_new()[0])
         right_layout.addWidget(self.cards_scroll)
         splitter.addWidget(right)
 
@@ -130,7 +130,7 @@ class SoundsPage(QWidget):
         self.cards_scroll.setStyleSheet(
             f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }}")
 
-    def _build_header(self):
+    def _sound_header_build(self):
         """Title and stats for the selected sound, view toggles, open folder."""
         header = QFrame()
         header.setObjectName("soundHeader")
@@ -167,7 +167,7 @@ class SoundsPage(QWidget):
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setChecked(mode == self._mode)
-            btn.clicked.connect(lambda _checked, m=mode: self._set_mode(m))
+            btn.clicked.connect(lambda _checked, m=mode: self._cards_set_mode(m))
             self._mode_group.addButton(btn)
             self._mode_buttons[mode] = btn
             actions.addWidget(btn)
@@ -178,7 +178,7 @@ class SoundsPage(QWidget):
         self.normalize_btn.setChecked(self._normalized)
         self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.normalize_btn.setToolTip("Scale each waveform to its loudest point")
-        self.normalize_btn.toggled.connect(self._set_normalized)
+        self.normalize_btn.toggled.connect(self._cards_set_normalized)
         actions.addSpacing(12)
         actions.addWidget(self.normalize_btn)
         v.addLayout(actions)
@@ -186,7 +186,7 @@ class SoundsPage(QWidget):
 
     # ---- data ----------------------------------------------------------
 
-    def _populate_labels(self):
+    def _sound_list_populate(self):
         self.sound_list.blockSignals(True)
         self.sound_list.clear()
         for label in self.app_state.get_sound_labels():
@@ -218,7 +218,7 @@ class SoundsPage(QWidget):
         self._plots_cancel_pending()
         label = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         recordings = self.app_state.get_recordings_for_label(label) if label else []
-        self._update_sound_header(label, recordings)
+        self._sound_header_update(label, recordings)
         old_cards = self._cards
         container, self._cards = self._cards_build(label, recordings)
         old_container = self._cards_swap_in(container)
@@ -227,7 +227,7 @@ class SoundsPage(QWidget):
 
     def _cards_build(self, label, recordings):
         """A placeholder card per recording, no plots. Or the empty state."""
-        container, layout = self._cards_new_container()
+        container, layout = self._cards_container_new()
         if label is None:
             components.center_in(layout, components.EmptyState(
                 "No sounds yet",
@@ -248,7 +248,7 @@ class SoundsPage(QWidget):
         card.set_normalized(self._normalized)
         return card
 
-    def _cards_new_container(self):
+    def _cards_container_new(self):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(20, 12, 24, 12)
@@ -295,7 +295,7 @@ class SoundsPage(QWidget):
 
     # ---- header --------------------------------------------------------
 
-    def _update_sound_header(self, label, recordings):
+    def _sound_header_update(self, label, recordings):
         # Everything in the header is about a sound
         self.sound_header.setVisible(label is not None)
         if label is None:
@@ -311,9 +311,9 @@ class SoundsPage(QWidget):
         )
         self.sound_quantity.setVisible(count > 0)
         if count:
-            self._update_quantity(detected_ms)
+            self._sound_quantity_update(detected_ms)
 
-    def _update_quantity(self, detected_ms):
+    def _sound_quantity_update(self, detected_ms):
         quantity, percent_to_next = get_quantity_rating(detected_ms)
         color = theme.QUANTITY_COLORS.get(quantity, theme.colors()["text"])
         detected_str = ms_to_srt_timestring(int(detected_ms), False).split(",")[0]
@@ -328,12 +328,12 @@ class SoundsPage(QWidget):
             f"   ({detected_str} of detected sound){tail}"
         )
 
-    def _set_mode(self, mode):
+    def _cards_set_mode(self, mode):
         self._mode = mode
         for card in self._cards:
             card.set_mode(mode)
 
-    def _set_normalized(self, normalized):
+    def _cards_set_normalized(self, normalized):
         self._normalized = normalized
         for card in self._cards:
             card.set_normalized(normalized)
