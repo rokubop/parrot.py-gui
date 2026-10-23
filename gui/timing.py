@@ -3,11 +3,11 @@ from PyQt6.QtCore import QTimer
 
 
 def debounced(fn, wait_ms, owner):
-    """Useful for bursts, like a held arrow key or a scroll zoom: fn runs
-    once, wait_ms after the last call.
+    """Useful to prevent rapid inputs from calling expensive renders,
+    e.g. held arrow key or scroll zoom. fn runs once after last wait_ms.
 
-    Arguments are dropped, so any signal can connect to it. .cancel() skips
-    a pending call. The timer is deleted along with owner.
+    Arguments are dropped. Can use .cancel() to skip pending call. Timer is
+    deleted with owner.
     """
     timer = QTimer(owner)
     timer.setSingleShot(True)
