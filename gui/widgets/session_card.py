@@ -31,8 +31,8 @@ def wav_duration(path):
         channels = wf.getnchannels()
         sampwidth = wf.getsampwidth()
         wf.close()
-        # Some recordings store a byte count in nframes, double the real
-        # length. Cap to the frames the file can actually hold.
+        # Recordings made before the wav header fix store a byte count in
+        # nframes, double the real length. Cap to what the file can hold.
         if channels and sampwidth:
             data_bytes = max(0, os.path.getsize(path) - 44)  # standard PCM header
             size_frames = data_bytes // (channels * sampwidth)

@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
-from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, wav_duration
 from gui.services import library_ops
 from gui import components, theme
@@ -40,10 +39,6 @@ class SoundsPage(QWidget):
         self._load_timer.timeout.connect(self._load_next_pending)
         self._pending_loads = []
 
-        # Replaced views, torn down after the new one paints. A loaded plot
-        # costs ~10 ms to destroy.
-        self._garbage = []
-
         self._setup_ui()
         self._populate_labels()
 
@@ -62,7 +57,7 @@ class SoundsPage(QWidget):
         self.label_list = QTreeWidget()
         self.label_list.setAccessibleName("Sounds")
         self.label_list.setColumnCount(3)
-        self.label_list.setHeaderLabels(["Sound", "Data", "Time"])
+        self.label_list.setHeaderLabels(["Sound", "Data", "Detected"])
         self.label_list.setRootIsDecorated(False)
         self.label_list.setUniformRowHeights(True)
         header = self.label_list.header()
@@ -90,8 +85,7 @@ class SoundsPage(QWidget):
         # Always on, and wide: somewhere to scroll the page from when plots
         # fill the view, since the wheel over a plot zooms it.
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.cards_container, self.cards_layout = self._new_container()
-        self.scroll.setWidget(self.cards_container)
+        self.scroll.setWidget(self._new_container()[0])
         right_layout.addWidget(self.scroll)
         splitter.addWidget(right)
 
@@ -214,58 +208,48 @@ class SoundsPage(QWidget):
         # Build the new view fully and swap it in before destroying the old
         # one, so teardown never touches the layout being filled.
         old_cards = self._cards
-        old_container = self.cards_container
-        self._cards = []
-        try:
-            container, layout = self._new_container()
-            self.cards_container = container
-            self.cards_layout = layout
+        container, layout = self._new_container()
 
-            recordings = []
-            if current is None:
-                # Everything in the header is about a sound
-                self.header_frame.setVisible(False)
+        recordings = []
+        if current is None:
+            # Everything in the header is about a sound
+            self.header_frame.setVisible(False)
+            components.center_in(layout, components.EmptyState(
+                "No sounds yet",
+                "Sounds recorded with settings.py show up here."))
+        else:
+            self.header_frame.setVisible(True)
+            label = current.data(0, Qt.ItemDataRole.UserRole)
+            recordings = self.app_state.get_recordings_for_label(label)
+            self._update_sound_header(label, recordings)
+            if not recordings:
                 components.center_in(layout, components.EmptyState(
-                    "No sounds yet",
-                    "Sounds recorded with settings.py show up here."))
-            else:
-                self.header_frame.setVisible(True)
-                label = current.data(0, Qt.ItemDataRole.UserRole)
-                recordings = self.app_state.get_recordings_for_label(label)
-                self._update_sound_header(label, recordings)
-                if not recordings:
-                    components.center_in(layout, components.EmptyState(
-                        f"“{label}” has no recordings yet"))
+                    f"“{label}” has no recordings yet"))
 
-            for rec in recordings:
-                base = os.path.splitext(rec["filename"])[0]
-                card = SessionCard(base, rec["wav_path"], rec["srt_path"])
-                card.set_mode(self._mode)
-                card.set_normalized(self._normalized)
-                self._cards.append(card)
-                layout.insertWidget(layout.count() - 1, card)
+        cards = []
+        for rec in recordings:
+            base = os.path.splitext(rec["filename"])[0]
+            card = SessionCard(base, rec["wav_path"], rec["srt_path"])
+            card.set_mode(self._mode)
+            card.set_normalized(self._normalized)
+            cards.append(card)
+            layout.insertWidget(layout.count() - 1, card)
 
-            self.scroll.takeWidget()
-            self.scroll.setWidget(container)
+        old_container = self.scroll.takeWidget()
+        self.scroll.setWidget(container)
+        self._cards = cards
+        self._pending_loads = list(cards)
+        self._load_timer.start()
 
-            if self._cards:
-                self._pending_loads = list(self._cards)
-                self._load_timer.start()
-        finally:
-            if old_cards or old_container is not None:
-                self._garbage.append((old_cards, old_container))
-                QTimer.singleShot(0, self._collect_garbage)
+        # Destroying a loaded plot costs ~10 ms, so the old view goes after
+        # the new one has painted
+        QTimer.singleShot(0, lambda: self._destroy(old_cards, old_container))
 
-    def _collect_garbage(self):
-        pending = self._garbage
-        self._garbage = []
-        for cards, container in pending:
-            for card in cards:
-                if not sip.isdeleted(card):
-                    card.cleanup()
-            if container is not None and not sip.isdeleted(container):
-                container.setParent(None)
-                container.deleteLater()
+    def _destroy(self, cards, container):
+        for card in cards:
+            card.cleanup()
+        container.setParent(None)
+        container.deleteLater()
 
     def _new_container(self):
         container = QWidget()
@@ -277,14 +261,12 @@ class SoundsPage(QWidget):
 
     def _load_next_pending(self):
         """Build one queued plot, then yield to the event loop."""
-        while self._pending_loads:
-            card = self._pending_loads.pop(0)
-            if sip.isdeleted(card):
-                continue
-            card.load_preview()
-            if self._pending_loads:
-                self._load_timer.start()
-            return
+        # Only ever holds the cards on screen: a rebuild replaces the queue
+        # before the old cards are destroyed
+        if self._pending_loads:
+            self._pending_loads.pop(0).load_preview()
+        if self._pending_loads:
+            self._load_timer.start()
 
     # ---- header --------------------------------------------------------
 

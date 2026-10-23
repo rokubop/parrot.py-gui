@@ -108,6 +108,10 @@ class AudioPreviewWidget(QWidget):
         self._spectrogram = None
         try:
             wf = wave.open(wav_path, "rb")
+            if wf.getsampwidth() != 2:
+                # What parrot.py records. Anything else would plot as noise
+                wf.close()
+                raise ValueError("not 16-bit")
             channels = wf.getnchannels()
             self._sample_rate = wf.getframerate()
             n_frames = wf.getnframes()
