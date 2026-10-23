@@ -83,13 +83,10 @@ class HomePage(QWidget):
     │ hero_sub                                                 │
     │                                                          │
     │ ┌ step_record ───┐ ┌ step_train ────┐ ┌ step_use ──────┐ │
-    │ │ (1) title      │ │ (2) title      │ │ (3) title      │ │
-    │ │ status         │ │ status         │ │ status         │ │
-    │ │ [ action ]     │ │ [ action ]     │ │ [ action ]     │ │
+    │ │ _StepCard      │ │ _StepCard      │ │ _StepCard      │ │
     │ └────────────────┘ └────────────────┘ └────────────────┘ │
     │                                     [ Open data folder ] │
     └──────────────────────────────────────────────────────────┘
-    Each step is a _StepCard.
     """
     navigate = pyqtSignal(str)   # tab name, handled by MainWindow
 
