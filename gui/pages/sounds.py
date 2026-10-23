@@ -42,8 +42,7 @@ class SoundsPage(QWidget):
         self._mode = WAVEFORM
         self._normalized = True
 
-        # One per tick: each takes 50-220 ms, and building them all at once
-        # froze the window over a second on a sound with 25 recordings
+        # Stagger audio graph builds to not stall the main thread (50-220 ms each)
         self._audio_graphs_build = staggered(RecordingCard.build_audio_graph, owner=self)
 
         self._setup_ui()
