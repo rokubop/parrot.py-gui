@@ -42,6 +42,8 @@ class AudioPreviewWidget(QWidget):
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setMenuEnabled(False)
         self.plot.hideButtons()
+        # Nothing to do with the keyboard, and no ring to show it had focus
+        self.plot.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.plot.setMouseEnabled(x=True, y=False)
         self.plot.showGrid(x=True, y=False, alpha=t["grid_alpha"])
         layout.addWidget(self.plot)

@@ -85,6 +85,8 @@ class SoundsPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Else Tab stops on it with no ring
+        self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         # Always on, and wide: somewhere to scroll the page from when plots
         # fill the view, since the wheel over a plot zooms it.
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
