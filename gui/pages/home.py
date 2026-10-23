@@ -89,7 +89,7 @@ class HomePage(QWidget):
     │ └────────────────┘ └────────────────┘ └────────────────┘ │
     │                                     [ Open data folder ] │
     └──────────────────────────────────────────────────────────┘
-    Each step is a _StepCard: bubble (the number), title, status, action.
+    Each step is a _StepCard.
     """
     navigate = pyqtSignal(str)   # tab name, handled by MainWindow
 
