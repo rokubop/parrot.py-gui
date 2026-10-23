@@ -25,7 +25,17 @@ def _parse_when(name):
 
 class RecordingCard(QFrame):
     """One recording: when it was made, how long it is, and a waveform or
-    spectrogram with detection overlaid."""
+    spectrogram with detection overlaid.
+
+    ┌───────────────────────────────────────────────────────┐
+    │ Aug 14, 2023, 10:55 PM  193.7s        _build_header   │
+    │ ┌ preview: AudioPreviewWidget ──────────────────────┐ │
+    │ │ waveform or spectrogram, detection shaded blue    │ │
+    │ └───────────────────────────────────────────────────┘ │
+    └───────────────────────────────────────────────────────┘
+    Until load_preview(), _placeholder holds that spot: "…", or
+    "Can't read <file>" if the wav can't be shown.
+    """
 
     PREVIEW_HEIGHT = 150
 

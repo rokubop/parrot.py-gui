@@ -17,6 +17,19 @@ from lib.print_status import get_quantity_rating, QUANTITIES
 
 
 class SoundsPage(QWidget):
+    """
+    ┌ label_list ─────────┐┌ header_frame ───────────────────────────────────┐
+    │ Sound  Data  Detect.││ sound_title                                     │
+    │ pop    Good   01:04 ││ sound_stats                                     │
+    │ ss     Good   00:51 ││ sound_quantity                                  │
+    │                     ││ open_folder_btn   _mode_buttons   normalize_btn │
+    │                     │├ scroll ─────────────────────────────────────────┤
+    │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
+    │                     ││ └────────────────────────────────────────────┘  │
+    │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
+    │                     ││ └────────────────────────────────────────────┘  │
+    └─────────────────────┘└─────────────────────────────────────────────────┘
+    """
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
