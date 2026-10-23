@@ -75,6 +75,7 @@ class SessionCard(QFrame):
 
     started = pyqtSignal(object)   # self, when playback begins
     failed = pyqtSignal(str)       # playback could not start
+    picked = pyqtSignal(object)    # self, when its plot is clicked
 
     def __init__(self, session_name, wav_path, srt_path, parent=None):
         super().__init__(parent)
@@ -127,6 +128,7 @@ class SessionCard(QFrame):
         self.play_btn.setIconSize(QSize(13, 13))
         self.play_btn.setFixedWidth(90)
         self.play_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.play_btn.setToolTip("Space plays the last recording played or clicked")
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
 
@@ -232,6 +234,7 @@ class SessionCard(QFrame):
 
     def _on_seek(self, seconds):
         # Moves the playhead. Keeps playing if it was, else waits for Play.
+        self.picked.emit(self)
         self._position = seconds
         self.preview.set_playhead(seconds)
         if self._playing:
