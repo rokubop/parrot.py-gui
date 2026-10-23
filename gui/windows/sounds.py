@@ -1,12 +1,12 @@
 """Sounds tab. Read-only: every recorded sound with how much data it has, and
-each recording with what detection found in it."""
+each recording with what detection found in it, to look at and play."""
 import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup,
     QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QEvent
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, wav_duration
@@ -22,6 +22,7 @@ class SoundsPage(QWidget):
         super().__init__(parent)
         self.app_state = app_state
         self._cards = []
+        self._current_card = None   # last played or clicked, what Space plays
         self._mode = "waveform"
         self._normalized = True
 
@@ -46,6 +47,11 @@ class SoundsPage(QWidget):
 
         self._setup_ui()
         self._populate_labels()
+
+        # Space plays. The list would take it to select a row, so it's caught
+        # there; anywhere else it reaches keyPressEvent unless a focused
+        # button presses itself with it first.
+        self.label_list.installEventFilter(self)
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
@@ -213,6 +219,9 @@ class SoundsPage(QWidget):
         # one, so teardown never touches the layout being filled.
         old_cards = self._cards
         old_container = self.cards_container
+        if self._current_card is not None:
+            self._current_card.stop()
+            self._current_card = None
         self._cards = []
         try:
             container, layout = self._new_container()
@@ -240,6 +249,9 @@ class SoundsPage(QWidget):
                 card = SessionCard(base, rec["wav_path"], rec["srt_path"])
                 card.set_mode(self._mode)
                 card.set_normalized(self._normalized)
+                card.started.connect(self._set_current_card)
+                card.failed.connect(self._on_card_failed)
+                card.picked.connect(self._set_current_card)
                 self._cards.append(card)
                 layout.insertWidget(layout.count() - 1, card)
 
@@ -324,6 +336,33 @@ class SoundsPage(QWidget):
         self._normalized = normalized
         for card in self._cards:
             card.set_normalized(normalized)
+
+    def _set_current_card(self, card):
+        if self._current_card is not None and self._current_card is not card:
+            self._current_card.stop()
+        self._current_card = card
+
+    def eventFilter(self, obj, event):
+        if (obj is self.label_list and event.type() == QEvent.Type.KeyPress
+                and event.key() == Qt.Key.Key_Space):
+            self._toggle_play()
+            return True
+        return super().eventFilter(obj, event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Space:
+            self._toggle_play()
+        else:
+            super().keyPressEvent(event)
+
+    def _toggle_play(self):
+        card = self._current_card if self._current_card in self._cards else None
+        card = card or (self._cards[0] if self._cards else None)
+        if card is not None:
+            card.toggle_play()
+
+    def _on_card_failed(self, message):
+        QMessageBox.warning(self, "Playback", message)
 
     def _on_open_sound_folder(self):
         item = self.label_list.currentItem()
