@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QMainWindow, QToolBar, QStackedWidget, QWidget
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt
 from gui.state import AppState
-from gui.windows.home import HomePage
+from gui.pages.home import HomePage
 
 
 class MainWindow(QMainWindow):
