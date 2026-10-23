@@ -6,6 +6,16 @@ from gui.pages.home import HomePage
 
 
 class MainWindow(QMainWindow):
+    """
+    ┌ toolbar ─────────────────────────────────────────────────┐
+    │ [ Home ] [ Sounds ] [ Models ]    nav_actions            │
+    ├ stack ───────────────────────────────────────────────────┤
+    │ pages[name], one shown at a time by _show_page()         │
+    │                                                          │
+    │                                                          │
+    └──────────────────────────────────────────────────────────┘
+    """
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Parrot.py")
