@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
@@ -89,7 +90,9 @@ class RecordingCard(QFrame):
         problem = preview.load(self.wav_path, self.srt_path)
         if problem:
             preview.deleteLater()
-            self._placeholder.setText(f"Can't read this file\n{problem}")
+            # The name, not the date: it's the file to go and look at
+            name = os.path.basename(self.wav_path)
+            self._placeholder.setText(f"Can't read {name}\n{problem}")
             return
         self.preview = preview
         self.preview.set_mode(self._mode)
