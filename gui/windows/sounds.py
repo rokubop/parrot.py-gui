@@ -1,5 +1,5 @@
 """Sounds tab. Read-only: every recorded sound with how much data it has, and
-each recording with what detection found in it."""
+each recording with what detection found in it, to look at and play."""
 import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
@@ -22,6 +22,7 @@ class SoundsPage(QWidget):
         super().__init__(parent)
         self.app_state = app_state
         self._cards = []
+        self._playing_card = None
         self._mode = "waveform"
         self._normalized = True
 
@@ -213,6 +214,9 @@ class SoundsPage(QWidget):
         # one, so teardown never touches the layout being filled.
         old_cards = self._cards
         old_container = self.cards_container
+        if self._playing_card is not None:
+            self._playing_card.stop()
+            self._playing_card = None
         self._cards = []
         try:
             container, layout = self._new_container()
@@ -240,6 +244,8 @@ class SoundsPage(QWidget):
                 card = SessionCard(base, rec["wav_path"], rec["srt_path"])
                 card.set_mode(self._mode)
                 card.set_normalized(self._normalized)
+                card.started.connect(self._on_card_started)
+                card.failed.connect(self._on_card_failed)
                 self._cards.append(card)
                 layout.insertWidget(layout.count() - 1, card)
 
@@ -324,6 +330,14 @@ class SoundsPage(QWidget):
         self._normalized = normalized
         for card in self._cards:
             card.set_normalized(normalized)
+
+    def _on_card_started(self, card):
+        if self._playing_card is not None and self._playing_card is not card:
+            self._playing_card.stop()
+        self._playing_card = card
+
+    def _on_card_failed(self, message):
+        QMessageBox.warning(self, "Playback", message)
 
     def _on_open_sound_folder(self):
         item = self.label_list.currentItem()
