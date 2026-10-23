@@ -18,12 +18,12 @@ from lib.print_status import get_quantity_rating, QUANTITIES
 
 class SoundsPage(QWidget):
     """
-    ┌ label_list ─────────┐┌ header_frame ───────────────────────────────────┐
+    ┌ sound_list ─────────┐┌ sound_header ───────────────────────────────────┐
     │ Sound  Data  Detect.││ sound_title                                     │
     │ pop    Good   01:04 ││ sound_stats                                     │
     │ ss     Good   00:51 ││ sound_quantity                                  │
     │                     ││ open_folder_btn   _mode_buttons   normalize_btn │
-    │                     │├ scroll ─────────────────────────────────────────┤
+    │                     │├ cards_scroll ───────────────────────────────────┤
     │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
     │                     ││ └────────────────────────────────────────────┘  │
     │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
@@ -67,19 +67,19 @@ class SoundsPage(QWidget):
         left_layout.setContentsMargins(12, 12, 8, 12)
         self.left_title = QLabel("Sounds")
         left_layout.addWidget(self.left_title)
-        self.label_list = QTreeWidget()
-        self.label_list.setAccessibleName("Sounds")
-        self.label_list.setColumnCount(3)
-        self.label_list.setHeaderLabels(["Sound", "Data", "Detected"])
-        self.label_list.setRootIsDecorated(False)
-        self.label_list.setUniformRowHeights(True)
-        header = self.label_list.header()
+        self.sound_list = QTreeWidget()
+        self.sound_list.setAccessibleName("Sounds")
+        self.sound_list.setColumnCount(3)
+        self.sound_list.setHeaderLabels(["Sound", "Data", "Detected"])
+        self.sound_list.setRootIsDecorated(False)
+        self.sound_list.setUniformRowHeights(True)
+        header = self.sound_list.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.label_list.currentItemChanged.connect(lambda *_: self._select_timer.start())
-        left_layout.addWidget(self.label_list)
+        self.sound_list.currentItemChanged.connect(lambda *_: self._select_timer.start())
+        left_layout.addWidget(self.sound_list)
 
         left.setMinimumWidth(280)
         splitter.addWidget(left)
@@ -90,16 +90,16 @@ class SoundsPage(QWidget):
         right_layout.setSpacing(0)
         right_layout.addWidget(self._build_header())
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.cards_scroll = QScrollArea()
+        self.cards_scroll.setWidgetResizable(True)
+        self.cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
         # Else Tab stops on it with no ring
-        self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         # Always on, and wide: somewhere to scroll the page from when plots
         # fill the view, since the wheel over a plot zooms it.
-        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.scroll.setWidget(self._cards_new_container()[0])
-        right_layout.addWidget(self.scroll)
+        self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.cards_scroll.setWidget(self._cards_new_container()[0])
+        right_layout.addWidget(self.cards_scroll)
         splitter.addWidget(right)
 
         splitter.setStretchFactor(0, 0)
@@ -111,7 +111,7 @@ class SoundsPage(QWidget):
         self.sound_title.setStyleSheet(components.heading_style("title"))
         self.sound_stats.setStyleSheet(f"color: {t['text_dim']};")
         self.sound_quantity.setStyleSheet(f"color: {t['text_dim']}; margin-top: 2px;")
-        self.header_frame.setStyleSheet(
+        self.sound_header.setStyleSheet(
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
         self.open_folder_btn.setStyleSheet(components.ghost_button_style())
@@ -131,14 +131,14 @@ class SoundsPage(QWidget):
         for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
             b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
-        self.scroll.setStyleSheet(
+        self.cards_scroll.setStyleSheet(
             f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }}")
 
     def _build_header(self):
         """Title and stats for the selected sound, view toggles, open folder."""
         header = QFrame()
         header.setObjectName("soundHeader")
-        self.header_frame = header
+        self.sound_header = header
         v = QVBoxLayout(header)
         v.setContentsMargins(16, 12, 16, 12)
         v.setSpacing(2)
@@ -191,8 +191,8 @@ class SoundsPage(QWidget):
     # ---- data ----------------------------------------------------------
 
     def _populate_labels(self):
-        self.label_list.blockSignals(True)
-        self.label_list.clear()
+        self.sound_list.blockSignals(True)
+        self.sound_list.clear()
         for label in self.app_state.get_sound_labels():
             duration_ms = self.app_state.get_label_duration_ms(label)
             duration = ms_to_srt_timestring(duration_ms, False).split(",")[0]
@@ -203,19 +203,19 @@ class SoundsPage(QWidget):
             if color:
                 item.setForeground(1, QColor(color))
             item.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.label_list.addTopLevelItem(item)
-        self.label_list.blockSignals(False)
+            self.sound_list.addTopLevelItem(item)
+        self.sound_list.blockSignals(False)
 
-        if self.label_list.topLevelItemCount() == 0:
+        if self.sound_list.topLevelItemCount() == 0:
             self._cards_show_sound(None)
             return
         # Fires the selection handler, which shows the sound
-        self.label_list.setCurrentItem(self.label_list.topLevelItem(0))
+        self.sound_list.setCurrentItem(self.sound_list.topLevelItem(0))
 
     # ---- cards: one per recording of the selected sound -----------------
 
     def _cards_show_selected(self):
-        self._cards_show_sound(self.label_list.currentItem())
+        self._cards_show_sound(self.sound_list.currentItem())
 
     def _cards_show_sound(self, item):
         """Swap in the sound's cards at once; their plots fill in after."""
@@ -262,8 +262,8 @@ class SoundsPage(QWidget):
 
     def _cards_swap_in(self, container):
         """Returns the container it replaced."""
-        old = self.scroll.takeWidget()
-        self.scroll.setWidget(container)
+        old = self.cards_scroll.takeWidget()
+        self.cards_scroll.setWidget(container)
         return old
 
     def _cards_destroy_later(self, cards, container):
@@ -301,7 +301,7 @@ class SoundsPage(QWidget):
 
     def _update_sound_header(self, label, recordings):
         # Everything in the header is about a sound
-        self.header_frame.setVisible(label is not None)
+        self.sound_header.setVisible(label is not None)
         if label is None:
             return
         self.sound_title.setText(label)
@@ -343,7 +343,7 @@ class SoundsPage(QWidget):
             card.set_normalized(normalized)
 
     def _on_open_sound_folder(self):
-        item = self.label_list.currentItem()
+        item = self.sound_list.currentItem()
         if item is None:
             return
         label = item.data(0, Qt.ItemDataRole.UserRole)
