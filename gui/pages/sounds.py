@@ -27,11 +27,11 @@ class SoundsPage(QWidget):
     │                     │├ cards_scroll ───────────────────────────────────┤
     │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
     │                     ││ │ Aug 08, 2026, 10:55 AM   32.4s             │  │
-    │                     ││ │ .:|:..:||:... audio_display ..:||:..:|:... │  │
+    │                     ││ │ .:|:..:||:...: audio_graph ..:||:..:|:...: │  │
     │                     ││ └────────────────────────────────────────────┘  │
     │                     ││ ┌ RecordingCard ─────────────────────────────┐  │
     │                     ││ │ Aug 08, 2026, 11:02 AM   18.9s             │  │
-    │                     ││ │ .:|:..:||:... audio_display ..:||:..:|:... │  │
+    │                     ││ │ .:|:..:||:...: audio_graph ..:||:..:|:...: │  │
     │                     ││ └────────────────────────────────────────────┘  │
     └─────────────────────┘└─────────────────────────────────────────────────┘
     """
@@ -45,8 +45,8 @@ class SoundsPage(QWidget):
 
         # One per tick: each takes 50-220 ms, and building them all at once
         # froze the window over a second on a sound with 25 recordings
-        self._audio_displays_build = one_per_tick(
-            RecordingCard.build_audio_display, owner=self)
+        self._audio_graphs_build = one_per_tick(
+            RecordingCard.build_audio_graph, owner=self)
 
         self._setup_ui()
         self._sound_list_populate()
@@ -94,7 +94,7 @@ class SoundsPage(QWidget):
         # Else Tab stops on it with no ring
         self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         # Always on, and wide: somewhere to scroll the page from when audio
-        # displays fill the view, since the wheel over one zooms it.
+        # graphs fill the view, since the wheel over one zooms it.
         self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.cards_scroll.setWidget(self._cards_container_new()[0])
         right_layout.addWidget(self.cards_scroll)
@@ -216,19 +216,19 @@ class SoundsPage(QWidget):
         self._cards_show_sound(self.sound_list.currentItem())
 
     def _cards_show_sound(self, item):
-        """Swap in the sound's cards at once; their audio displays fill in after."""
-        self._audio_displays_build.cancel()
+        """Swap in the sound's cards at once; their audio graphs fill in after."""
+        self._audio_graphs_build.cancel()
         label = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         recordings = self.app_state.get_recordings_for_label(label) if label else []
         self._sound_header_update(label, recordings)
         old_cards = self._cards
         container, self._cards = self._cards_build(label, recordings)
         old_container = self._cards_swap_in(container)
-        self._audio_displays_build(self._cards)
+        self._audio_graphs_build(self._cards)
         self._cards_destroy_later(old_cards, old_container)
 
     def _cards_build(self, label, recordings):
-        """A placeholder card per recording, no audio displays. Or the empty state."""
+        """A placeholder card per recording, no audio graphs. Or the empty state."""
         container, layout = self._cards_container_new()
         if label is None:
             components.center_in(layout, components.EmptyState(
@@ -265,7 +265,7 @@ class SoundsPage(QWidget):
         return old
 
     def _cards_destroy_later(self, cards, container):
-        """Once the new cards have painted: a built audio display takes ~10 ms to free,
+        """Once the new cards have painted: a built audio graph takes ~10 ms to free,
         and switching sounds shouldn't wait on the last one's cleanup."""
         QTimer.singleShot(0, lambda: self._cards_destroy(cards, container))
 
