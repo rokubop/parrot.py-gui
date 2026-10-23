@@ -23,21 +23,21 @@ def _parse_when(session_name):
     return stamp.strftime(f"%b %d, %Y, {hour}:%M %p")
 
 
+def _frames_the_file_holds(path, channels, sampwidth):
+    """Recordings made before the wav header fix store a byte count in
+    nframes, double the real length. The file size can't be wrong."""
+    data_bytes = max(0, os.path.getsize(path) - 44)  # standard PCM header
+    return data_bytes // (channels * sampwidth)
+
+
 def wav_duration(path):
+    """Seconds, from the header: decoding every file just for its length is
+    too slow."""
     try:
-        wf = wave.open(path, "rb")
-        rate = wf.getframerate()
-        frames = wf.getnframes()
-        channels = wf.getnchannels()
-        sampwidth = wf.getsampwidth()
-        wf.close()
-        # Recordings made before the wav header fix store a byte count in
-        # nframes, double the real length. Cap to what the file can hold.
-        if channels and sampwidth:
-            data_bytes = max(0, os.path.getsize(path) - 44)  # standard PCM header
-            size_frames = data_bytes // (channels * sampwidth)
-            if size_frames and size_frames < frames:
-                frames = size_frames
+        with wave.open(path, "rb") as wf:
+            rate = wf.getframerate()
+            frames = min(wf.getnframes(), _frames_the_file_holds(
+                path, wf.getnchannels(), wf.getsampwidth()))
         return frames / rate if rate else 0.0
     except Exception:
         return 0.0
