@@ -9,7 +9,7 @@ class MainWindow(QMainWindow):
     """
     ┌ toolbar ─────────────────────────────────────────────────┐
     │ [ Home ] [ Sounds ] [ Models ]    nav_actions            │
-    ├ stack ───────────────────────────────────────────────────┤
+    ├ page_stack ──────────────────────────────────────────────┤
     │ pages[name], one shown at a time by _show_page()         │
     │                                                          │
     │                                                          │
@@ -24,8 +24,8 @@ class MainWindow(QMainWindow):
 
         self.app_state = AppState()
 
-        self.stack = QStackedWidget()
-        self.setCentralWidget(self.stack)
+        self.page_stack = QStackedWidget()
+        self.setCentralWidget(self.page_stack)
 
         self.home_page = HomePage(self.app_state, self)
         self.home_page.navigate.connect(self._go_to_page)
@@ -35,7 +35,7 @@ class MainWindow(QMainWindow):
             "Models": QWidget(),
         }
         for page in self.pages.values():
-            self.stack.addWidget(page)
+            self.page_stack.addWidget(page)
 
         toolbar = QToolBar("Navigation")
         toolbar.setMovable(False)
@@ -65,4 +65,4 @@ class MainWindow(QMainWindow):
         self._show_page(name)
 
     def _show_page(self, name):
-        self.stack.setCurrentWidget(self.pages[name])
+        self.page_stack.setCurrentWidget(self.pages[name])
