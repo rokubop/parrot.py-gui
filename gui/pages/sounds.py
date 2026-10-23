@@ -71,7 +71,7 @@ class SoundsPage(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        # Holding an arrow key builds only the sound you stop on
+        # Debounce sound change in case arrow key is held
         self.sound_list.currentItemChanged.connect(
             debounced(self._cards_show_selected, wait_ms=15, owner=self))
         left_layout.addWidget(self.sound_list)
