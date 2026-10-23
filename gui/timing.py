@@ -22,9 +22,10 @@ def debounced(fn, wait_ms, owner):
 
 
 def staggered(fn, owner):
-    """run(items): fn(item) for each, one per event loop tick, so the window
-    stays responsive. `.cancel()` drops what's left. owner deletes the timer
-    with it.
+    """Returns run(items), which calls fn on each item, one per event loop
+    tick, so the window stays responsive. run.cancel() skips the rest.
+
+    The timer is deleted along with owner.
     """
     timer = QTimer(owner)
     timer.setSingleShot(True)
