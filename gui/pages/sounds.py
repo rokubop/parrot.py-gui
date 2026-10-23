@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
-from gui.widgets.session_card import SessionCard, wav_duration
+from gui.widgets.recording_card import RecordingCard, wav_duration
 from gui.services import library_ops
 from gui import components, theme
 from lib.srt import ms_to_srt_timestring
@@ -229,7 +229,7 @@ class SoundsPage(QWidget):
         cards = []
         for rec in recordings:
             base = os.path.splitext(rec["filename"])[0]
-            card = SessionCard(base, rec["wav_path"], rec["srt_path"])
+            card = RecordingCard(base, rec["wav_path"], rec["srt_path"])
             card.set_mode(self._mode)
             card.set_normalized(self._normalized)
             cards.append(card)

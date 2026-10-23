@@ -7,11 +7,11 @@ from gui.widgets.audio_preview import AudioPreviewWidget
 from gui import theme
 
 
-def _parse_when(session_name):
+def _parse_when(name):
     """Filenames end in __<unix-timestamp>; decode it to a date and time. The
     time matters: several takes of one sound in a sitting is the normal way to
     record, and a date alone leaves those cards reading identically."""
-    tail = session_name.rsplit("__", 1)[-1]
+    tail = name.rsplit("__", 1)[-1]
     if not tail.isdigit():
         return ""
     try:
@@ -43,13 +43,13 @@ def wav_duration(path):
         return 0.0
 
 
-class SessionCard(QFrame):
+class RecordingCard(QFrame):
     """One recording: when it was made, how long it is, and a waveform or
     spectrogram with detection overlaid."""
 
     PREVIEW_HEIGHT = 150
 
-    def __init__(self, session_name, wav_path, srt_path, parent=None):
+    def __init__(self, name, wav_path, srt_path, parent=None):
         super().__init__(parent)
         # The plot inside asks to grow even at a fixed height, so without
         # this a lone card soaks up the page's spare height around its title
@@ -59,7 +59,7 @@ class SessionCard(QFrame):
 
         t = theme.colors()
         self.setStyleSheet(
-            "SessionCard { border: 1px solid %s; border-radius: %s; "
+            "RecordingCard { border: 1px solid %s; border-radius: %s; "
             "background-color: %s; }" % (t["border"], t["radius"], t["card"]))
 
         # A pyqtgraph plot per recording is the expensive part of switching
@@ -72,7 +72,7 @@ class SessionCard(QFrame):
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(10, 6, 10, 6)
         self._layout.setSpacing(4)
-        self._layout.addLayout(self._build_header(session_name))
+        self._layout.addLayout(self._build_header(name))
 
         self._placeholder = QLabel("…")
         self._placeholder.setFixedHeight(self.PREVIEW_HEIGHT)
@@ -81,14 +81,14 @@ class SessionCard(QFrame):
             f"color: {t['text_dim']}; border: none; background: transparent;")
         self._layout.addWidget(self._placeholder)
 
-    def _build_header(self, session_name):
+    def _build_header(self, name):
         row = QHBoxLayout()
         t = theme.colors()
         # When it was recorded, not "mici_0": the mic index is a filename
         # disambiguator and tells the user nothing.
-        name = QLabel(_parse_when(session_name) or session_name)
-        name.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")
-        row.addWidget(name)
+        title = QLabel(_parse_when(name) or name)
+        title.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")
+        row.addWidget(title)
 
         length = wav_duration(self.wav_path)
         if length:
