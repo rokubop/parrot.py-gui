@@ -8,7 +8,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
-from gui.widgets.recording_card import RecordingCard, wav_duration
+from gui.widgets.recording_card import RecordingCard
+from gui.services.wav_files import wav_duration
 from gui.services import library_ops
 from gui import components, theme
 from lib.srt import ms_to_srt_timestring

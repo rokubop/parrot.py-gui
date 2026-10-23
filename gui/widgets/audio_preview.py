@@ -1,17 +1,18 @@
 import math
-import wave
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer, QRectF
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.srt import parse_srt_file
+from gui.services.wav_files import read_wav, UnreadableWav
 from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
 from gui import theme
 
 _MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
 pg.setConfigOptions(antialias=True)
+
 
 
 class AudioPreviewWidget(QWidget):
@@ -105,38 +106,23 @@ class AudioPreviewWidget(QWidget):
     # ---- loading -------------------------------------------------------
 
     def load(self, wav_path, srt_path):
-        """False if the wav can't be read."""
+        """Why the wav can't be read, or None once it's on the plot."""
         self._spectrogram = None
         try:
-            wf = wave.open(wav_path, "rb")
-            if wf.getsampwidth() != 2:
-                # What parrot.py records. Anything else would plot as noise
-                wf.close()
-                raise ValueError("not 16-bit")
-            channels = wf.getnchannels()
-            self._sample_rate = wf.getframerate()
-            n_frames = wf.getnframes()
-            raw = wf.readframes(n_frames)
-            wf.close()
-            data = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
-            if channels > 1:
-                data = data.reshape(-1, channels).mean(axis=1)
-            self._samples = data / 32768.0
-            self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
-            # From the samples, not the header: some recordings store a byte
-            # count in nframes, which doubles the length.
-            self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
-        except Exception:
-            self._samples = None
-            self._duration = 0.0
-            return False
+            self._samples, self._sample_rate = read_wav(wav_path)
+        except UnreadableWav as exc:
+            return str(exc)
+        self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
+        # From the samples, not the header: some recordings store a byte
+        # count in nframes, which doubles the length.
+        self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
         self._vb.setXRange(0.0, self._duration, padding=0)
         self._apply_y_range()
         self.load_regions(srt_path)
         self._render_waveform()
-        return True
+        return None
 
     def load_regions(self, srt_path):
         """Draw the detection overlay."""

@@ -1,9 +1,8 @@
-import os
-import wave
 from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
 from gui.widgets.audio_preview import AudioPreviewWidget
+from gui.services.wav_files import wav_duration
 from gui import theme
 
 
@@ -21,26 +20,6 @@ def _parse_when(name):
     # %-I / %#I differ between posix and Windows, so trim the zero by hand.
     hour = stamp.strftime("%I").lstrip("0") or "12"
     return stamp.strftime(f"%b %d, %Y, {hour}:%M %p")
-
-
-def _frames_the_file_holds(path, channels, sampwidth):
-    """Recordings made before the wav header fix store a byte count in
-    nframes, double the real length. The file size can't be wrong."""
-    data_bytes = max(0, os.path.getsize(path) - 44)  # standard PCM header
-    return data_bytes // (channels * sampwidth)
-
-
-def wav_duration(path):
-    """Seconds, from the header: decoding every file just for its length is
-    too slow."""
-    try:
-        with wave.open(path, "rb") as wf:
-            rate = wf.getframerate()
-            frames = min(wf.getnframes(), _frames_the_file_holds(
-                path, wf.getnchannels(), wf.getsampwidth()))
-        return frames / rate if rate else 0.0
-    except Exception:
-        return 0.0
 
 
 class RecordingCard(QFrame):
@@ -107,9 +86,10 @@ class RecordingCard(QFrame):
         self._preview_tried = True
         preview = AudioPreviewWidget()
         preview.setFixedHeight(self.PREVIEW_HEIGHT)
-        if not preview.load(self.wav_path, self.srt_path):
+        problem = preview.load(self.wav_path, self.srt_path)
+        if problem:
             preview.deleteLater()
-            self._placeholder.setText("Can't read this file")
+            self._placeholder.setText(f"Can't read this file\n{problem}")
             return
         self.preview = preview
         self.preview.set_mode(self._mode)
