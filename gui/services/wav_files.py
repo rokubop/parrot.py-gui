@@ -28,7 +28,7 @@ def read_wav(path):
         raise UnreadableWav("The file couldn't be opened")
     except wave.Error as exc:
         if str(exc).startswith("unknown format"):
-            raise UnreadableWav("A wav format parrot.py doesn't record")
+            raise UnreadableWav("Unsupported wav format, parrot.py records 16-bit")
         raise UnreadableWav(DAMAGED)
     except Exception:
         raise UnreadableWav(DAMAGED)

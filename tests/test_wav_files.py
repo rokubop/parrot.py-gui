@@ -96,7 +96,7 @@ class TestReadWav(unittest.TestCase):
 
     def test_float_format(self):
         raw_wav(self.path("a.wav"), fmt=3, bits=32, data=bytes(40))
-        self.assertUnreadable(self.path("a.wav"), "A wav format parrot.py doesn't record")
+        self.assertUnreadable(self.path("a.wav"), "Unsupported wav format, parrot.py records 16-bit")
 
     def test_empty(self):
         write_wav(self.path("a.wav"), b"")
