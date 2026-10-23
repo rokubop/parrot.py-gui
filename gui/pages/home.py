@@ -78,17 +78,17 @@ class _StepCard(QFrame):
 
 class HomePage(QWidget):
     """
-    ┌──────────────────────────────────────────────────────────────────────┐
-    │ hero_title                                                           │
-    │ hero_sub                                                             │
-    │                                                                      │
-    │ ┌ step_record ───────┐ ┌ step_train ────────┐ ┌ step_use ──────────┐ │
-    │ │ (1) title          │ │ (2) title          │ │ (3) title          │ │
-    │ │ status             │ │ status             │ │ status             │ │
-    │ │ [ action ]         │ │ [ action ]         │ │ [ action ]         │ │
-    │ └────────────────────┘ └────────────────────┘ └────────────────────┘ │
-    │                                                 [ Open data folder ] │
-    └──────────────────────────────────────────────────────────────────────┘
+    ┌──────────────────────────────────────────────────────────┐
+    │ hero_title                                               │
+    │ hero_sub                                                 │
+    │                                                          │
+    │ ┌ step_record ───┐ ┌ step_train ────┐ ┌ step_use ──────┐ │
+    │ │ (1) title      │ │ (2) title      │ │ (3) title      │ │
+    │ │ status         │ │ status         │ │ status         │ │
+    │ │ [ action ]     │ │ [ action ]     │ │ [ action ]     │ │
+    │ └────────────────┘ └────────────────┘ └────────────────┘ │
+    │                                     [ Open data folder ] │
+    └──────────────────────────────────────────────────────────┘
     Each step is a _StepCard: bubble (the number), title, status, action.
     """
     navigate = pyqtSignal(str)   # tab name, handled by MainWindow
