@@ -4,9 +4,15 @@ import sys
 import shutil
 import subprocess
 
+from config.config import RECORDINGS_FOLDER
+
 
 class LibraryOpError(Exception):
     """A user-facing problem performing a library operation."""
+
+
+def label_dir(label):
+    return os.path.join(RECORDINGS_FOLDER, label)
 
 
 def open_in_file_manager(path):
