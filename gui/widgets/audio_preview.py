@@ -105,6 +105,7 @@ class AudioPreviewWidget(QWidget):
     # ---- loading -------------------------------------------------------
 
     def load(self, wav_path, srt_path):
+        """False if the wav can't be read."""
         self._spectrogram = None
         try:
             wf = wave.open(wav_path, "rb")
@@ -128,13 +129,14 @@ class AudioPreviewWidget(QWidget):
         except Exception:
             self._samples = None
             self._duration = 0.0
-            return
+            return False
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
         self._vb.setXRange(0.0, self._duration, padding=0)
         self._apply_y_range()
         self.load_regions(srt_path)
         self._render_waveform()
+        return True
 
     def load_regions(self, srt_path):
         """Draw the detection overlay."""

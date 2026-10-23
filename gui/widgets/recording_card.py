@@ -66,6 +66,7 @@ class RecordingCard(QFrame):
         # sounds (~50-220 ms each). A placeholder of the same height shows
         # instantly; the Sounds page calls load_preview() one card at a time.
         self.preview = None
+        self._preview_tried = False
         self._mode = "waveform"
         self._normalized = False
 
@@ -100,12 +101,17 @@ class RecordingCard(QFrame):
         return row
 
     def load_preview(self):
-        """Build the plot. No-op once built."""
-        if self.preview is not None:
+        """Build the plot, or say the file can't be read. Runs once."""
+        if self._preview_tried:
             return
-        self.preview = AudioPreviewWidget()
-        self.preview.setFixedHeight(self.PREVIEW_HEIGHT)
-        self.preview.load(self.wav_path, self.srt_path)
+        self._preview_tried = True
+        preview = AudioPreviewWidget()
+        preview.setFixedHeight(self.PREVIEW_HEIGHT)
+        if not preview.load(self.wav_path, self.srt_path):
+            preview.deleteLater()
+            self._placeholder.setText("Can't read this file")
+            return
+        self.preview = preview
         self.preview.set_mode(self._mode)
         self.preview.set_normalized(self._normalized)
         self._layout.replaceWidget(self._placeholder, self.preview)
