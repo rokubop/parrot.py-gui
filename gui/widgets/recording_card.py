@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
-from gui.widgets.audio_graph import AudioGraph, WAVEFORM
+from gui.widgets.audio_graph import AudioGraph, MODE_WAVEFORM
 from gui.services.wav_files import wav_duration
 from gui import theme
 
@@ -47,7 +47,7 @@ class RecordingCard(QFrame):
         # instantly; the Sounds page calls build_audio_graph() one card at a time.
         self.audio_graph = None
         self._audio_graph_tried = False
-        self._mode = WAVEFORM
+        self._mode = MODE_WAVEFORM
         self._normalized = False
 
         self._layout = QVBoxLayout(self)

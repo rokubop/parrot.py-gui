@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from gui.widgets.recording_card import RecordingCard
-from gui.widgets.audio_graph import WAVEFORM, SPECTROGRAM
+from gui.widgets.audio_graph import MODE_WAVEFORM, MODE_SPECTROGRAM
 from gui.services.wav_files import wav_duration
 from gui.services import library_ops
 from gui import components, theme
@@ -41,7 +41,7 @@ class SoundsPage(QWidget):
         super().__init__(parent)
         self.app_state = app_state
         self._cards = []
-        self._mode = WAVEFORM
+        self._mode = MODE_WAVEFORM
         self._normalized = True
 
         # Stagger audio graph builds to not stall the main thread (50-220 ms each)
@@ -160,7 +160,7 @@ class SoundsPage(QWidget):
         actions.addWidget(self.mode_label)
         self._mode_group = QButtonGroup(self)
         self._mode_buttons = {}
-        for mode, text in ((WAVEFORM, "Waveform"), (SPECTROGRAM, "Spectrogram")):
+        for mode, text in ((MODE_WAVEFORM, "Waveform"), (MODE_SPECTROGRAM, "Spectrogram")):
             btn = QPushButton(text)
             btn.setObjectName("settingToggle")
             btn.setCheckable(True)

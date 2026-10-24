@@ -12,9 +12,8 @@ from gui.timing import debounced
 
 _MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
-# What the graph shows, set with set_mode()
-WAVEFORM = "waveform"
-SPECTROGRAM = "spectrogram"
+MODE_WAVEFORM = "waveform"
+MODE_SPECTROGRAM = "spectrogram"
 
 pg.setConfigOptions(antialias=True)
 
@@ -35,7 +34,7 @@ class AudioGraph(QWidget):
         self._duration = 0.0
         self._peak = 0.0          # max abs sample, for normalizing the view
         self._normalized = False
-        self._mode = WAVEFORM
+        self._mode = MODE_WAVEFORM
         self._spectrogram = None  # cached (image, levels)
 
         t = theme.colors()
@@ -157,7 +156,7 @@ class AudioGraph(QWidget):
         if mode == self._mode:
             return
         self._mode = mode
-        is_wave = mode == WAVEFORM
+        is_wave = mode == MODE_WAVEFORM
         self._max_curve.setVisible(is_wave)
         self._min_curve.setVisible(is_wave)
         self._fill.setVisible(is_wave)
@@ -171,7 +170,7 @@ class AudioGraph(QWidget):
 
     def set_normalized(self, normalized):
         self._normalized = normalized
-        if self._mode == WAVEFORM:
+        if self._mode == MODE_WAVEFORM:
             self._apply_y_range()
 
     def _apply_y_range(self):
@@ -212,7 +211,7 @@ class AudioGraph(QWidget):
     # ---- waveform envelope --------------------------------------------
 
     def _render_waveform(self):
-        if self._mode != WAVEFORM or self._samples is None or self._sample_rate is None:
+        if self._mode != MODE_WAVEFORM or self._samples is None or self._sample_rate is None:
             return
         x0, x1 = self._vb.viewRange()[0]
         x0 = max(0.0, x0)
@@ -251,7 +250,7 @@ class AudioGraph(QWidget):
         if self._duration <= 0:
             return
         self._vb.setXRange(0.0, self._duration, padding=0)
-        if self._mode == WAVEFORM:
+        if self._mode == MODE_WAVEFORM:
             self._apply_y_range()
 
     # ---- horizontal scrollbar -----------------------------------------
