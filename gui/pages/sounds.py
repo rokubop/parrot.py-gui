@@ -211,9 +211,9 @@ class SoundsPage(QWidget):
         self._cards_populate(self.sound_list.currentItem())
 
     def _cards_populate(self, item):
-        """Builds a new box of placeholder cards off-screen and swaps it in, so
-        the sound shows in one repaint. Audio graphs fill in after, and the old
-        box is freed once the new one is on screen.
+        """Builds a new container of placeholder cards off-screen and swaps it
+        in, so the sound shows in one repaint. Audio graphs fill in after, and
+        the old container is freed once the new one is on screen.
 
         sound_list change (debounced) -> _cards_show_selected -> here
             _sound_header_update
@@ -257,7 +257,7 @@ class SoundsPage(QWidget):
         return card
 
     def _cards_container_new(self):
-        """The empty box the cards stack in, top-aligned. Goes in cards_scroll."""
+        """The empty container the cards stack in, top-aligned. Goes in cards_scroll."""
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(20, 12, 24, 12)
