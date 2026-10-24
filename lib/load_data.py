@@ -141,6 +141,8 @@ def rebalance_sampling_strategies_for_memory(sampling_strategies, balance_sounds
             # Rebalance the samples taken for silence as well
             if sampling_strategies[label]["strategy"] == "background":
                 sampling_strategies[label]["sample_from_each"] = round(min(total_truncation, sampling_strategies[label]['total_size']) / len(sampling_strategies.keys()))
+            else:
+                sampling_strategies[label]["strategy"] = strategy
             new_data_size += total_loaded
         print( "Reduced data by ~" + str(math.ceil(100 - (new_data_size / total_data_size * 100))) + "% to fit the whole dataset inside RAM") 
     
