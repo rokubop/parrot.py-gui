@@ -62,8 +62,8 @@ class RecordingCard(QFrame):
     def _build_header(self, name):
         row = QHBoxLayout()
         t = theme.colors()
-        # When it was recorded, not "mici_0": the mic index is a filename
-        # disambiguator and tells the user nothing.
+        # name  = "mici_1__1693668038"
+        # title = "Sep 02, 2023, 10:20 AM", or the name if it has no timestamp
         title = QLabel(_parse_when(name) or name)
         title.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")
         row.addWidget(title)
