@@ -307,12 +307,11 @@ class SoundsPage(QWidget):
         quantity, percent_to_next = get_quantity_rating(detected_ms)
         color = theme.QUANTITY_COLORS.get(quantity, theme.colors()["text"])
         detected_str = ms_to_srt_timestring(int(detected_ms), False).split(",")[0]
-        names = list(QUANTITIES.values())
+        tail = ""
         if quantity != QUANTITIES["excellent"]:
+            names = list(QUANTITIES.values())
             next_quantity = names[names.index(quantity) + 1]
             tail = f"   ·   {round(percent_to_next)}% toward “{next_quantity}”"
-        else:
-            tail = "   ·   plenty of data for training"
         self.sound_quantity.setText(
             f"Data quantity:  <b style='color:{color};'>{quantity}</b>"
             f"   ({detected_str} of detected sound){tail}"
