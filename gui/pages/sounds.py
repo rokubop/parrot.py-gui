@@ -226,9 +226,7 @@ class SoundsPage(QWidget):
         """A placeholder card per recording, no audio graphs. Or the empty state."""
         container, layout = self._cards_container_new()
         if label is None:
-            components.center_in(layout, components.EmptyState(
-                "No sounds yet",
-                "Sounds recorded with settings.py show up here."))
+            components.center_in(layout, components.EmptyState("No sounds yet"))
         elif not recordings:
             components.center_in(layout, components.EmptyState(
                 f"“{label}” has no recordings yet"))
