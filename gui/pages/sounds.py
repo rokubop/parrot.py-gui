@@ -90,7 +90,7 @@ class SoundsPage(QWidget):
         self.cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.cards_scroll.setObjectName("cardsScroll")
         self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        # Always on: the wheel over a graph zooms it instead of scrolling the page
+        # Always on: wheel scroll over a graph zooms it instead of scrolling the page
         self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.cards_scroll.setWidget(self._cards_container_new()[0])
         right_layout.addWidget(self.cards_scroll)
