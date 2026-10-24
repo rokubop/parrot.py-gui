@@ -200,7 +200,7 @@ class SoundsPage(QWidget):
         self.sound_list.blockSignals(False)
 
         if self.sound_list.topLevelItemCount() == 0:
-            self._cards_show_sound(None)
+            self._cards_populate(None)
             return
         # Fires the selection handler, which shows the sound
         self.sound_list.setCurrentItem(self.sound_list.topLevelItem(0))
@@ -208,9 +208,9 @@ class SoundsPage(QWidget):
     # ---- cards: one per recording of the selected sound -----------------
 
     def _cards_show_selected(self):
-        self._cards_show_sound(self.sound_list.currentItem())
+        self._cards_populate(self.sound_list.currentItem())
 
-    def _cards_show_sound(self, item):
+    def _cards_populate(self, item):
         """Swap in the sound's cards at once; their audio graphs fill in after.
 
         sound_list change (debounced) -> _cards_show_selected -> here
