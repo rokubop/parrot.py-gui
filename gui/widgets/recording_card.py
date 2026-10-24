@@ -8,9 +8,11 @@ from gui import theme
 
 
 def _parse_when(name):
-    """Filenames end in __<unix-timestamp>; decode it to a date and time. The
-    time matters: several takes of one sound in a sitting is the normal way to
-    record, and a date alone leaves those cards reading identically."""
+    """Date and time from the filename's __<unix-timestamp>, or "" if it has none.
+    The time too, since several takes in one sitting is normal.
+
+    "mici_1__1693668038" -> "Sep 02, 2023, 10:20 AM"
+    """
     tail = name.rsplit("__", 1)[-1]
     if not tail.isdigit():
         return ""
@@ -62,6 +64,7 @@ class RecordingCard(QFrame):
     def _build_header(self, name):
         row = QHBoxLayout()
         t = theme.colors()
+        # Example:
         # name  = "mici_1__1693668038"
         # title = "Sep 02, 2023, 10:20 AM", or the name if it has no timestamp
         title = QLabel(_parse_when(name) or name)
