@@ -229,14 +229,14 @@ class SoundsPage(QWidget):
         recordings = self.app_state.get_recordings_for_label(label) if label else []
         self._sound_header_update(label, recordings)
         old_cards = self._cards
-        container, self._cards = self._cards_build(label, recordings)
-        old_container = self._cards_swap_in(container)
+        cards_container, self._cards = self._cards_build(label, recordings)
+        old_cards_container = self._cards_swap_in(cards_container)
         self._audio_graphs_build(self._cards)
-        self._cards_destroy_later(old_cards, old_container)
+        self._cards_destroy_later(old_cards, old_cards_container)
 
     def _cards_build(self, label, recordings):
         """A placeholder card per recording, no audio graphs. Or the empty state."""
-        container, layout = self._cards_container_new()
+        cards_container, layout = self._cards_container_new()
         if label is None:
             components.center_in(layout, components.EmptyState("No sounds yet"))
         elif not recordings:
@@ -246,7 +246,7 @@ class SoundsPage(QWidget):
         cards = [self._card_new(rec) for rec in recordings]
         for card in cards:
             layout.insertWidget(layout.count() - 1, card)
-        return container, cards
+        return cards_container, cards
 
     def _card_new(self, rec):
         """One recording's card, in the current mode and normalize setting."""
@@ -258,29 +258,29 @@ class SoundsPage(QWidget):
 
     def _cards_container_new(self):
         """The empty container the cards stack in, top-aligned. Goes in cards_scroll."""
-        container = QWidget()
-        layout = QVBoxLayout(container)
+        cards_container = QWidget()
+        layout = QVBoxLayout(cards_container)
         layout.setContentsMargins(20, 12, 24, 12)
         layout.setSpacing(10)
         layout.addStretch()
-        return container, layout
+        return cards_container, layout
 
-    def _cards_swap_in(self, container):
+    def _cards_swap_in(self, cards_container):
         """Returns the container it replaced."""
         old = self.cards_scroll.takeWidget()
-        self.cards_scroll.setWidget(container)
+        self.cards_scroll.setWidget(cards_container)
         return old
 
-    def _cards_destroy_later(self, cards, container):
+    def _cards_destroy_later(self, cards, cards_container):
         """Once the new cards have painted: a built audio graph takes ~10 ms to free,
         and switching sounds shouldn't wait on the last one's cleanup."""
-        QTimer.singleShot(0, lambda: self._cards_destroy(cards, container))
+        QTimer.singleShot(0, lambda: self._cards_destroy(cards, cards_container))
 
-    def _cards_destroy(self, cards, container):
+    def _cards_destroy(self, cards, cards_container):
         for card in cards:
             card.cleanup()
-        container.setParent(None)
-        container.deleteLater()
+        cards_container.setParent(None)
+        cards_container.deleteLater()
 
     # ---- header --------------------------------------------------------
 
