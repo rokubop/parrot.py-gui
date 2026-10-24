@@ -44,6 +44,7 @@ def persist_srt_file(srt_filename: str, events: List[DetectionEvent]):
 def parse_srt_file(srt_filename: str, rounding_ms: int, show_errors: bool = True) -> List[TransitionEvent]:
     transition_events = []
     positive_event_list = []
+    entries = []
 
     if not srt_filename.endswith(".srt"):
         srt_filename += ".srt"
@@ -68,16 +69,28 @@ def parse_srt_file(srt_filename: str, rounding_ms: int, show_errors: bool = True
               if type_sound == "":
                   type_sound = line.strip()
                   if time_start < time_end:
-                      positive_event_list.append(str(time_start) + "---" + type_sound + "---start")
-                      positive_event_list.append(str(time_end) + "---" + type_sound + "---end")
+                      entries.append([time_start, time_end, type_sound])
                   elif show_errors:
                       print( ".SRT error at line " + str(line_index) + " - Start time not before end time! Not adding this event - Numbers won't be valid!" )
+
+    # Overlapping entries of one label become one, so the first one's end can't cut the second short
+    entries.sort(key = lambda entry: entry[0])
+    merged_entries = []
+    for entry in entries:
+        if len(merged_entries) > 0 and merged_entries[-1][2] == entry[2] and entry[0] <= merged_entries[-1][1]:
+            merged_entries[-1][1] = max(merged_entries[-1][1], entry[1])
+        else:
+            merged_entries.append(entry)
+    for time_start, time_end, type_sound in merged_entries:
+        positive_event_list.append(str(time_start) + "---" + type_sound + "---start")
+        positive_event_list.append(str(time_end) + "---" + type_sound + "---end")
 
     # Sort chronologically by time
     positive_event_list.sort(key = lambda event: int(event.split("---")[0]))
     for time_index, time_event in enumerate(positive_event_list):
-        # Remove duplicates if found
-        if time_index != 0 and len(transition_events) > 0 and transition_events[-1].start_index == math.floor(int(time_event.split("---")[0]) / rounding_ms):  
+        # Remove duplicates if found, but keep an entry that starts where the last one ended
+        is_start_after_end = time_event.endswith("---start") and len(transition_events) > 0 and transition_events[-1].label == BACKGROUND_LABEL
+        if time_index != 0 and len(transition_events) > 0 and transition_events[-1].start_index == math.floor(int(time_event.split("---")[0]) / rounding_ms) and not is_start_after_end:
             if show_errors:
                 print( "Found duplicate entry at second " + str(math.floor(int(time_event.split("---")[0]) / rounding_ms) / 1000) + " - Not adding duplicate")
             continue;

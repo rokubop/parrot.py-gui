@@ -38,9 +38,9 @@ ROUNDING_MS = 15
 # srt case: {label: (count_label_ms_in_srt, count_frames_in_srt)}
 EXPECTED_COUNTS = {
     "simple": {"pop": (900, 59), "ss": (600, 39), "silence": (2100, 138)},
-    "overlap": {"pop": (990, 65), "ss": (0, 0), "silence": (1005, 66)},
+    "overlap": {"pop": (3000, 199), "ss": (0, 0), "silence": (1005, 66)},
     "mixed_case": {"pop": (600, 38), "ss": (0, 0), "silence": (1800, 118)},
-    "back_to_back": {"pop": (900, 59), "ss": (0, 0), "silence": (900, 59)},
+    "back_to_back": {"pop": (900, 59), "ss": (600, 39), "silence": (900, 59)},
     "empty": {"pop": (0, 0), "ss": (0, 0), "silence": (0, 0)},
 }
 
