@@ -11,8 +11,7 @@ class MainWindow(QMainWindow):
     ┌ toolbar ─────────────────────────────────────────────────┐
     │ [ Home ] [ Sounds ] ...    nav_actions                   │
     ├ page_stack ──────────────────────────────────────────────┤
-    │ individual pages shown here by _show_page()              │
-    │                                                          │
+    │ individual page shown by _show_page()                    │
     │                                                          │
     └──────────────────────────────────────────────────────────┘
     """
