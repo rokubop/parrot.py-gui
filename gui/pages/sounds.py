@@ -4,14 +4,14 @@ from PyQt6.QtWidgets import (
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup,
     QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from gui.widgets.recording_card import RecordingCard
 from gui.widgets.audio_graph import WAVEFORM, SPECTROGRAM
 from gui.services.wav_files import wav_duration
 from gui.services import library_ops
 from gui import components, theme
-from gui.timing import debounced, staggered
+from gui.timing import debounced, staggered, next_tick
 from lib.srt import ms_to_srt_timestring
 from lib.print_status import get_quantity_rating, QUANTITIES
 
@@ -276,7 +276,7 @@ class SoundsPage(QWidget):
     def _cards_destroy_later(self, cards, cards_container):
         """Once the new cards have painted: a built audio graph takes ~10 ms to free,
         and switching sounds shouldn't wait on the last one's cleanup."""
-        QTimer.singleShot(0, lambda: self._cards_destroy(cards, cards_container))
+        next_tick(lambda: self._cards_destroy(cards, cards_container))
 
     def _cards_destroy(self, cards, cards_container):
         for card in cards:

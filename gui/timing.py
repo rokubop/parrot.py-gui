@@ -51,3 +51,9 @@ def staggered(fn, owner):
 
     run.cancel = cancel
     return run
+
+
+def next_tick(fn):
+    """Useful to run fn once waiting input and repaints are done,
+    e.g. freeing old widgets after the new ones show."""
+    QTimer.singleShot(0, fn)
