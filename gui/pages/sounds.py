@@ -88,8 +88,9 @@ class SoundsPage(QWidget):
         self.cards_scroll = QScrollArea()
         self.cards_scroll.setWidgetResizable(True)
         self.cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # Else Tab stops on it with no ring
-        self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cards_scroll.setObjectName("cardsScroll")
+        # Tab here, then arrow keys and Page Up/Down scroll the cards
+        self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         # Always on, and wide: somewhere to scroll the page from when audio
         # graphs fill the view, since the wheel over one zooms it.
         self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -127,7 +128,10 @@ class SoundsPage(QWidget):
             b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
         self.cards_scroll.setStyleSheet(
-            f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }}")
+            f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }} "
+            # Transparent until focused, so the ring doesn't shift the cards
+            f"QScrollArea#cardsScroll {{ border: 2px solid transparent; }} "
+            f"QScrollArea#cardsScroll:focus {{ border: 2px solid {t['focus']}; }}")
 
     def _sound_header_build(self):
         """Title and stats for the selected sound, view toggles, open folder."""
