@@ -9,6 +9,27 @@ import numpy as np
 current_v_ending = ".v" + str(CURRENT_VERSION) + ".srt"
 manual_ending = ".MANUAL.srt"
 
+def srt_for_source(segments_dir: str, source_name: str):
+    """The srt to use for a recording: its .MANUAL.srt if there is one, else
+    the current version's. None if it has neither."""
+    for ending in (manual_ending, current_v_ending):
+        srt_path = os.path.join(segments_dir, source_name + ending)
+        if os.path.isfile(srt_path):
+            return srt_path
+    return None
+
+def srt_files_to_use(segments_dir: str) -> List[str]:
+    """srt_for_source for every recording that has an srt in segments_dir."""
+    if not os.path.isdir(segments_dir):
+        return []
+    source_names = set()
+    for file_name in os.listdir(segments_dir):
+        for ending in (manual_ending, current_v_ending):
+            if file_name.endswith(ending):
+                source_names.add(file_name[:-len(ending)])
+    srt_paths = [srt_for_source(segments_dir, name) for name in sorted(source_names)]
+    return [srt_path for srt_path in srt_paths if srt_path]
+
 def ms_to_srt_timestring( ms: int, include_hours=True):
     if ms <= 0:
         return "00:00:00,000" if include_hours else "00:00,000"    
@@ -105,44 +126,20 @@ def parse_srt_file(srt_filename: str, rounding_ms: int, show_errors: bool = True
 
 def count_total_frames(label: str, base_folder: str, rounding_ms: int) -> int:
     frames = 0
-    segments_dir = os.path.join(base_folder, "segments")
-    if os.path.isdir(segments_dir):
-        srt_files = [x for x in os.listdir(segments_dir) if os.path.isfile(os.path.join(segments_dir, x)) and (x.endswith(current_v_ending) or x.endswith(manual_ending))]
-        for srt_file in srt_files:
-        
-            # Skip the file if a manual override file of it exists
-            if srt_file.endswith(current_v_ending) and srt_file.replace(current_v_ending, manual_ending) in srt_files:
-                continue
-            else:
-                frames += count_frames_in_srt(label, os.path.join(segments_dir, srt_file), rounding_ms)
+    for srt_path in srt_files_to_use(os.path.join(base_folder, "segments")):
+        frames += count_frames_in_srt(label, srt_path, rounding_ms)
     return frames
     
 def count_total_silence_frames(base_folder: str, rounding_ms: int) -> int:
     frames = 0
-    segments_dir = os.path.join(base_folder, "segments")
-    if os.path.isdir(segments_dir):
-        srt_files = [x for x in os.listdir(segments_dir) if os.path.isfile(os.path.join(segments_dir, x)) and (x.endswith(current_v_ending) or x.endswith(manual_ending))]
-        for srt_file in srt_files:
-
-            # Skip the file if a manual override file of it exists
-            if srt_file.endswith(current_v_ending) and srt_file.replace(current_v_ending, manual_ending) in srt_files:
-                continue
-            else:
-                frames += count_frames_in_srt(BACKGROUND_LABEL, os.path.join(segments_dir, srt_file), rounding_ms)
+    for srt_path in srt_files_to_use(os.path.join(base_folder, "segments")):
+        frames += count_frames_in_srt(BACKGROUND_LABEL, srt_path, rounding_ms)
     return frames
 
 def count_total_label_ms(label: str, base_folder: str, rounding_ms: int) -> int:
     total_ms = 0
-    segments_dir = os.path.join(base_folder, "segments")
-    if os.path.isdir(segments_dir):
-        srt_files = [x for x in os.listdir(segments_dir) if os.path.isfile(os.path.join(segments_dir, x)) and x.endswith(".v" + str(CURRENT_VERSION) + ".srt") or x.endswith(".MANUAL.srt")]
-        for srt_file in srt_files:
-
-            # Skip the file if a manual override file of it exists
-            if srt_file.endswith(current_v_ending) and srt_file.replace(current_v_ending, manual_ending) in srt_files:
-                continue
-            else:
-                total_ms += count_label_ms_in_srt(label, os.path.join(segments_dir, srt_file), rounding_ms)
+    for srt_path in srt_files_to_use(os.path.join(base_folder, "segments")):
+        total_ms += count_label_ms_in_srt(label, srt_path, rounding_ms)
     return total_ms
 
 def count_label_ms_in_srt(label: str, srt_filename: str, rounding_ms: int) -> int:
