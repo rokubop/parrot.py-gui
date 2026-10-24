@@ -109,22 +109,21 @@ class SoundsPage(QWidget):
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
         self.open_folder_btn.setStyleSheet(components.ghost_button_style())
-        # View and Normalize are settings, not actions: the app-wide :checked
-        # accent fill would make them read as calls to action.
-        toggle_style = (
+        # Settings, not actions: skip the app-wide :checked accent fill
+        setting_toggle_style = (
             # $text, not $text_dim: dim on the $button fill measures 3.29, and
             # the unselected half of a segmented control still has to be read.
-            f"QPushButton#viewToggle {{ background-color: {t['button']}; "
+            f"QPushButton#settingToggle {{ background-color: {t['button']}; "
             f"color: {t['text']}; border: 1px solid {t['control_border']}; "
             f"border-radius: {t['radius']}; padding: 5px 14px; }} "
-            f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
+            f"QPushButton#settingToggle:checked {{ background-color: {t['panel']}; "
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
-            f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }} "
-            f"QPushButton#viewToggle:focus {{ "
+            f"QPushButton#settingToggle:hover {{ color: {t['text_bright']}; }} "
+            f"QPushButton#settingToggle:focus {{ "
             f"border: 2px solid {t['focus']}; padding: 4px 13px; }}")
         for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
-            b.setStyleSheet(toggle_style)
-        self.view_label.setStyleSheet(f"color: {t['text_dim']};")
+            b.setStyleSheet(setting_toggle_style)
+        self.mode_label.setStyleSheet(f"color: {t['text_dim']};")
         self.cards_scroll.setStyleSheet(
             f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }} "
             # Transparent until focused, so the ring doesn't shift the cards
@@ -157,13 +156,13 @@ class SoundsPage(QWidget):
         actions.addWidget(self.open_folder_btn)
         actions.addStretch()
 
-        self.view_label = QLabel("View:")
-        actions.addWidget(self.view_label)
+        self.mode_label = QLabel("View:")
+        actions.addWidget(self.mode_label)
         self._mode_group = QButtonGroup(self)
         self._mode_buttons = {}
         for mode, text in ((WAVEFORM, "Waveform"), (SPECTROGRAM, "Spectrogram")):
             btn = QPushButton(text)
-            btn.setObjectName("viewToggle")
+            btn.setObjectName("settingToggle")
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setChecked(mode == self._mode)
@@ -173,7 +172,7 @@ class SoundsPage(QWidget):
             actions.addWidget(btn)
 
         self.normalize_btn = QPushButton("Normalize")
-        self.normalize_btn.setObjectName("viewToggle")
+        self.normalize_btn.setObjectName("settingToggle")
         self.normalize_btn.setCheckable(True)
         self.normalize_btn.setChecked(self._normalized)
         self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
