@@ -132,7 +132,6 @@ class SoundsPage(QWidget):
             f"QScrollArea#cardsScroll:focus {{ border: 2px solid {t['focus']}; }}")
 
     def _sound_header_build(self):
-        """Title and stats for the selected sound, view toggles, open folder."""
         header = QFrame()
         header.setObjectName("soundHeader")
         self.sound_header = header
@@ -277,7 +276,6 @@ class SoundsPage(QWidget):
     # ---- header --------------------------------------------------------
 
     def _sound_header_update(self, label, recordings):
-        # Everything in the header is about a sound
         self.sound_header.setVisible(label is not None)
         if label is None:
             return

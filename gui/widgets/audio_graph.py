@@ -116,8 +116,7 @@ class AudioGraph(QWidget):
         except UnreadableWav as exc:
             return str(exc)
         self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
-        # From the samples, not the header: some recordings store a byte
-        # count in nframes, which doubles the length.
+        # From the samples, not the header, which can overcount (see wav_files)
         self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
 
         self.plot.setLimits(xMin=0, xMax=self._duration)

@@ -31,7 +31,7 @@ DARK = {
     "disabled_bg": "#2f343c",
     # Translucent so a selected row's own colours, like a rating, survive
     "selection": "rgba(65, 217, 127, 0.22)",
-    # Plots: green waveform, blue detection
+    # Audio graphs: green waveform, blue detection
     "plot_bg": "#15181c",
     "wave": (90, 230, 150),
     "wave_fill": (70, 215, 135, 60),
