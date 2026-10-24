@@ -109,10 +109,8 @@ class SoundsPage(QWidget):
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
         self.open_folder_btn.setStyleSheet(components.ghost_button_style())
-        # Settings, not actions: skip the app-wide :checked accent fill
         setting_toggle_style = (
-            # $text, not $text_dim: dim on the $button fill measures 3.29, and
-            # the unselected half of a segmented control still has to be read.
+            # t['text'], not t['text_dim'], for color contrast
             f"QPushButton#settingToggle {{ background-color: {t['button']}; "
             f"color: {t['text']}; border: 1px solid {t['control_border']}; "
             f"border-radius: {t['radius']}; padding: 5px 14px; }} "
