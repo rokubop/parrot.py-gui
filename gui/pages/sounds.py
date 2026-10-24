@@ -211,7 +211,9 @@ class SoundsPage(QWidget):
         self._cards_populate(self.sound_list.currentItem())
 
     def _cards_populate(self, item):
-        """Swap in the sound's cards at once; their audio graphs fill in after.
+        """Builds a new box of placeholder cards off-screen and swaps it in, so
+        the sound shows in one repaint. Audio graphs fill in after, and the old
+        box is freed once the new one is on screen.
 
         sound_list change (debounced) -> _cards_show_selected -> here
             _sound_header_update
