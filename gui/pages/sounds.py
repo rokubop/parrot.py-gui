@@ -89,10 +89,8 @@ class SoundsPage(QWidget):
         self.cards_scroll.setWidgetResizable(True)
         self.cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.cards_scroll.setObjectName("cardsScroll")
-        # Tab here, then arrow keys and Page Up/Down scroll the cards
         self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        # Always on, and wide: somewhere to scroll the page from when audio
-        # graphs fill the view, since the wheel over one zooms it.
+        # The wheel over a graph zooms it, so this is how to scroll when graphs fill the view
         self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.cards_scroll.setWidget(self._cards_container_new()[0])
         right_layout.addWidget(self.cards_scroll)
