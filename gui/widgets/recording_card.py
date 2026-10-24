@@ -8,11 +8,9 @@ from gui import theme
 
 
 def _parse_when(name):
-    """Date and time from the filename's __<unix-timestamp>, or "" if it has none.
-    The time too, since several takes in one sitting is normal.
-
-    "mici_1__1693668038" -> "Sep 02, 2023, 10:20 AM"
-    """
+    """Filenames end in __<unix-timestamp>; decode it to a date and time. The
+    time matters: several takes of one sound in a sitting is the normal way to
+    record, and a date alone leaves those cards reading identically."""
     tail = name.rsplit("__", 1)[-1]
     if not tail.isdigit():
         return ""
