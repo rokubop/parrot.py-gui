@@ -42,9 +42,6 @@ class RecordingCard(QFrame):
             "RecordingCard { border: 1px solid %s; border-radius: %s; "
             "background-color: %s; }" % (t["border"], t["radius"], t["card"]))
 
-        # A pyqtgraph plot per recording is the expensive part of switching
-        # sounds (~50-220 ms each). A placeholder of the same height shows
-        # instantly; the Sounds page calls build_audio_graph() one card at a time.
         self.audio_graph = None
         self._audio_graph_tried = False
         self._mode = MODE_WAVEFORM
