@@ -211,7 +211,17 @@ class SoundsPage(QWidget):
         self._cards_show_sound(self.sound_list.currentItem())
 
     def _cards_show_sound(self, item):
-        """Swap in the sound's cards at once; their audio graphs fill in after."""
+        """Swap in the sound's cards at once; their audio graphs fill in after.
+
+        sound_list change (debounced) -> _cards_show_selected -> here
+            _sound_header_update
+            _cards_build
+                _cards_container_new
+                _card_new, per recording
+            _cards_swap_in
+            _audio_graphs_build (staggered)
+            _cards_destroy_later -> _cards_destroy
+        """
         self._audio_graphs_build.cancel()
         label = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         recordings = self.app_state.get_recordings_for_label(label) if label else []
