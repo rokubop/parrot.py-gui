@@ -237,6 +237,7 @@ class SoundsPage(QWidget):
         return container, cards
 
     def _card_new(self, rec):
+        """One recording's card, in the current mode and normalize setting."""
         base = os.path.splitext(rec["filename"])[0]
         card = RecordingCard(base, rec["wav_path"], rec["srt_path"])
         card.set_mode(self._mode)
@@ -244,6 +245,7 @@ class SoundsPage(QWidget):
         return card
 
     def _cards_container_new(self):
+        """The empty box the cards stack in, top-aligned. Goes in cards_scroll."""
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(20, 12, 24, 12)
