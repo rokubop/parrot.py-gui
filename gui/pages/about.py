@@ -65,7 +65,7 @@ class AboutPage(QWidget):
             button = QPushButton(name)
             button.setFlat(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             button.clicked.connect(lambda _=False, s=section: self._go_to(s))
             nav_layout.addWidget(button)
             self._nav_buttons.append(button)
@@ -179,7 +179,8 @@ class AboutPage(QWidget):
                 f"{t['accent'] if active else 'transparent'}; "
                 f"color: {t['text_bright'] if active else t['text_dim']}; "
                 f"font-weight: {'bold' if active else 'normal'}; }} "
-                f"QPushButton:hover {{ color: {t['text_bright']}; }}")
+                f"QPushButton:hover {{ color: {t['text_bright']}; }} "
+                + components.focus_ring("QPushButton", "3px 8px 3px 10px"))
 
     def _apply_styles(self):
         t = theme.colors()
@@ -198,8 +199,9 @@ class AboutPage(QWidget):
 def _link_style():
     t = theme.colors()
     return (f"QPushButton {{ color: {t['accent']}; background: transparent; "
-            f"border: none; text-align: left; padding: 2px 0; }} "
-            f"QPushButton:hover {{ color: {t['text_bright']}; }}")
+            f"border: none; text-align: left; padding: 2px; }} "
+            f"QPushButton:hover {{ color: {t['text_bright']}; }} "
+            + components.focus_ring("QPushButton", "0px"))
 
 
 def _text_link(text, slot):
@@ -207,7 +209,7 @@ def _text_link(text, slot):
     button = QPushButton(text)
     button.setFlat(True)
     button.setCursor(Qt.CursorShape.PointingHandCursor)
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     button.setStyleSheet(_link_style())
     button.clicked.connect(slot)
     return button

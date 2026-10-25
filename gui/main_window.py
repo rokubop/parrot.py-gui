@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
         self.training_chip = QPushButton("")
         self.training_chip.setFlat(True)
         self.training_chip.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.training_chip.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.training_chip.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.training_chip.setStyleSheet(
             f"QPushButton {{ color: {theme.colors()['accent']}; border: none; "
             f"padding: 0 8px; text-align: left; }}")

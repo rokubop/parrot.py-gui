@@ -75,7 +75,7 @@ class SetupPanel(QWidget):
         self.button = QPushButton("")
         self.button.setObjectName("primaryAction")
         self.button.setMinimumHeight(32)
-        self.button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.button.setStyleSheet(primary_button_style())
         self.button.clicked.connect(
             lambda: self.action_clicked.emit(self._current or ""))

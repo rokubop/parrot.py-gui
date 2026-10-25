@@ -83,12 +83,12 @@ class DetectionPanel(QGroupBox):
         self.duration_combo.currentIndexChanged.connect(self._refresh_apply)
         row.addWidget(self.duration_combo)
         self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.apply_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.apply_btn.setToolTip("Re-detect at this threshold / type")
         self.apply_btn.clicked.connect(self.apply)
         row.addWidget(self.apply_btn)
         self.reset_btn = QPushButton("Auto-detect")
-        self.reset_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.reset_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.reset_btn.setToolTip("Let detection find the threshold automatically "
                                   "(drops the manual override); the slider then "
                                   "shows what it picked")

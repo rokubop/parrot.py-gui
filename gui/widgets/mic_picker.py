@@ -45,7 +45,7 @@ class MicPicker(QWidget):
         self.rescan_btn.setToolTip(
             "Scan for microphones plugged in since Parrot.py started")
         self.rescan_btn.setMaximumWidth(48)
-        self.rescan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.rescan_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.rescan_btn.clicked.connect(self.rescan)
         h.addWidget(self.rescan_btn)
 

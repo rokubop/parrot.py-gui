@@ -321,7 +321,7 @@ class TrainView(QWidget):
 
         top = QHBoxLayout()
         back = QPushButton("← Back to Models")
-        back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        back.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         back.clicked.connect(self._on_back)
         top.addWidget(back)
         top.addWidget(components.heading("New model", "title"))
@@ -366,13 +366,14 @@ class TrainView(QWidget):
         quiet = (f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
                  f"border: none; padding: 2px 6px; }} "
                  f"QPushButton:hover {{ color: {t['text_bright']}; }} "
-                 f"QPushButton::menu-indicator {{ width: 0px; }}")
+                 f"QPushButton::menu-indicator {{ width: 0px; }} "
+                 + components.focus_ring("QPushButton", "0px 4px"))
 
         # "The same sounds as last time" is the common case for a second model;
         # every model already knows its own label list.
         self.copy_btn = QPushButton("Use sounds from…")
         self.copy_btn.setFlat(True)
-        self.copy_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.copy_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.copy_btn.setStyleSheet(quiet)
         self.copy_menu = QMenu(self.copy_btn)
         self.copy_menu.aboutToShow.connect(self._fill_copy_menu)
@@ -382,7 +383,7 @@ class TrainView(QWidget):
         for text, checked in (("All", True), ("None", False)):
             btn = QPushButton(text)
             btn.setFlat(True)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setStyleSheet(quiet)
             btn.clicked.connect(lambda _c, on=checked: self._set_all_checked(on))
             list_head.addWidget(btn)
@@ -612,7 +613,7 @@ class TrainView(QWidget):
         # Only routes to Sounds when there is genuinely nothing to train on -
         # otherwise it competes with the one button that matters.
         self.to_sounds_btn = QPushButton("Go to Sounds")
-        self.to_sounds_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.to_sounds_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.to_sounds_btn.clicked.connect(lambda: self.navigate.emit("Sounds"))
         v.addWidget(self.to_sounds_btn)
 
@@ -696,7 +697,7 @@ class TrainView(QWidget):
         mode_row.addWidget(self.net_strip)
         mode_row.addStretch()
         self.mode_btn = QPushButton("Show log")
-        self.mode_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.mode_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.mode_btn.setToolTip(
             "The trainer's own output, exactly as the terminal shows it")
         self.mode_btn.clicked.connect(self._toggle_mode)
@@ -717,7 +718,7 @@ class TrainView(QWidget):
         recover = QHBoxLayout(self.recover_row)
         recover.setContentsMargins(0, 8, 0, 0)
         back_to_setup = QPushButton("← Change something and try again")
-        back_to_setup.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        back_to_setup.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         back_to_setup.clicked.connect(self._back_to_setup)
         recover.addWidget(back_to_setup)
         recover.addStretch()
@@ -772,14 +773,14 @@ class TrainView(QWidget):
         controls.setContentsMargins(0, 10, 0, 0)
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setMinimumHeight(32)
-        self.cancel_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cancel_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.cancel_btn.setToolTip(
             "Stop before training starts. Nothing is saved.")
         self.cancel_btn.clicked.connect(self._on_stop)
         controls.addWidget(self.cancel_btn)
         self.stop_btn = QPushButton("Finish training")
         self.stop_btn.setMinimumHeight(32)
-        self.stop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.stop_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.stop_btn.setToolTip(
             "End after this epoch and keep the best model so far")
         self.stop_btn.clicked.connect(self._on_stop)
@@ -908,17 +909,17 @@ class TrainView(QWidget):
         live.clicked.connect(self._on_test_live)
         row.addWidget(live)
         accuracy = QPushButton("Test accuracy")
-        accuracy.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        accuracy.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         accuracy.setToolTip("Classify every sound's recorded segments with this model")
         accuracy.clicked.connect(self._on_test_accuracy)
         row.addWidget(accuracy)
         again = QPushButton("Train another")
-        again.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        again.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         again.clicked.connect(self.start)
         row.addWidget(again)
         row.addStretch()
         finish = QPushButton("Done")
-        finish.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        finish.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         finish.clicked.connect(lambda: self.done.emit(self._trained_name or ""))
         row.addWidget(finish)
         v.addLayout(row)

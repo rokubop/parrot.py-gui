@@ -95,12 +95,12 @@ class _ConfirmDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addStretch()
         cancel = QPushButton("Cancel")
-        cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        cancel.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         cancel.clicked.connect(self.reject)
         buttons.addWidget(cancel)
 
         self._confirm_btn = QPushButton(confirm_label)
-        self._confirm_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._confirm_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self._confirm_btn.setEnabled(False)
         self._confirm_btn.setStyleSheet(
             "QPushButton { background-color: #b03636; border: 1px solid #d14b4b;"

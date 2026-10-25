@@ -99,7 +99,7 @@ class SoundLibraryPage(QWidget):
         left_layout.addWidget(self.label_list)
 
         new_sound_btn = QPushButton("+ New sound")
-        new_sound_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        new_sound_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         new_sound_btn.setToolTip("Create a new (empty) sound, then add recordings to it")
         new_sound_btn.clicked.connect(self._on_new_sound)
         left_layout.addWidget(new_sound_btn)
@@ -157,7 +157,8 @@ class SoundLibraryPage(QWidget):
             f"border-radius: {t['radius']}; padding: 5px 14px; }} "
             f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
-            f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }}")
+            f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }} "
+            + components.focus_ring("QPushButton#viewToggle", "4px 13px"))
         for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
             b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
@@ -195,7 +196,7 @@ class SoundLibraryPage(QWidget):
         self.add_recording_btn = QPushButton("+ Add recording")
         self.add_recording_btn.setObjectName("primaryAction")
         self.add_recording_btn.setMinimumHeight(34)
-        self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.add_recording_btn.setToolTip("Record a new session for this sound - R")
         self.add_recording_btn.clicked.connect(self._on_add_recording)
         actions.addWidget(self.add_recording_btn)
@@ -213,7 +214,7 @@ class SoundLibraryPage(QWidget):
             btn = QPushButton(text)
             btn.setObjectName("viewToggle")
             btn.setCheckable(True)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setChecked(mode == self._mode)
             btn.setToolTip("Toggle waveform / spectrogram (S)")
             btn.clicked.connect(lambda _checked, m=mode: self._set_mode(m))
@@ -225,7 +226,7 @@ class SoundLibraryPage(QWidget):
         self.normalize_btn.setObjectName("viewToggle")
         self.normalize_btn.setCheckable(True)
         self.normalize_btn.setChecked(self._normalized)
-        self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.normalize_btn.setToolTip("Toggle amplitude normalization (A)")
         self.normalize_btn.toggled.connect(self._set_normalized)
         actions.addSpacing(12)
@@ -244,7 +245,7 @@ class SoundLibraryPage(QWidget):
             btn = QPushButton(text)
             btn.setObjectName("secondaryAction")
             btn.setFlat(True)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setToolTip(tip)
             btn.clicked.connect(slot)
             secondary.addWidget(btn)

@@ -940,11 +940,12 @@ def _flat_help_button(parent):
     t = theme.colors()
     btn = QPushButton("?  Help", parent)
     btn.setFlat(True)
-    btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     btn.setStyleSheet(
         f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
         f"border: none; padding: 2px 6px; }} "
-        f"QPushButton:hover {{ color: {t['text_bright']}; }}")
+        f"QPushButton:hover {{ color: {t['text_bright']}; }} "
+        + components.focus_ring("QPushButton", "0px 4px"))
     return btn
 
 

@@ -339,7 +339,7 @@ class ModelsPage(QWidget):
         # Plain, like "+ New sound": the accent marks the panel's main action
         # (Test live here, Start training on the training page).
         self.train_btn = QPushButton("+ New model")
-        self.train_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.train_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.train_btn.setToolTip("Train a new model from your recorded sounds")
         self.train_btn.clicked.connect(self.train_requested.emit)
         left_layout.addWidget(self.train_btn)
@@ -497,7 +497,7 @@ class ModelsPage(QWidget):
         actions.addWidget(self.live_test_btn)
         self.accuracy_btn = QPushButton("Test accuracy")
         self.accuracy_btn.setMinimumHeight(34)
-        self.accuracy_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.accuracy_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.accuracy_btn.setToolTip(
             "Classify every sound's recorded segments with this model")
         self.accuracy_btn.clicked.connect(self._on_test_accuracy)

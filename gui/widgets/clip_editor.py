@@ -110,7 +110,7 @@ class ClipEditorWidget(QWidget):
 
         def button(text, slot, tip, checkable=False):
             btn = QPushButton(text)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setToolTip(tip)
             btn.setCheckable(checkable)
             btn.clicked.connect(slot)

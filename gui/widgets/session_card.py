@@ -200,7 +200,7 @@ class SessionCard(QFrame):
         # labels. Let the button size to its text.
         btn = QPushButton(label)
         btn.setToolTip(tooltip)
-        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         btn.clicked.connect(slot)
         return btn
 
@@ -212,7 +212,7 @@ class SessionCard(QFrame):
         self.play_btn = QPushButton(self._play_icon, " Play")
         self.play_btn.setIconSize(QSize(13, 13))
         self.play_btn.setFixedWidth(90)
-        self.play_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.play_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
 
@@ -248,7 +248,7 @@ class SessionCard(QFrame):
         self.menu_btn.setIcon(_dots_icon(t["text"]))
         self.menu_btn.setIconSize(QSize(13, 13))
         self.menu_btn.setToolTip("Rename, move, open folder, or delete this recording")
-        self.menu_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.menu_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.menu_btn.setFixedWidth(40)
         self.menu_btn.clicked.connect(self._show_menu)
         row.addWidget(self.menu_btn)

@@ -185,7 +185,7 @@ def primary_button(text, slot=None, height=34):
     btn = QPushButton(text)
     btn.setObjectName("primaryAction")
     btn.setMinimumHeight(height)
-    btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     btn.setStyleSheet(primary_button_style())
     if slot is not None:
         btn.clicked.connect(slot)
@@ -243,19 +243,29 @@ def lock_width(button, *texts, floor=0):
     return button
 
 
+def focus_ring(selector, padding):
+    """The app-wide focus ring, for a button whose own stylesheet sets
+    ``border`` and so hides the theme's. ``padding`` is the button's own less
+    the 2px border, so focusing it moves nothing."""
+    t = theme.colors()
+    return (f"{selector}:focus {{ border: 2px solid {t['focus']}; "
+            f"border-radius: {t['radius']}; padding: {padding}; }} ")
+
+
 def ghost_button_style():
     """Borderless, dim, second-class actions - Rename / Clone / Delete."""
     t = theme.colors()
     return (f"QPushButton#secondaryAction {{ color: {t['text_dim']}; "
             f"border: none; background: transparent; padding: 3px 8px; }} "
-            f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }}")
+            f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }} "
+            + focus_ring("QPushButton#secondaryAction", "1px 6px"))
 
 
 def ghost_button(text, slot=None, tip=None):
     btn = QPushButton(text)
     btn.setObjectName("secondaryAction")
     btn.setFlat(True)
-    btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     btn.setStyleSheet(ghost_button_style())
     if tip:
         btn.setToolTip(tip)

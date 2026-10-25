@@ -135,7 +135,7 @@ class RecordingView(QWidget):
 
         top = QHBoxLayout()
         back = QPushButton("← Back to Sounds")
-        back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        back.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         back.clicked.connect(self._on_back)
         top.addWidget(back)
         self.title = QLabel("Record")
@@ -238,11 +238,11 @@ class RecordingView(QWidget):
         # Pinned across all three labels, or Pause shoves Start over along.
         components.lock_width(self.record_btn, "Record", "Pause", "Resume",
                               "Starting…", floor=150)
-        self.record_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.record_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.record_btn.clicked.connect(self._on_primary)
         controls.addWidget(self.record_btn)
         self.start_over_btn = QPushButton("Start over")
-        self.start_over_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.start_over_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.start_over_btn.setIcon(icons.restart())
         self.start_over_btn.setToolTip("Delete this whole take and start again")
         self.start_over_btn.clicked.connect(self._on_start_over)
@@ -260,7 +260,7 @@ class RecordingView(QWidget):
         # points at the one thing you cannot have meant yet.
         self.finish_btn = QPushButton("Finish")
         self.finish_btn.setMinimumWidth(130)
-        self.finish_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.finish_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.finish_btn.clicked.connect(self._on_done)
         controls.addWidget(self.finish_btn)
         root.addLayout(controls)
@@ -621,7 +621,8 @@ class RecordingView(QWidget):
         self.record_btn.setStyleSheet(
             (f"QPushButton {{ background-color: {color}; color: #ffffff; "
              f"font-weight: bold; border: none; }}"
-             f" QPushButton:hover {{ background-color: {color}; }}") if color else "")
+             f" QPushButton:hover {{ background-color: {color}; }} "
+             + components.focus_ring("QPushButton", "4px 14px")) if color else "")
         self.state_label.setText(ind_text)
         self.state_label.setStyleSheet(f"color: {ind_color}; font-weight: bold;")
         self.waveform.set_trace_color(trace)

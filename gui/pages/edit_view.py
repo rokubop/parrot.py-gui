@@ -70,7 +70,7 @@ class EditRecordingView(QWidget):
 
         top = QHBoxLayout()
         back = QPushButton("← Back to Sounds")
-        back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        back.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         back.clicked.connect(self._on_back)
         top.addWidget(back)
         self.title = QLabel("Edit recording")
@@ -78,7 +78,7 @@ class EditRecordingView(QWidget):
         top.addWidget(self.title)
         top.addStretch()
         self.save_btn = QPushButton("Save")
-        self.save_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.save_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.save_btn.setMinimumWidth(120)
         self.save_btn.setToolTip("Commit your edits to this recording - Ctrl+S")
         self.save_btn.clicked.connect(self._on_save)

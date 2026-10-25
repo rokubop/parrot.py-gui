@@ -179,7 +179,7 @@ class SettingsPage(QWidget):
         self.rescan_btn.setToolTip(
             "Scan for devices plugged in since Parrot.py started")
         self.rescan_btn.setMaximumWidth(48)
-        self.rescan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.rescan_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.rescan_btn.clicked.connect(self._on_rescan)
         out_row.addWidget(self.rescan_btn)
         model_form.addRow("Output device:", out_row)
@@ -340,7 +340,7 @@ class SettingsPage(QWidget):
         row.addWidget(lbl)
         row.addStretch()
         btn = QPushButton("Open folder")
-        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         btn.clicked.connect(lambda: self._open(path))
         row.addWidget(btn)
         return row

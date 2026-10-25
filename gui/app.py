@@ -5,7 +5,7 @@ from PyQt6.QtGui import QIcon
 import pyqtgraph as pg
 from gui.main_window import MainWindow
 from gui import theme, indicator_style
-from gui.widgets import wheel_guard
+from gui.widgets import space_guard, wheel_guard
 
 # macOS docks expect the rounded-tile version (a free-form mark renders
 # oversized next to other apps). Windows takes the multi-size .ico so the
@@ -42,6 +42,7 @@ def create_app(argv):
 
     theme.apply(app, theme.current_name())
     wheel_guard.install(app)
+    space_guard.install(app)
 
     # Playback writes to PortAudio on a background thread. Quitting without
     # waiting for it tears the interpreter down mid-write, which segfaults.
