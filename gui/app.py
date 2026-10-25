@@ -3,7 +3,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 import pyqtgraph as pg
-from gui.windows.main_window import MainWindow
+from gui.main_window import MainWindow
 from gui import theme, indicator_style
 from gui.widgets import wheel_guard
 

@@ -9,12 +9,21 @@ from PyQt6.QtGui import QAction, QActionGroup, QShortcut, QKeySequence
 from PyQt6.QtCore import Qt, QTimer, QSize
 from gui.state import AppState
 from gui.services import profiles
-from gui.windows.home import HomePage
-from gui.windows.library import SoundLibraryPage
+from gui.pages.home import HomePage
+from gui.pages.library import SoundLibraryPage
 from gui import theme, icons
 
 
 class MainWindow(QMainWindow):
+    """
+    ┌ toolbar ─────────────────────────────────────────────────┐
+    │ [ Home ] [ Sounds ] ...    nav_actions                   │
+    ├ page_stack ──────────────────────────────────────────────┤
+    │ individual page shown by _show_page()                    │
+    │                                                          │
+    └──────────────────────────────────────────────────────────┘
+    """
+
     def __init__(self):
         super().__init__()
         profile = profiles.current_profile()
@@ -24,17 +33,17 @@ class MainWindow(QMainWindow):
 
         self.app_state = AppState(self)
 
-        self.stack = QStackedWidget()
-        self.setCentralWidget(self.stack)
+        self.page_stack = QStackedWidget()
+        self.setCentralWidget(self.page_stack)
 
         # only Home + Sounds build eagerly; other tabs cost 30-200 ms each
         # (some query audio devices), so they build lazily on first use
         self.home_page = HomePage(self.app_state, self)
-        self.stack.addWidget(self.home_page)
+        self.page_stack.addWidget(self.home_page)
         self.home_page.navigate.connect(self._go_to_page)
 
         self.library_page = SoundLibraryPage(self.app_state, self)
-        self.stack.addWidget(self.library_page)
+        self.page_stack.addWidget(self.library_page)
         self.library_page.record_requested.connect(self._open_recording)
         self.library_page.edit_requested.connect(self._open_edit)
 
@@ -46,7 +55,7 @@ class MainWindow(QMainWindow):
         self.edit_view = None
         self.train_view = None
 
-        self.stack.currentChanged.connect(self._on_stack_changed)
+        self.page_stack.currentChanged.connect(self._on_stack_changed)
 
         # Toolbar navigation - checkable actions so the current tab is obvious.
         toolbar = QToolBar("Navigation")
@@ -74,7 +83,7 @@ class MainWindow(QMainWindow):
             toolbar.widgetForAction(action).setFocusPolicy(Qt.FocusPolicy.TabFocus)
             self.nav_actions[text] = action
         self.nav_actions["Home"].setChecked(True)
-        self.stack.setCurrentWidget(self.home_page)
+        self.page_stack.setCurrentWidget(self.home_page)
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -121,60 +130,60 @@ class MainWindow(QMainWindow):
 
     def _get_models_page(self):
         if self.models_page is None:
-            from gui.windows.models import ModelsPage
+            from gui.pages.models import ModelsPage
             self.models_page = ModelsPage(self.app_state, self)
             self.models_page.train_requested.connect(self._open_train)
             self.models_page.navigate.connect(self._go_to_page)
-            self.stack.addWidget(self.models_page)
+            self.page_stack.addWidget(self.models_page)
         return self.models_page
 
     def _get_integrations_page(self):
         if self.integrations_page is None:
-            from gui.windows.integrations import IntegrationsPage
+            from gui.pages.integrations import IntegrationsPage
             self.integrations_page = IntegrationsPage(self.app_state, self)
-            self.stack.addWidget(self.integrations_page)
+            self.page_stack.addWidget(self.integrations_page)
         return self.integrations_page
 
     def _get_settings_page(self):
         if self.settings_page is None:
-            from gui.windows.settings import SettingsPage
+            from gui.pages.settings import SettingsPage
             self.settings_page = SettingsPage(self.app_state, self)
-            self.stack.addWidget(self.settings_page)
+            self.page_stack.addWidget(self.settings_page)
         return self.settings_page
 
     def _get_about_page(self):
         if self.about_page is None:
-            from gui.windows.about import AboutPage
+            from gui.pages.about import AboutPage
             self.about_page = AboutPage(self.app_state, self)
-            self.stack.addWidget(self.about_page)
+            self.page_stack.addWidget(self.about_page)
         return self.about_page
 
     def _get_recording_view(self):
         if self.recording_view is None:
-            from gui.windows.recording_view import RecordingView
+            from gui.pages.recording_view import RecordingView
             self.recording_view = RecordingView(self.app_state, self)
             self.recording_view.done.connect(self._return_to_sounds)
             self._wire_keybindings(self.recording_view)
-            self.stack.addWidget(self.recording_view)
+            self.page_stack.addWidget(self.recording_view)
         return self.recording_view
 
     def _get_edit_view(self):
         if self.edit_view is None:
-            from gui.windows.edit_view import EditRecordingView
+            from gui.pages.edit_view import EditRecordingView
             self.edit_view = EditRecordingView(self.app_state, self)
             self.edit_view.done.connect(self._return_to_sounds)
             self._wire_keybindings(self.edit_view)
-            self.stack.addWidget(self.edit_view)
+            self.page_stack.addWidget(self.edit_view)
         return self.edit_view
 
     def _get_train_view(self):
         if self.train_view is None:
-            from gui.windows.train_view import TrainView
+            from gui.pages.train_view import TrainView
             self.train_view = TrainView(self.app_state, self)
             self.train_view.done.connect(self._return_to_models)
             self.train_view.navigate.connect(self._go_to_page)
             self.train_view.run_state.connect(self._on_training_state)
-            self.stack.addWidget(self.train_view)
+            self.page_stack.addWidget(self.train_view)
         return self.train_view
 
     def _go_to_page(self, name):
@@ -185,17 +194,17 @@ class MainWindow(QMainWindow):
 
     def _show_page(self, name):
         if name == "Home":
-            self.stack.setCurrentWidget(self.home_page)
+            self.page_stack.setCurrentWidget(self.home_page)
         elif name == "Sounds":
-            self.stack.setCurrentWidget(self.library_page)
+            self.page_stack.setCurrentWidget(self.library_page)
         elif name == "Models":
-            self.stack.setCurrentWidget(self._get_models_page())
+            self.page_stack.setCurrentWidget(self._get_models_page())
         elif name == "Integrations":
-            self.stack.setCurrentWidget(self._get_integrations_page())
+            self.page_stack.setCurrentWidget(self._get_integrations_page())
         elif name == "Settings":
-            self.stack.setCurrentWidget(self._get_settings_page())
+            self.page_stack.setCurrentWidget(self._get_settings_page())
         elif name == "About":
-            self.stack.setCurrentWidget(self._get_about_page())
+            self.page_stack.setCurrentWidget(self._get_about_page())
 
     # ---- sub-views -----------------------------------------------------
 
@@ -205,17 +214,17 @@ class MainWindow(QMainWindow):
             view.start_for(label)
         else:
             view.start_new()
-        self.stack.setCurrentWidget(view)
+        self.page_stack.setCurrentWidget(view)
 
     def _open_edit(self, wav_path):
         view = self._get_edit_view()
         view.start_for(wav_path)
-        self.stack.setCurrentWidget(view)
+        self.page_stack.setCurrentWidget(view)
 
     def _open_train(self):
         view = self._get_train_view()
         view.start()
-        self.stack.setCurrentWidget(view)
+        self.page_stack.setCurrentWidget(view)
 
     def _on_training_state(self, text):
         """Live run, or "" for none. Click returns to it. Worded, not a glyph:
@@ -225,19 +234,19 @@ class MainWindow(QMainWindow):
 
     def _return_to_models(self, model_name):
         page = self._get_models_page()
-        self.stack.setCurrentWidget(page)
+        self.page_stack.setCurrentWidget(page)
         self.nav_actions["Models"].setChecked(True)
         if model_name:
             page.select_model(model_name)
 
     def _return_to_sounds(self, label):
-        self.stack.setCurrentWidget(self.library_page)
+        self.page_stack.setCurrentWidget(self.library_page)
         self.nav_actions["Sounds"].setChecked(True)
         if label:
             self.library_page._select_label_by_name(label)
 
     def _on_stack_changed(self, _index):
-        current = self.stack.currentWidget()
+        current = self.page_stack.currentWidget()
         if self.recording_view is not None and current is not self.recording_view:
             self.recording_view.stop_worker()
         if self.edit_view is not None and current is not self.edit_view:
@@ -326,7 +335,7 @@ class MainWindow(QMainWindow):
             event.ignore()
 
     def open_profiles_dialog(self):
-        from gui.windows.profiles import ProfilesDialog
+        from gui.pages.profiles import ProfilesDialog
         dialog = ProfilesDialog(self.app_state, self)
         dialog.exec()
         self._refresh_profile_chip()
@@ -414,9 +423,9 @@ class MainWindow(QMainWindow):
         sig = getattr(page, "keybindings_changed", None)
         if sig is not None:
             sig.connect(lambda p=page: self._refresh_keybindings()
-                        if self.stack.currentWidget() is p else None)
+                        if self.page_stack.currentWidget() is p else None)
 
     def _refresh_keybindings(self):
-        page = self.stack.currentWidget()
+        page = self.page_stack.currentWidget()
         getter = getattr(page, "keybinding_hint", None)
         self.keys_label.setText(getter() if callable(getter) else "")

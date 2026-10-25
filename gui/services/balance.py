@@ -10,9 +10,8 @@ Frames, not seconds, are the trainer's unit. Frames times `ms_per_frame` is
 ~4% off the seconds the Sounds tab shows (sliding windows, trailing partials),
 so the table never converts; `frames_as_minutes` is the one exception.
 """
-import math
 
-from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import MS_PER_FRAME
 
 # What the trainer would have to reach for a label to carry full weight. A label
 # landing under this is under-represented however good its rating looks.
@@ -20,7 +19,7 @@ FULL_WEIGHT = 0.95
 
 
 def ms_per_frame():
-    return math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
+    return MS_PER_FRAME
 
 
 def frames_as_minutes(frames):

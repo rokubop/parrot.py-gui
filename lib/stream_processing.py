@@ -1,9 +1,8 @@
 from .typing import DetectionLabel, DetectionFrame, DetectionEvent, DetectionState
-from config.config import BACKGROUND_LABEL, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, RATE, CURRENT_VERSION, CURRENT_DETECTION_STRATEGY, THRESHOLD_DETECTION, TWO_PASS_DETECTION
+from config.config import BACKGROUND_LABEL, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, MS_PER_FRAME, RATE, CURRENT_VERSION, CURRENT_DETECTION_STRATEGY, THRESHOLD_DETECTION, TWO_PASS_DETECTION
 from lib.frame_stats import stat_arrays, drop_cache
 from typing import List
 import wave
-import math
 import numpy as np
 from .signal_processing import determine_power, determine_dBFS, determine_log_mels, determine_euclidean_dist
 from .wav import resample_audio
@@ -58,7 +57,7 @@ def detect_wav_frames(input_file, detection_state, progress_callback = None, pro
 def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels, progress_callback = None, comparison_srt_file = None, override_file = None, print_statistics = False, two_pass = None, strategy = None):
     if two_pass is None:
         two_pass = TWO_PASS_DETECTION
-    ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
+    ms_per_frame = MS_PER_FRAME
     sample_width = 2# 16 bit = 2 bytes
     
     detection_strategy = strategy if strategy else CURRENT_DETECTION_STRATEGY

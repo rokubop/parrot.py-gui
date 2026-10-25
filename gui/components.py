@@ -1,6 +1,6 @@
 """Shared UI primitives.
 
-Imports nothing from ``windows/`` or ``widgets/``, so anything may import it.
+Imports nothing from ``pages/`` or ``widgets/``, so anything may import it.
 
 ``x_style()`` returns the stylesheet string, ``x()`` builds the widget with it.
 Colours and sizes come from ``theme``; nothing here hardcodes a hex or a px.

@@ -1,4 +1,3 @@
-import math
 import wave
 import numpy as np
 import pyqtgraph as pg
@@ -6,10 +5,8 @@ from PyQt6.QtCore import Qt, QTimer, QRectF, QVariantAnimation, QEasingCurve, py
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.srt import parse_srt_file
-from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import MS_PER_FRAME
 from gui import theme
-
-_MS_PER_FRAME = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
 
 def view_after_cut(view, cut_start, removed, new_duration):
@@ -267,7 +264,7 @@ class AudioPreviewWidget(QWidget):
         if not srt_path:
             return
         try:
-            events = parse_srt_file(srt_path, _MS_PER_FRAME, show_errors=False)
+            events = parse_srt_file(srt_path, MS_PER_FRAME, show_errors=False)
         except Exception:
             return
         for i, event in enumerate(events):

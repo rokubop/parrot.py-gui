@@ -1,10 +1,9 @@
 import os
 import glob
-import math
 import filecmp
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
-from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER, REPLAYS_FOLDER, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER, REPLAYS_FOLDER, MS_PER_FRAME
 from lib.srt import count_total_label_ms, ms_to_srt_timestring
 from lib.stream_processing import CURRENT_VERSION
 from gui.services import library_ops
@@ -68,7 +67,7 @@ class AppState(QObject):
         """
         if label in self._duration_cache:
             return self._duration_cache[label]
-        ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
+        ms_per_frame = MS_PER_FRAME
         value = count_total_label_ms(
             label, os.path.join(RECORDINGS_FOLDER, label), ms_per_frame)
         self._duration_cache[label] = value

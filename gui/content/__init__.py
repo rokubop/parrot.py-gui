@@ -11,13 +11,9 @@ string; `gui.widgets.help_dialog` owns the drawings and the rendering.
 
 Numbers come from the config the app actually runs on, never typed twice.
 """
-from config.config import RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import MS_PER_FRAME
 from lib.print_status import (QUANTITY_SUFFICIENT_MS, QUANTITY_GOOD_MS,
                               QUANTITY_EXCELLENT_MS)
-
-# A frame is one sliding window, not a whole sample - same arithmetic as
-# load_data, so help cannot quote a length the trainer does not use.
-MS_PER_FRAME = int(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
 
 # Detected sound per label: under the first, get_quantity_rating says "Not
 # enough" and training is a formality; the second is where a model starts

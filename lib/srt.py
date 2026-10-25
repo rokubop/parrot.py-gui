@@ -1,7 +1,7 @@
 import time
 from config.config import BACKGROUND_LABEL, CURRENT_VERSION
 from .typing import TransitionEvent, DetectionEvent, DetectionFrame
-from typing import List
+from typing import List, Optional, Tuple
 import math
 import os
 import numpy as np
@@ -103,9 +103,8 @@ def parse_srt_file(srt_filename: str, rounding_ms: int, show_errors: bool = True
     
     return transition_events
 
-def count_total_frames(label: str, base_folder: str, rounding_ms: int) -> int:
-    frames = 0
-    segments_dir = os.path.join(base_folder, "segments")
+def get_srt_paths(segments_dir: str) -> List[str]:
+    srt_paths = []
     if os.path.isdir(segments_dir):
         srt_files = [x for x in os.listdir(segments_dir) if os.path.isfile(os.path.join(segments_dir, x)) and (x.endswith(current_v_ending) or x.endswith(manual_ending))]
         for srt_file in srt_files:
@@ -114,61 +113,60 @@ def count_total_frames(label: str, base_folder: str, rounding_ms: int) -> int:
             if srt_file.endswith(current_v_ending) and srt_file.replace(current_v_ending, manual_ending) in srt_files:
                 continue
             else:
-                frames += count_frames_in_srt(label, os.path.join(segments_dir, srt_file), rounding_ms)
+                srt_paths.append(os.path.join(segments_dir, srt_file))
+    return srt_paths
+
+def get_srt_path_for_wav(srt_paths: List[str], wav_name: str) -> Optional[str]:
+    for srt_path in srt_paths:
+        if os.path.basename(srt_path) in (wav_name + manual_ending, wav_name + current_v_ending):
+            return srt_path
+    return None
+
+def count_total_frames(label: str, base_folder: str, rounding_ms: int) -> int:
+    frames = 0
+    for srt_path in get_srt_paths(os.path.join(base_folder, "segments")):
+        frames += count_frames_in_srt(label, srt_path, rounding_ms)
     return frames
     
 def count_total_silence_frames(base_folder: str, rounding_ms: int) -> int:
     frames = 0
-    segments_dir = os.path.join(base_folder, "segments")
-    if os.path.isdir(segments_dir):
-        srt_files = [x for x in os.listdir(segments_dir) if os.path.isfile(os.path.join(segments_dir, x)) and (x.endswith(current_v_ending) or x.endswith(manual_ending))]
-        for srt_file in srt_files:
-
-            # Skip the file if a manual override file of it exists
-            if srt_file.endswith(current_v_ending) and srt_file.replace(current_v_ending, manual_ending) in srt_files:
-                continue
-            else:
-                frames += count_frames_in_srt(BACKGROUND_LABEL, os.path.join(segments_dir, srt_file), rounding_ms)
+    for srt_path in get_srt_paths(os.path.join(base_folder, "segments")):
+        frames += count_frames_in_srt(BACKGROUND_LABEL, srt_path, rounding_ms)
     return frames
 
 def count_total_label_ms(label: str, base_folder: str, rounding_ms: int) -> int:
     total_ms = 0
-    segments_dir = os.path.join(base_folder, "segments")
-    if os.path.isdir(segments_dir):
-        srt_files = [x for x in os.listdir(segments_dir) if os.path.isfile(os.path.join(segments_dir, x)) and x.endswith(".v" + str(CURRENT_VERSION) + ".srt") or x.endswith(".MANUAL.srt")]
-        for srt_file in srt_files:
-
-            # Skip the file if a manual override file of it exists
-            if srt_file.endswith(current_v_ending) and srt_file.replace(current_v_ending, manual_ending) in srt_files:
-                continue
-            else:
-                total_ms += count_label_ms_in_srt(label, os.path.join(segments_dir, srt_file), rounding_ms)
+    for srt_path in get_srt_paths(os.path.join(base_folder, "segments")):
+        total_ms += count_label_ms_in_srt(label, srt_path, rounding_ms)
     return total_ms
 
-def count_label_ms_in_srt(label: str, srt_filename: str, rounding_ms: int) -> int:
+# get_label_ranges_in_srt("pop", srt, 15) example:
+# srt     00:00:00,900 --> 00:00:01,800  pop
+#         00:00:03,000 --> 00:00:03,600  pop
+# returns [(900, 1800), (3000, 3600)]
+def get_label_ranges_in_srt(label: str, srt_filename: str, rounding_ms: int) -> List[Tuple[int, int]]:
     transition_events = parse_srt_file(srt_filename, rounding_ms, False)
-    total_ms = 0
+    ranges = []
     start_ms = -1
     for transition_event in transition_events:
         if transition_event.label.lower() == label.lower():
             start_ms = transition_event.start_ms
         elif start_ms > -1 and transition_event.label.lower() != label.lower():
-            total_ms += transition_event.start_ms - start_ms
+            ranges.append((start_ms, transition_event.start_ms))
             start_ms = -1
     
+    return ranges
+
+def count_label_ms_in_srt(label: str, srt_filename: str, rounding_ms: int) -> int:
+    total_ms = 0
+    for start_ms, end_ms in get_label_ranges_in_srt(label, srt_filename, rounding_ms):
+        total_ms += end_ms - start_ms
     return total_ms
 
 def count_frames_in_srt(label: str, srt_filename: str, rounding_ms: int) -> int:
-    transition_events = parse_srt_file(srt_filename, rounding_ms, False)
-    start_ms = -1
     frames = 0
-    for transition_event in transition_events:
-        if transition_event.label.lower() == label.lower():
-            start_ms = transition_event.start_ms
-        elif start_ms > -1 and transition_event.label.lower() != label.lower():
-            frames += round((transition_event.start_ms - start_ms - rounding_ms) / 15)
-            start_ms = -1
-    
+    for start_ms, end_ms in get_label_ranges_in_srt(label, srt_filename, rounding_ms):
+        frames += round((end_ms - start_ms - rounding_ms) / 15)
     return frames
 
 def print_detection_performance_compared_to_srt(actual_frames: List[DetectionFrame], frames_to_read: int, srt_file_location: str, output_wave_file = None):

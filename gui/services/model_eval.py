@@ -13,6 +13,7 @@ import numpy as np
 from config.config import (RECORDINGS_FOLDER, RECORD_SECONDS,
                            SLIDING_WINDOW_AMOUNT, RATE)
 from lib.wav import load_wav_data_from_srt
+from lib.srt import get_srt_paths, get_srt_path_for_wav
 from lib.machinelearning import feature_engineering_raw
 
 
@@ -35,36 +36,19 @@ def model_rate_mismatch(model):
 
 
 def srt_for_source(label_dir):
-    """{source_wav_path: srt_path} with the same choice rule as training:
-    a .MANUAL.srt wins, otherwise the highest .v<N>.srt."""
-    segments_dir = os.path.join(label_dir, "segments")
+    """{source_wav_path: srt_path}, picked by the same lib.srt helpers as
+    training: a .MANUAL.srt wins over the current version's."""
     source_dir = os.path.join(label_dir, "source")
     mapping = {}
-    if not (os.path.isdir(segments_dir) and os.path.isdir(source_dir)):
+    if not os.path.isdir(source_dir):
         return mapping
-    srt_files = [f for f in os.listdir(segments_dir) if f.endswith(".srt")]
+    srt_paths = get_srt_paths(os.path.join(label_dir, "segments"))
     for source_file in os.listdir(source_dir):
         if not source_file.endswith(".wav"):
             continue
-        key = source_file[:-4]
-        candidates = [f for f in srt_files if f.startswith(key)]
-        if not candidates:
-            continue
-        chosen = candidates[0]
-        for candidate in candidates:
-            if chosen.endswith(".MANUAL.srt"):
-                break
-            if candidate.endswith(".MANUAL.srt"):
-                chosen = candidate
-            else:
-                try:
-                    if int(candidate[:-4].replace(key + ".v", "")) > \
-                            int(chosen[:-4].replace(key + ".v", "")):
-                        chosen = candidate
-                except ValueError:
-                    continue
-        mapping[os.path.join(source_dir, source_file)] = \
-            os.path.join(segments_dir, chosen)
+        srt_path = get_srt_path_for_wav(srt_paths, source_file[:-4])
+        if srt_path:
+            mapping[os.path.join(source_dir, source_file)] = srt_path
     return mapping
 
 

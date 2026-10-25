@@ -292,7 +292,7 @@ class SettingsPage(QWidget):
         if hasattr(window, "open_profiles_dialog"):
             window.open_profiles_dialog()  # also refreshes the toolbar chip
         else:
-            from gui.windows.profiles import ProfilesDialog
+            from gui.pages.profiles import ProfilesDialog
             ProfilesDialog(self.app_state, self).exec()
 
     def _on_open_data_folder(self):
@@ -306,7 +306,7 @@ class SettingsPage(QWidget):
         from PyQt6.QtWidgets import QFileDialog
         from config.config import DATA_DIR
         from gui.services import profiles
-        from gui.windows.profiles import _OpWorker
+        from gui.pages.profiles import _OpWorker
         dest_parent = QFileDialog.getExistingDirectory(self, "Export to")
         if not dest_parent:
             return

@@ -135,6 +135,16 @@ class _StepCard(QFrame):
 
 
 class HomePage(QWidget):
+    """
+    ┌──────────────────────────────────────────────────────────┐
+    │ hero_title                                               │
+    │ hero_sub                                                 │
+    │                                                          │
+    │ ┌ step_record ───┐ ┌ step_train ────┐ ┌ step_use ──────┐ │
+    │ │ _StepCard      │ │ _StepCard      │ │ _StepCard      │ │
+    │ └────────────────┘ └────────────────┘ └────────────────┘ │
+    └──────────────────────────────────────────────────────────┘
+    """
     navigate = pyqtSignal(str)   # tab name, handled by MainWindow
 
     def __init__(self, app_state, parent=None):
@@ -275,7 +285,7 @@ class HomePage(QWidget):
 
     def _on_find_setup(self):
         from gui.services import profiles as profiles_service
-        from gui.windows.profiles import ImportSetupDialog
+        from gui.pages.profiles import ImportSetupDialog
         dialog = ImportSetupDialog(self)
         dialog.exec()
         window = self.window()

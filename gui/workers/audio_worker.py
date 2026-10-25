@@ -1,5 +1,4 @@
 import json
-import math
 import os
 import time
 import numpy as np
@@ -7,7 +6,7 @@ import sounddevice as sd
 from queue import Queue
 from PyQt6.QtCore import QThread, pyqtSignal
 from config.config import (
-    RATE, CHANNELS, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT,
+    RATE, CHANNELS, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, MS_PER_FRAME,
     RECORDINGS_FOLDER, INPUT_DEVICE_INDEX
 )
 from lib.stream_processing import CURRENT_VERSION, CURRENT_DETECTION_STRATEGY
@@ -67,7 +66,7 @@ class AudioWorker(QThread):
         self.wav_path = os.path.join(source_dir, f"mici_{self.mic_index}__{time_string}.wav")
         self.srt_path = os.path.join(segments_dir, f"mici_{self.mic_index}__{time_string}.v{CURRENT_VERSION}.srt")
 
-        ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
+        ms_per_frame = MS_PER_FRAME
         detection_labels = [DetectionLabel(self.label, 0, 0, "", 0, 0, 0, 0, 0)]
         self._detection_labels = detection_labels
         detection_state = DetectionState(

@@ -12,7 +12,6 @@ switch as one idea - a capture setting while the mic is open, an edit that
 rewrites the take's srt once it is not - instead of going read-only until you
 find your way to another screen.
 """
-import math
 import os
 import time
 import numpy as np
@@ -23,7 +22,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QGroupBox, QFormLayout, QMessageBox
 )
 
-from config.config import RATE, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT
+from config.config import RATE, MS_PER_FRAME
 from gui import components, icons, theme
 from gui.services import audio_devices
 from gui.widgets.waveform import WaveformWidget
@@ -37,7 +36,7 @@ from gui.workers.audio_worker import AudioWorker
 from gui.workers.segment_worker import AppendWorker
 from gui.services import library_ops, strategies
 from gui.services.undo import UndoHistory
-from lib.srt import ms_to_srt_timestring, parse_srt_file
+from lib.srt import ms_to_srt_timestring, get_label_ranges_in_srt
 from lib.print_status import get_quantity_rating, QUANTITIES
 
 
@@ -447,22 +446,11 @@ class RecordingView(QWidget):
         """
         if not self._take_srt or not os.path.isfile(self._take_srt):
             return None
-        ms_per_frame = math.floor(RECORD_SECONDS / SLIDING_WINDOW_AMOUNT * 1000)
         try:
-            events = parse_srt_file(self._take_srt, ms_per_frame, show_errors=False)
+            ranges = get_label_ranges_in_srt(self._label or "", self._take_srt, MS_PER_FRAME)
         except Exception:
             return None
-        label = (self._label or "").lower()
-        sounds = total = 0
-        start = -1
-        for event in events:
-            if event.label.lower() == label:
-                start = event.start_ms
-            elif start > -1:
-                total += event.start_ms - start
-                sounds += 1
-                start = -1
-        return sounds, total
+        return len(ranges), sum(end - start for start, end in ranges)
 
     def _show_take_summary(self):
         """Replace the live counters with what the re-judge produced."""
