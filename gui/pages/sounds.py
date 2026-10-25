@@ -367,8 +367,9 @@ class SoundsPage(QWidget):
                 # in order, selected one first.
                 self._mark_selected(self._cards[0])
                 self._audio_graphs_build(list(self._cards))
-            # leave focus in the list, so arrowing through sounds keeps working
-            if not self.sound_list.hasFocus():
+            # Leave focus in the list, so arrowing through sounds keeps working.
+            # Hidden, the page has no focus to give
+            if self.isVisible() and not self.sound_list.hasFocus():
                 self.cards_scroll.setFocus()
         finally:
             # Once the new cards have painted: a built audio graph takes ~10 ms

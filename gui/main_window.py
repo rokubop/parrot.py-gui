@@ -125,6 +125,9 @@ class MainWindow(QMainWindow):
         self._wire_keybindings(self.sounds_page)
         self._refresh_keybindings()
         self._build_zoom_shortcuts()
+        # Otherwise Qt focuses the first Tab stop on launch, and the Home tab
+        # keeps a ring no click clears
+        self.home_page.setFocus()
 
     # ---- tab order ----------------------------------------------------
 
@@ -299,6 +302,9 @@ class MainWindow(QMainWindow):
             self.recording_view.stop_worker()
         if self.edit_view is not None and current is not self.edit_view:
             self.edit_view.stop_playback()
+        # Focus moves with the page, so a ring from the last page doesn't
+        # linger. A page draws none, and Tab starts from it
+        current.setFocus()
         self._refresh_keybindings()
 
     # ---- profile chip ---------------------------------------------------
