@@ -163,7 +163,7 @@ class SoundLibraryPage(QWidget):
             f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
             f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }} "
-            + components.focus_ring("QPushButton#viewToggle", "5px 14px", border=1))
+            + components.focus_ring("QPushButton#viewToggle", padding="5px 14px", border=1))
         for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
             b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")

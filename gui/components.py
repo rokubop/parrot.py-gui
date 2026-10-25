@@ -270,7 +270,7 @@ def ghost_button_style():
     return (f"QPushButton#secondaryAction {{ color: {t['text_dim']}; "
             f"border: none; background: transparent; }} "
             f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }} "
-            + focus_ring("QPushButton#secondaryAction", "3px 8px"))
+            + focus_ring("QPushButton#secondaryAction", padding="3px 8px"))
 
 
 def ghost_button(text, slot=None, tip=None):
