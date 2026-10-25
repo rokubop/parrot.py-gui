@@ -364,10 +364,10 @@ class TrainView(QWidget):
         list_head.addWidget(self.selected_count)
         list_head.addStretch()
         quiet = (f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
-                 f"border: none; padding: 2px 6px; }} "
+                 f"border: none; }} "
                  f"QPushButton:hover {{ color: {t['text_bright']}; }} "
                  f"QPushButton::menu-indicator {{ width: 0px; }} "
-                 + components.focus_ring("QPushButton", "0px 4px"))
+                 + components.focus_ring("QPushButton", "2px 6px"))
 
         # "The same sounds as last time" is the common case for a second model;
         # every model already knows its own label list.

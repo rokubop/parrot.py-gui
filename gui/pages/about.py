@@ -176,13 +176,13 @@ class AboutPage(QWidget):
             active = bool(button.property("active"))
             button.setStyleSheet(
                 f"QPushButton {{ text-align: left; border: none; "
-                f"background: transparent; padding: 5px 10px; "
+                f"background: transparent; "
                 f"border-left: 2px solid "
                 f"{t['accent'] if active else 'transparent'}; "
                 f"color: {t['text_bright'] if active else t['text_dim']}; "
                 f"font-weight: {'bold' if active else 'normal'}; }} "
                 f"QPushButton:hover {{ color: {t['text_bright']}; }} "
-                + components.focus_ring("QPushButton", "3px 8px 3px 10px"))
+                + components.focus_ring("QPushButton", "5px 10px", border=(0, 0, 0, 2)))
 
     def _apply_styles(self):
         t = theme.colors()
@@ -201,9 +201,9 @@ class AboutPage(QWidget):
 def _link_style():
     t = theme.colors()
     return (f"QPushButton {{ color: {t['accent']}; background: transparent; "
-            f"border: none; text-align: left; padding: 2px; }} "
+            f"border: none; text-align: left; }} "
             f"QPushButton:hover {{ color: {t['text_bright']}; }} "
-            + components.focus_ring("QPushButton", "0px"))
+            + components.focus_ring("QPushButton", "2px"))
 
 
 def _text_link(text, slot):

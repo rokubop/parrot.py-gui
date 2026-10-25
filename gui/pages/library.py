@@ -159,11 +159,11 @@ class SoundLibraryPage(QWidget):
             # the unselected half of a segmented control still has to be read.
             f"QPushButton#viewToggle {{ background-color: {t['button']}; "
             f"color: {t['text']}; border: 1px solid {t['control_border']}; "
-            f"border-radius: {t['radius']}; padding: 5px 14px; }} "
+            f"border-radius: {t['radius']}; }} "
             f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
             f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }} "
-            + components.focus_ring("QPushButton#viewToggle", "4px 13px"))
+            + components.focus_ring("QPushButton#viewToggle", "5px 14px", border=1))
         for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
             b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")

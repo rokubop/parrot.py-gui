@@ -246,22 +246,31 @@ def lock_width(button, *texts, floor=0):
     return button
 
 
-def focus_ring(selector, padding):
-    """The app-wide focus ring, for a button whose own stylesheet sets
-    ``border`` and so hides the theme's. ``padding`` is the button's own less
-    the 2px border, so focusing it moves nothing."""
+def focus_ring(selector, padding, border=0):
+    """The button's padding plus the app-wide focus ring, for a button whose
+    own stylesheet sets ``border`` and so hides the theme's.
+
+    Qt has no outline, so the ring is a border and takes its 2px out of the
+    padding, or focusing would resize the button. ``padding`` is CSS
+    shorthand; ``border`` is the button's own border width, one number or
+    (top, right, bottom, left)."""
     t = theme.colors()
-    return (f"{selector}:focus {{ border: 2px solid {t['focus']}; "
-            f"border-radius: {t['radius']}; padding: {padding}; }} ")
+    pad = [int(v.removesuffix("px")) for v in padding.split()]
+    pad = {1: pad * 4, 2: pad * 2, 3: pad + pad[1:2], 4: pad}[len(pad)]
+    edge = (border,) * 4 if isinstance(border, int) else border
+    focused = " ".join(f"{p + e - 2}px" for p, e in zip(pad, edge))
+    return (f"{selector} {{ padding: {padding}; }} "
+            f"{selector}:focus {{ border: 2px solid {t['focus']}; "
+            f"border-radius: {t['radius']}; padding: {focused}; }} ")
 
 
 def ghost_button_style():
     """Borderless, dim, second-class actions - Rename / Clone / Delete."""
     t = theme.colors()
     return (f"QPushButton#secondaryAction {{ color: {t['text_dim']}; "
-            f"border: none; background: transparent; padding: 3px 8px; }} "
+            f"border: none; background: transparent; }} "
             f"QPushButton#secondaryAction:hover {{ color: {t['text_bright']}; }} "
-            + focus_ring("QPushButton#secondaryAction", "1px 6px"))
+            + focus_ring("QPushButton#secondaryAction", "3px 8px"))
 
 
 def ghost_button(text, slot=None, tip=None):

@@ -622,7 +622,7 @@ class RecordingView(QWidget):
             (f"QPushButton {{ background-color: {color}; color: #ffffff; "
              f"font-weight: bold; border: none; }}"
              f" QPushButton:hover {{ background-color: {color}; }} "
-             + components.focus_ring("QPushButton", "4px 14px")) if color else "")
+             + components.focus_ring("QPushButton", "6px 16px")) if color else "")
         self.state_label.setText(ind_text)
         self.state_label.setStyleSheet(f"color: {ind_color}; font-weight: bold;")
         self.waveform.set_trace_color(trace)
