@@ -25,7 +25,8 @@ def slider_qss():
         f"QSlider::handle:horizontal {{ width: 16px; height: 16px; "
         f"margin: -6px 0; border-radius: 8px; background: {t['text_bright']}; "
         f"border: 2px solid {t['accent']}; }}"
-        f"QSlider::handle:horizontal:hover {{ background: {t['accent']}; }}")
+        f"QSlider::handle:horizontal:hover {{ background: {t['accent']}; }}"
+        f"QSlider::handle:horizontal:focus {{ border-color: {t['focus']}; }}")
 
 
 class ClickSlider(QSlider):

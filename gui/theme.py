@@ -178,6 +178,7 @@ _STYLESHEET = Template("""
            it, the translucent tint does not. */
         outline: none;
     }
+    QListWidget:focus, QTreeWidget:focus { border: 2px solid $focus; }
     QListWidget::item, QTreeWidget::item { padding: 4px 2px; }
     /* Selection is a tint, not a fill, so any colour a row uses to mean
        something (a rating, a warning) stays readable while selected. */
@@ -210,6 +211,9 @@ _STYLESHEET = Template("""
        QDoubleSpinBox is not a QSpinBox. */
     QLineEdit, QComboBox, QAbstractSpinBox {
         padding: 5px 8px; border: 1px solid $control_border; border-radius: $radius; background-color: $base;
+    }
+    QLineEdit:focus, QComboBox:focus, QAbstractSpinBox:focus {
+        border: 2px solid $focus; padding: 4px 7px;
     }
     QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled {
         color: $disabled_text; border-color: $border;

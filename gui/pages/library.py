@@ -118,6 +118,9 @@ class SoundLibraryPage(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        # the page takes the keys, and rings the cards while it does
+        self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.scroll.setObjectName("cardsScroll")
         self.cards_container, self.cards_layout, self.message_label = self._new_container()
         self.scroll.setWidget(self.cards_container)
         right_layout.addWidget(self.scroll)
@@ -163,10 +166,24 @@ class SoundLibraryPage(QWidget):
             b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
+        self._style_scroll()
+
+    def _style_scroll(self):
+        t = theme.colors()
         # A wide, always-present scrollbar plus a right-side gutter gives a
         # dedicated place to scroll the page even when waveforms fill the view.
+        ring = t["focus"] if self.hasFocus() else "transparent"
         self.scroll.setStyleSheet(
-            f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }}")
+            f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }} "
+            f"QScrollArea#cardsScroll {{ border: 2px solid {ring}; }}")
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self._style_scroll()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self._style_scroll()
 
     def refresh_theme(self):
         self._apply_theme_styles()
