@@ -48,7 +48,7 @@ class AboutPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # out of Tab: it showed no ring. Tabbing to a control inside still scrolls to it
+        # No focus for About page scroll. Tab goes to its controls instead.
         self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         outer.addWidget(self.scroll, 1)
 

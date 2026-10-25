@@ -172,7 +172,7 @@ class HomePage(QWidget):
         scroll.setAccessibleName("Home")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # out of Tab: it showed no ring. Tabbing to a control inside still scrolls to it
+        # No focus for Home page scroll. Tab goes to its controls instead.
         scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         outer.addWidget(scroll)
 
