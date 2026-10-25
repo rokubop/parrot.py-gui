@@ -3,6 +3,7 @@ import math
 import os
 _user_config_file = CODE_FOLDER + "/config.py"
 if not os.path.exists(_user_config_file):
+    os.makedirs(CODE_FOLDER, exist_ok=True)
     configfile = open(_user_config_file, "w")
     configfile.write('DEFAULT_CLF_FILE = ""\n')
     configfile.write('STARTING_MODE = ""\n')
