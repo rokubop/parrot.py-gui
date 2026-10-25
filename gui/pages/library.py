@@ -97,6 +97,7 @@ class SoundLibraryPage(QWidget):
         self.label_list.currentItemChanged.connect(lambda *_: self._select_timer.start())
         self.label_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.label_list.customContextMenuRequested.connect(self._on_list_context_menu)
+        self.label_list.installEventFilter(self)
         left_layout.addWidget(self.label_list)
 
         new_sound_btn = QPushButton("+ New sound")
@@ -392,7 +393,9 @@ class SoundLibraryPage(QWidget):
                 self._mark_selected(self._cards[0])
                 self._pending_loads = list(self._cards)
                 self._load_timer.start()
-            self.scroll.setFocus()
+            # leave focus in the list, so arrowing through sounds keeps working
+            if not self.label_list.hasFocus():
+                self.scroll.setFocus()
         finally:
             # Queue the old view's teardown for the next event-loop tick so the
             # new (placeholder) view paints first. Multiple rapid switches just
@@ -555,9 +558,12 @@ class SoundLibraryPage(QWidget):
     # ---- keyboard ------------------------------------------------------
 
     def eventFilter(self, obj, event):
-        # the card area would scroll on Space and the arrows; the page's keys win
-        if (obj is self.scroll and event.type() == QEvent.Type.KeyPress
-                and event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab)):
+        # the card area would scroll on Space and the arrows; the page's keys win.
+        # The list keeps its arrows, but Space still plays
+        if event.type() == QEvent.Type.KeyPress and (
+                (obj is self.scroll
+                 and event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab))
+                or (obj is self.label_list and event.key() == Qt.Key.Key_Space)):
             event.accept()
             self.keyPressEvent(event)
             return event.isAccepted()
