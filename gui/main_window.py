@@ -134,8 +134,8 @@ class MainWindow(QMainWindow):
         Qt's own order is build order. Lazy pages and Sounds' cards are built
         after the toolbar, so Tab would jump from the toolbar into the middle
         of a page."""
-        order = [w for region in (self.toolbar, self.page_stack.currentWidget(),
-                                  self.status_bar)
+        page = self.page_stack.currentWidget()
+        order = [w for region in (self.toolbar, page, self.status_bar)
                  for w in self._focus_chain(region)]
         # a focus proxy (a spin box's line edit, a plot's viewport) hands
         # focus to its owner, which is in the list on its own
@@ -144,6 +144,10 @@ class MainWindow(QMainWindow):
         if not stops:
             return super().focusNextPrevChild(forward)
         focused = QApplication.focusWidget()
+        # a page can step forward from somewhere else, e.g. Sounds from its
+        # selected card
+        if forward and hasattr(page, "tab_anchor"):
+            focused = page.tab_anchor(focused)
         if focused in order:
             # step from where focus is, even when that is not a stop itself
             i = order.index(focused)

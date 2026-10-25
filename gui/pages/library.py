@@ -557,6 +557,12 @@ class SoundLibraryPage(QWidget):
 
     # ---- keyboard ------------------------------------------------------
 
+    def tab_anchor(self, focused):
+        """Tab from the card area starts at the selected card, not the top."""
+        if focused is self.scroll and self._selected_card is not None:
+            return self._selected_card
+        return focused
+
     def eventFilter(self, obj, event):
         # the card area would scroll on Space and the arrows; the page's keys win.
         # The list keeps its arrows, but Space still plays
