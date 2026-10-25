@@ -67,6 +67,8 @@ class AudioPreviewWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.plot = pg.PlotWidget(background=t["plot_bg"])
+        # a plot keeps Tab for itself, so Tab could never leave it
+        self.plot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setMenuEnabled(False)
         self.plot.hideButtons()

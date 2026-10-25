@@ -28,6 +28,8 @@ class WaveformWidget(QWidget):
         # Same ground as every other plot. It used to take pyqtgraph's default
         # black, which read as a hole once the lane below it grew to match.
         self.plot_widget = pg.PlotWidget(background=theme.colors()["plot_bg"])
+        # a plot keeps Tab for itself, so Tab could never leave it
+        self.plot_widget.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.plot_widget.setLabel('left', 'Amplitude')
         self.plot_widget.setLabel('bottom', 'Time', units='s')
         self.plot_widget.showGrid(x=True, y=True, alpha=theme.colors()["grid_alpha"])

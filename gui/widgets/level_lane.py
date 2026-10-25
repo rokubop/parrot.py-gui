@@ -64,6 +64,8 @@ class LevelLane(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.plot = pg.PlotWidget(background=t["plot_bg"])
+        # a plot keeps Tab for itself, so Tab could never leave it
+        self.plot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         # Pinned on its own, resizable inside a LaneSplitter.
         if flexible:
             self.plot.setMinimumHeight(LANE_MIN_HEIGHT)

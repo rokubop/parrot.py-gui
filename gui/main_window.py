@@ -3,7 +3,7 @@ import os
 from PyQt6.QtWidgets import (
     QMainWindow, QToolBar, QStatusBar, QStackedWidget, QLabel, QWidget,
     QSizePolicy, QVBoxLayout, QToolButton, QMenu, QApplication, QPushButton,
-    QMessageBox
+    QMessageBox, QScrollArea
 )
 from PyQt6.QtGui import QAction, QActionGroup, QShortcut, QKeySequence
 from PyQt6.QtCore import Qt, QTimer, QSize
@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self.page_stack.currentChanged.connect(self._on_stack_changed)
 
         # Toolbar navigation - checkable actions so the current tab is obvious.
-        toolbar = QToolBar("Navigation")
+        toolbar = self.toolbar = QToolBar("Navigation")
         toolbar.setMovable(False)
         # Without this, right-clicking the toolbar opens a Qt menu with a
         # "Navigation" checkbox. Unticking it hides the tabs, with no way to
@@ -125,6 +125,50 @@ class MainWindow(QMainWindow):
         self._wire_keybindings(self.library_page)
         self._refresh_keybindings()
         self._build_zoom_shortcuts()
+
+    # ---- tab order ----------------------------------------------------
+
+    def focusNextPrevChild(self, forward):
+        """Tab walks toolbar, current page, status bar.
+
+        Qt's own order is build order. Lazy pages and Sounds' cards are built
+        after the toolbar, so Tab would jump from the toolbar into the middle
+        of a page."""
+        order = [w for region in (self.toolbar, self.page_stack.currentWidget(),
+                                  self.status_bar)
+                 for w in self._focus_chain(region)]
+        # a focus proxy (a spin box's line edit, a plot's viewport) hands
+        # focus to its owner, which is in the list on its own
+        stops = [w for w in order if w.focusPolicy() & Qt.FocusPolicy.TabFocus
+                 and w.focusProxy() is None and w.isVisible() and w.isEnabled()]
+        if not stops:
+            return super().focusNextPrevChild(forward)
+        focused = QApplication.focusWidget()
+        if focused in order:
+            # step from where focus is, even when that is not a stop itself
+            i = order.index(focused)
+            ahead = (order[i + 1:] + order[:i] if forward
+                     else order[:i][::-1] + order[i + 1:][::-1])
+            target = next((w for w in ahead if w in stops), stops[0])
+        else:
+            target = stops[0] if forward else stops[-1]
+        reason = Qt.FocusReason.TabFocusReason if forward else Qt.FocusReason.BacktabFocusReason
+        target.setFocus(reason)
+        scroll = target.parentWidget()
+        while scroll is not None and not isinstance(scroll, QScrollArea):
+            scroll = scroll.parentWidget()
+        if scroll is not None:
+            scroll.ensureWidgetVisible(target)
+        return True
+
+    def _focus_chain(self, region):
+        """region and its descendants, in Qt's focus chain order."""
+        found, w = [region], region.nextInFocusChain()
+        while w is not region:
+            if region.isAncestorOf(w):
+                found.append(w)
+            w = w.nextInFocusChain()
+        return found
 
     # ---- lazy page construction ---------------------------------------
 

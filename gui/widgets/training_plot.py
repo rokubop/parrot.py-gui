@@ -1,4 +1,5 @@
 import pyqtgraph as pg
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from gui import theme
@@ -19,6 +20,8 @@ class TrainingPlotWidget(QWidget):
 
         t = theme.colors()
         self.plot_widget = pg.PlotWidget(background=t["plot_bg"])
+        # a plot keeps Tab for itself, so Tab could never leave it
+        self.plot_widget.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         plot = self.plot_widget.plotItem
         plot.setLabel('bottom', 'Epoch')
         plot.setLabel('left', 'Loss')
