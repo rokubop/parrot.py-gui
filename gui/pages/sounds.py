@@ -22,8 +22,22 @@ from gui import content
 
 
 class SoundsPage(QWidget):
-    """Read-only landing page: browse recorded sounds and review each recording's
-    waveform/spectrogram with detection overlaid. No recording or editing."""
+    """
+    ┌ sound_list ─────────┐┌ sound_header ───────────────────────────────────┐
+    │ Sound  Data  Detect.││ sound_title                                     │
+    │ pop    Good   01:04 ││ sound_stats                                     │
+    │ ss     Good   00:51 ││ sound_quantity                                  │
+    │                     ││ add_recording_btn  _mode_buttons  normalize_btn │
+    │                     ││ _secondary_btns                                 │
+    │                     │├ cards_scroll ───────────────────────────────────┤
+    │                     ││ ┌ cards_container ────────────────────────────┐ │
+    │                     ││ │ ┌ RecordingCard ──────────────────────────┐ │ │
+    │                     ││ │ │ play_btn  Aug 08, 2026, 10:55 AM  32.4s │ │ │
+    │                     ││ │ │ .:|:..:||:... audio_graph ..:||:..:|:.. │ │ │
+    │                     ││ │ └─────────────────────────────────────────┘ │ │
+    │                     ││ └─────────────────────────────────────────────┘ │
+    └─────────────────────┘└─────────────────────────────────────────────────┘
+    """
 
     SEEK_STEP = 2.0  # seconds for arrow-key seeking
 
