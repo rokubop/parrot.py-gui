@@ -35,7 +35,7 @@ def model_rate_mismatch(model):
     return None
 
 
-def srt_for_source(label_dir):
+def get_srt_paths_by_wav(label_dir):
     """{source_wav_path: srt_path}, picked by the same lib.srt helpers as
     training: a .MANUAL.srt wins over the current version's."""
     source_dir = os.path.join(label_dir, "source")
@@ -57,7 +57,7 @@ def sound_features(label, input_type, max_samples=2000):
     no offsets - evaluation wants the plain samples)."""
     label_dir = os.path.join(RECORDINGS_FOLDER, label)
     features = []
-    for source_wav, srt in sorted(srt_for_source(label_dir).items()):
+    for source_wav, srt in sorted(get_srt_paths_by_wav(label_dir).items()):
         try:
             features.extend(load_wav_data_from_srt(
                 srt, source_wav, input_type, with_offset=False))

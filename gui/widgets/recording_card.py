@@ -4,7 +4,7 @@ import numpy as np
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QPointF, QRectF, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPolygonF, QColor
 from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMenu
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMenu, QSizePolicy
 )
 from config.config import RATE
 from gui.widgets.audio_graph import AudioGraph, MODE_WAVEFORM
@@ -100,6 +100,9 @@ class RecordingCard(QFrame):
 
     def __init__(self, session_name, wav_path, srt_path, thresholds_path, parent=None):
         super().__init__(parent)
+        # The audio graph inside asks to grow even at a fixed height, so without
+        # this a lone card soaks up the page's spare height around its title
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.wav_path = wav_path
         self.srt_path = srt_path
         self.session_name = session_name

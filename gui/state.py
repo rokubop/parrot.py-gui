@@ -4,8 +4,8 @@ import filecmp
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER, REPLAYS_FOLDER, MS_PER_FRAME
-from lib.srt import count_total_label_ms, ms_to_srt_timestring
-from lib.stream_processing import CURRENT_VERSION
+from lib.srt import (count_total_label_ms, ms_to_srt_timestring, get_srt_paths,
+                     get_srt_path_for_wav)
 from gui.services import library_ops
 
 
@@ -43,21 +43,11 @@ class AppState(QObject):
         if not os.path.isdir(source_dir):
             return recordings
 
-        wav_files = sorted([f for f in os.listdir(source_dir) if f.endswith(".wav")])
-        for wav_file in wav_files:
-            wav_path = os.path.join(source_dir, wav_file)
-            base = wav_file.replace(".wav", "")
-            srt_path = None
-            if os.path.isdir(segments_dir):
-                srt_candidates = [
-                    os.path.join(segments_dir, base + ".MANUAL.srt"),
-                    os.path.join(segments_dir, base + ".v" + str(CURRENT_VERSION) + ".srt"),
-                ]
-                for candidate in srt_candidates:
-                    if os.path.exists(candidate):
-                        srt_path = candidate
-                        break
-            recordings.append({"wav_path": wav_path, "srt_path": srt_path, "filename": wav_file})
+        srt_paths = get_srt_paths(segments_dir)
+        for wav_file in sorted(f for f in os.listdir(source_dir) if f.endswith(".wav")):
+            srt_path = get_srt_path_for_wav(srt_paths, wav_file[:-len(".wav")])
+            recordings.append({"wav_path": os.path.join(source_dir, wav_file),
+                               "srt_path": srt_path, "filename": wav_file})
         return recordings
 
     def get_label_duration_ms(self, label):
