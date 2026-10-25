@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup,
     QMenu, QInputDialog, QMessageBox, QDialog, QLineEdit, QDialogButtonBox
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.session_card import SessionCard, _wav_duration
@@ -62,7 +62,8 @@ class SoundLibraryPage(QWidget):
         self._load_timer.timeout.connect(self._load_next_pending)
         self._pending_loads = []
 
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # ClickFocus: the Tab stop is the card area, after the header
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self._setup_ui()
         self._populate_labels()
         self.app_state.recordings_changed.connect(self._populate_labels)
@@ -118,9 +119,9 @@ class SoundLibraryPage(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        # the page takes the keys, and rings the cards while it does
-        self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.scroll.setObjectName("cardsScroll")
+        self.scroll.installEventFilter(self)
         self.cards_container, self.cards_layout, self.message_label = self._new_container()
         self.scroll.setWidget(self.cards_container)
         right_layout.addWidget(self.scroll)
@@ -166,24 +167,13 @@ class SoundLibraryPage(QWidget):
             b.setStyleSheet(toggle_style)
         self.view_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
-        self._style_scroll()
-
-    def _style_scroll(self):
-        t = theme.colors()
         # A wide, always-present scrollbar plus a right-side gutter gives a
         # dedicated place to scroll the page even when waveforms fill the view.
-        ring = t["focus"] if self.hasFocus() else "transparent"
         self.scroll.setStyleSheet(
             f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }} "
-            f"QScrollArea#cardsScroll {{ border: 2px solid {ring}; }}")
-
-    def focusInEvent(self, event):
-        super().focusInEvent(event)
-        self._style_scroll()
-
-    def focusOutEvent(self, event):
-        super().focusOutEvent(event)
-        self._style_scroll()
+            # transparent until focused, so the ring doesn't shift the cards
+            f"QScrollArea#cardsScroll {{ border: 2px solid transparent; }} "
+            f"QScrollArea#cardsScroll:focus {{ border: 2px solid {t['focus']}; }}")
 
     def refresh_theme(self):
         self._apply_theme_styles()
@@ -402,7 +392,7 @@ class SoundLibraryPage(QWidget):
                 self._mark_selected(self._cards[0])
                 self._pending_loads = list(self._cards)
                 self._load_timer.start()
-            self.setFocus()
+            self.scroll.setFocus()
         finally:
             # Queue the old view's teardown for the next event-loop tick so the
             # new (placeholder) view paints first. Multiple rapid switches just
@@ -563,6 +553,15 @@ class SoundLibraryPage(QWidget):
             return
 
     # ---- keyboard ------------------------------------------------------
+
+    def eventFilter(self, obj, event):
+        # the card area would scroll on Space and the arrows; the page's keys win
+        if (obj is self.scroll and event.type() == QEvent.Type.KeyPress
+                and event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab)):
+            event.accept()
+            self.keyPressEvent(event)
+            return event.isAccepted()
+        return super().eventFilter(obj, event)
 
     def keyPressEvent(self, event):
         if not self._cards:
