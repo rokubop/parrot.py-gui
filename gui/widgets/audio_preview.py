@@ -1,10 +1,10 @@
-import wave
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer, QRectF, QVariantAnimation, QEasingCurve, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.srt import parse_srt_file
+from gui.services.wav_files import read_wav, UnreadableWav
 from config.config import MS_PER_FRAME
 from gui import theme
 
@@ -216,31 +216,22 @@ class AudioPreviewWidget(QWidget):
     # ---- loading -------------------------------------------------------
 
     def load(self, wav_path, srt_path, view=None):
-        """``view`` pins the visible X window in seconds; by default the whole
+        """Why the wav can't be read, or None once it's on the plot.
+
+        ``view`` pins the visible X window in seconds; by default the whole
         clip is shown. An edit passes the window mapped through its own change
         (see ``view_after_cut``) so the zoom level survives."""
         self._spectrogram = None
         self._stop_seam()
         try:
-            wf = wave.open(wav_path, "rb")
-            channels = wf.getnchannels()
-            self._sample_rate = wf.getframerate()
-            n_frames = wf.getnframes()
-            raw = wf.readframes(n_frames)
-            wf.close()
-            data = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
-            if channels > 1:
-                data = data.reshape(-1, channels).mean(axis=1)
-            self._samples = data / 32768.0
-            self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
-            # Derive duration from the samples we actually decoded, not from the
-            # WAV header: some recordings store a byte count in the nframes field,
-            # which would double the duration and leave Fit showing half-blank.
-            self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
-        except Exception:
+            self._samples, self._sample_rate = read_wav(wav_path)
+        except UnreadableWav as exc:
             self._samples = None
             self._duration = 0.0
-            return
+            return str(exc)
+        self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
+        # From the samples, not the header, which can overcount (see wav_files)
+        self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
         x0, x1 = view if view is not None else (0.0, self._duration)
@@ -256,6 +247,7 @@ class AudioPreviewWidget(QWidget):
         # Any pending-cut range was in the old clip's coordinates.
         self.clear_pending_cut()
         self._position_overlays()
+        return None
 
     def load_regions(self, srt_path):
         """Redraw just the detection overlay. Separate from ``load`` so work that

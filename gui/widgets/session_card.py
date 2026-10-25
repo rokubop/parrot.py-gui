@@ -1,5 +1,4 @@
 import os
-import wave
 from datetime import datetime
 import numpy as np
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QPointF, QRectF, QSize, pyqtSignal
@@ -10,6 +9,7 @@ from PyQt6.QtWidgets import (
 from config.config import RATE
 from gui.widgets.audio_preview import AudioPreviewWidget
 from gui.services import library_ops, playback, strategies
+from gui.services.wav_files import wav_duration
 from gui import theme
 
 
@@ -85,28 +85,6 @@ def _parse_when(session_name):
     return stamp.strftime(f"%b %d, %Y, {hour}:%M %p")
 
 
-def _wav_duration(path):
-    try:
-        wf = wave.open(path, "rb")
-        rate = wf.getframerate()
-        frames = wf.getnframes()
-        channels = wf.getnchannels()
-        sampwidth = wf.getsampwidth()
-        wf.close()
-        # Guard against recordings whose header stores a byte count in the
-        # nframes field (which would report double the real length): cap to the
-        # frames the file can actually hold. Only kicks in when the header
-        # overcounts, so well-formed files are unaffected.
-        if channels and sampwidth:
-            data_bytes = max(0, os.path.getsize(path) - 44)  # standard PCM header
-            size_frames = data_bytes // (channels * sampwidth)
-            if size_frames and size_frames < frames:
-                frames = size_frames
-        return frames / rate if rate else 0.0
-    except Exception:
-        return 0.0
-
-
 class SessionCard(QFrame):
     """Read-only view of one recording session: a fixed-height waveform/
     spectrogram preview with detection overlaid, plus play/pause, click- or
@@ -176,7 +154,16 @@ class SessionCard(QFrame):
         self.preview = AudioPreviewWidget()
         height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
         self.preview.setFixedHeight(height)
-        self.preview.load(self.wav_path, self.srt_path)
+        problem = self.preview.load(self.wav_path, self.srt_path)
+        if problem:
+            # Kept, hidden, so the card's controls still have a preview to talk
+            # to. With no samples they do nothing. The name, not the date: it's
+            # the file to go and look at
+            self.preview.setParent(self)
+            self.preview.hide()
+            name = os.path.basename(self.wav_path)
+            self._placeholder.setText(f"Can't read {name}\n{problem}")
+            return
         self.preview.set_mode(self._pending_mode)
         self.preview.set_normalized(self._pending_normalized)
         self.preview.seeked.connect(self._on_seek)
@@ -273,7 +260,7 @@ class SessionCard(QFrame):
 
     def _build_meta_text(self, session_name):
         parts = []
-        length = _wav_duration(self.wav_path)
+        length = wav_duration(self.wav_path)
         if length:
             parts.append(f"{length:.1f}s")
         info = library_ops.read_mic_info(self.wav_path) or {}

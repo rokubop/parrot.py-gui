@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
-from gui.widgets.session_card import SessionCard, _wav_duration
+from gui.widgets.session_card import SessionCard
+from gui.services.wav_files import wav_duration
 from gui.widgets.output_picker import OutputPicker
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
@@ -470,7 +471,7 @@ class SoundLibraryPage(QWidget):
         self.add_recording_btn.setText(self._add_recording_text(label))
         self.add_recording_btn.setToolTip(f"Record a new take for “{label}” - R")
         count = len(recordings)
-        recorded_s = sum(_wav_duration(r["wav_path"]) for r in recordings)
+        recorded_s = sum(wav_duration(r["wav_path"]) for r in recordings)
         detected_ms = self.app_state.get_label_duration_ms(label)
         detected_s = detected_ms / 1000.0
         noun = "recording" if count == 1 else "recordings"
