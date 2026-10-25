@@ -9,6 +9,9 @@ from gui.timing import debounced
 from config.config import MS_PER_FRAME
 from gui import theme
 
+MODE_WAVEFORM = "waveform"
+MODE_SPECTROGRAM = "spectrogram"
+
 
 def view_after_cut(view, cut_start, removed, new_duration):
     """Where a visible X window lands once ``removed`` seconds are cut out at
@@ -30,7 +33,7 @@ def view_after_cut(view, cut_start, removed, new_duration):
     return (x0, x0 + span)
 
 
-class AudioPreviewWidget(QWidget):
+class AudioGraph(QWidget):
     """A single tall plot showing a recording as either a waveform or a
     spectrogram. Detection segments are overlaid as shaded regions, a playhead
     tracks playback, and the X axis is the time axis shared by both views.
@@ -52,7 +55,7 @@ class AudioPreviewWidget(QWidget):
         self._duration = 0.0
         self._peak = 0.0          # max abs sample, for visual normalization
         self._normalized = False
-        self._mode = "waveform"
+        self._mode = MODE_WAVEFORM
         self._spectrogram = None  # cached (image, levels)
         self._anim = None
         self._seam_anim = None    # fade of the mark left by a cut
@@ -279,7 +282,7 @@ class AudioPreviewWidget(QWidget):
         if mode == self._mode:
             return
         self._mode = mode
-        is_wave = mode == "waveform"
+        is_wave = mode == MODE_WAVEFORM
         self._max_curve.setVisible(is_wave)
         self._min_curve.setVisible(is_wave)
         self._fill.setVisible(is_wave)
@@ -294,7 +297,7 @@ class AudioPreviewWidget(QWidget):
 
     def set_normalized(self, normalized):
         self._normalized = normalized
-        if self._mode == "waveform":
+        if self._mode == MODE_WAVEFORM:
             self._apply_y_range()
 
     def _apply_y_range(self):
@@ -335,7 +338,7 @@ class AudioPreviewWidget(QWidget):
     # ---- waveform envelope --------------------------------------------
 
     def _render_waveform(self):
-        if self._mode != "waveform" or self._samples is None or self._sample_rate is None:
+        if self._mode != MODE_WAVEFORM or self._samples is None or self._sample_rate is None:
             return
         x0, x1 = self._vb.viewRange()[0]
         x0 = max(0.0, x0)
@@ -484,7 +487,7 @@ class AudioPreviewWidget(QWidget):
             a, b = self._selection
             if b - a > 0:
                 self._animate_x_range(a, b)
-                if self._mode == "waveform":
+                if self._mode == MODE_WAVEFORM:
                     self._apply_y_range()
                 return
         self.fit_full()
@@ -493,7 +496,7 @@ class AudioPreviewWidget(QWidget):
         if self._duration <= 0:
             return
         self._animate_x_range(0.0, self._duration)
-        if self._mode == "waveform":
+        if self._mode == MODE_WAVEFORM:
             self._apply_y_range()
 
     def toggle_fit(self):

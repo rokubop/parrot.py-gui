@@ -2,7 +2,7 @@
 
 A "take" is a single growing WAV: each Record->Pause captures a segment; the
 first becomes the take, later ones are appended onto it (AppendWorker). While
-paused the whole take shows in the interactive preview, so play/scrub/Delete
+paused the whole take shows in the interactive audio graph, so play/scrub/Delete
 (TrimWorker) operate on a static file - no mid-stream splicing. The take lives
 in the sound from the first segment on, so it's always saved.
 
@@ -193,7 +193,7 @@ class RecordingView(QWidget):
                 strategies.description_for_label(lbl)))
         root.addWidget(self.strategy_desc)
 
-        # Center: live monitor (recording) OR interactive preview (review)
+        # Center: live monitor (recording) OR interactive audio graph (review)
         center = QHBoxLayout()
         left = QVBoxLayout()
         self.waveform = WaveformWidget()
@@ -731,9 +731,9 @@ class RecordingView(QWidget):
             self.waveform.clear_display()
             return
         try:
-            # The editor already decoded the take for its preview; reuse that
+            # The editor already decoded the take for its audio graph; reuse that
             # rather than reading the wav a second time.
-            samples, sr = self.editor.preview.playback_audio()
+            samples, sr = self.editor.audio_graph.playback_audio()
             if samples is None or not sr:
                 self.waveform.clear_display()
                 return

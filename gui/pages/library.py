@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
-from gui.widgets.session_card import SessionCard
+from gui.widgets.recording_card import RecordingCard
+from gui.widgets.audio_graph import MODE_SPECTROGRAM, MODE_WAVEFORM
 from gui.timing import debounced, staggered, next_tick
 from gui.services.wav_files import wav_duration
 from gui.widgets.output_picker import OutputPicker
@@ -36,7 +37,7 @@ class SoundLibraryPage(QWidget):
         self._cards = []
         self._active_card = None     # currently playing
         self._selected_card = None   # keyboard target
-        self._mode = "waveform"
+        self._mode = MODE_WAVEFORM
         self._normalized = True
         self._rebuilding = False
 
@@ -47,7 +48,7 @@ class SoundLibraryPage(QWidget):
         # Cards are created cheaply (placeholder), then their waveforms are
         # built one per tick, so selecting a sound doesn't freeze while every
         # plot is built
-        self._load_previews = staggered(self._load_preview, owner=self)
+        self._build_audio_graphs = staggered(self._build_audio_graph, owner=self)
 
         # ClickFocus: the Tab stop is the card area, after the header
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -205,7 +206,7 @@ class SoundLibraryPage(QWidget):
         actions.addWidget(self.view_label)
         self._mode_group = QButtonGroup(self)
         self._mode_buttons = {}
-        for mode, text in (("waveform", "Waveform"), ("spectrogram", "Spectrogram")):
+        for mode, text in ((MODE_WAVEFORM, "Waveform"), (MODE_SPECTROGRAM, "Spectrogram")):
             btn = QPushButton(text)
             btn.setObjectName("viewToggle")
             btn.setCheckable(True)
@@ -303,7 +304,7 @@ class SoundLibraryPage(QWidget):
             return
         self._rebuilding = True
         # Cancel any in-flight progressive loads for the view we're replacing.
-        self._load_previews.cancel()
+        self._build_audio_graphs.cancel()
         # Cards/container that are being replaced. We build the new view fully,
         # swap it in, and only THEN destroy these - so tearing down the old
         # pyqtgraph scenes can never disturb the layout we're inserting into.
@@ -358,7 +359,7 @@ class SoundLibraryPage(QWidget):
                     base = os.path.splitext(rec["filename"])[0]
                     segments_dir = os.path.join(os.path.dirname(os.path.dirname(rec["wav_path"])), "segments")
                     thresholds_path = os.path.join(segments_dir, base + "_thresholds.txt")
-                    card = SessionCard(base, rec["wav_path"], rec["srt_path"], thresholds_path)
+                    card = RecordingCard(base, rec["wav_path"], rec["srt_path"], thresholds_path)
                     card.set_mode(self._mode)
                     card.set_normalized(self._normalized)
                     card.started.connect(self._on_card_started)
@@ -377,7 +378,7 @@ class SoundLibraryPage(QWidget):
                 # the swap is instant, then queue every card to load in order
                 # (selected one first) on subsequent event-loop ticks.
                 self._mark_selected(self._cards[0])
-                self._load_previews(list(self._cards))
+                self._build_audio_graphs(list(self._cards))
             # leave focus in the list, so arrowing through sounds keeps working
             if not self.label_list.hasFocus():
                 self.scroll.setFocus()
@@ -499,7 +500,7 @@ class SoundLibraryPage(QWidget):
         QMessageBox.warning(self, "Playback", message)
 
     def _mark_selected(self, card):
-        """Set the selection highlight only (no preview build) - used during a
+        """Set the selection highlight only (no audio graph build) - used during a
         rebuild so swapping in the new view never blocks on a plot."""
         if (self._selected_card is not None
                 and not sip.isdeleted(self._selected_card)):
@@ -510,19 +511,19 @@ class SoundLibraryPage(QWidget):
     def _select_card(self, card):
         if card is self._selected_card:
             # Already selected; make sure it's built (a click should show it).
-            card.load_preview()
+            card.build_audio_graph()
             return
         if self._selected_card is not None:
             self._selected_card.set_selected(False)
         self._selected_card = card
         # A selected card is about to be interacted with - build it now rather
         # than waiting for its turn in the progressive queue.
-        card.load_preview()
+        card.build_audio_graph()
         card.set_selected(True)
 
-    def _load_preview(self, card):
+    def _build_audio_graph(self, card):
         if not sip.isdeleted(card):
-            card.load_preview()
+            card.build_audio_graph()
 
     # ---- keyboard ------------------------------------------------------
 
@@ -582,7 +583,7 @@ class SoundLibraryPage(QWidget):
                 "D deselect/start  ·  V expand  ·  R add recording  ·  ↑↓ select")
 
     def _toggle_mode(self):
-        new_mode = "spectrogram" if self._mode == "waveform" else "waveform"
+        new_mode = MODE_SPECTROGRAM if self._mode == MODE_WAVEFORM else MODE_WAVEFORM
         self._mode_buttons[new_mode].setChecked(True)
         self._set_mode(new_mode)
 

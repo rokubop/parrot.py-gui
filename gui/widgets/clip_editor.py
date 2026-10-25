@@ -1,4 +1,4 @@
-"""A clip preview plus every control that acts on it.
+"""A clip's audio graph plus every control that acts on it.
 
 The recording view and the edit view do the same things to a saved wav - play
 it, zoom it, select part of it, delete that part, undo - and used to do them
@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (
 
 from gui import components, icons, theme
 from gui.services import levels, playback
-from gui.widgets.audio_preview import AudioPreviewWidget, view_after_cut
+from gui.widgets.audio_graph import (
+    AudioGraph, MODE_SPECTROGRAM, MODE_WAVEFORM, view_after_cut)
 from gui.widgets.level_lane import LaneSplitter, LevelLane
 from gui.workers.segment_worker import TrimWorker
 
@@ -63,9 +64,9 @@ class ClipEditorWidget(QWidget):
         # has to be readable and not just drawn.
         self._locked = False
 
-        # view toggles (mirror AudioPreviewWidget defaults)
+        # view toggles (mirror AudioGraph defaults)
         self._norm = False
-        self._mode = "waveform"
+        self._mode = MODE_WAVEFORM
 
         # playback
         self._audio = None
@@ -94,16 +95,16 @@ class ClipEditorWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
-        self.preview = AudioPreviewWidget()
-        self.preview.seeked.connect(self.on_seek)
+        self.audio_graph = AudioGraph()
+        self.audio_graph.seeked.connect(self.on_seek)
 
         if self._show_levels:
             self.lane = LevelLane(flexible=True)
-            self.lane.link_x(self.preview.plot)
-            self.split = LaneSplitter(self.preview, self.lane, "clip")
+            self.lane.link_x(self.audio_graph.plot)
+            self.split = LaneSplitter(self.audio_graph, self.lane, "clip")
             root.addWidget(self.split, 1)
         else:
-            root.addWidget(self.preview, 1)
+            root.addWidget(self.audio_graph, 1)
 
         row = QHBoxLayout()
         row.setSpacing(6)
@@ -172,12 +173,12 @@ class ClipEditorWidget(QWidget):
         self._audio = None
         self._play_from = 0.0
         self._stop_at = None
-        view = None if reset_view else self.preview.view_range()
-        self.preview.load(wav_path, srt_path, view=view)
+        view = None if reset_view else self.audio_graph.view_range()
+        self.audio_graph.load(wav_path, srt_path, view=view)
         self.refresh_levels()
         if reset_view:
-            self.preview.fit_full()
-        self.preview.set_busy(False)
+            self.audio_graph.fit_full()
+        self.audio_graph.set_busy(False)
         self.refresh_history_buttons()
 
     def refresh_levels(self):
@@ -192,7 +193,7 @@ class ClipEditorWidget(QWidget):
 
     def set_regions(self, srt_path):
         """Refresh only the detection overlay."""
-        self.preview.load_regions(srt_path)
+        self.audio_graph.load_regions(srt_path)
 
     def clear(self):
         self.stop_playback()
@@ -200,7 +201,7 @@ class ClipEditorWidget(QWidget):
         self._audio = None
         self._cut_note = ""
         self._locked = False
-        self.preview.set_busy(False)
+        self.audio_graph.set_busy(False)
         if self.lane is not None:
             self.lane.clear()
 
@@ -210,7 +211,7 @@ class ClipEditorWidget(QWidget):
         """Host work that reprocesses the clip (re-detection) uses this too, so
         the plot is inert for the whole of it and not just for our own edits."""
         self._locked = busy
-        self.preview.set_busy(busy, message)
+        self.audio_graph.set_busy(busy, message)
         if self.lane is not None:
             self.lane.setEnabled(not busy)
         for btn in (self.play_btn, self.fit_btn, self.norm_btn, self.spec_btn):
@@ -230,24 +231,24 @@ class ClipEditorWidget(QWidget):
     # ---- view toggles ---------------------------------------------------
 
     def fit(self):
-        self.preview.toggle_fit()
+        self.audio_graph.toggle_fit()
 
     def deselect_or_start(self):
         """D/Esc: drop the selection if there is one, else jump to the start."""
-        if self.preview.current_selection() is not None:
-            self.preview.clear_selection()
+        if self.audio_graph.current_selection() is not None:
+            self.audio_graph.clear_selection()
         else:
             self.on_seek(0.0)
 
     def toggle_normalize(self):
         self._norm = not self._norm
         self.norm_btn.setChecked(self._norm)
-        self.preview.set_normalized(self._norm)
+        self.audio_graph.set_normalized(self._norm)
 
     def toggle_spectrum(self):
-        self._mode = "spectrogram" if self._mode == "waveform" else "waveform"
-        self.spec_btn.setChecked(self._mode == "spectrogram")
-        self.preview.set_mode(self._mode)
+        self._mode = MODE_SPECTROGRAM if self._mode == MODE_WAVEFORM else MODE_WAVEFORM
+        self.spec_btn.setChecked(self._mode == MODE_SPECTROGRAM)
+        self.audio_graph.set_mode(self._mode)
 
     def toggle_levels(self):
         """Collapse the lane out of the way, or bring it back where you left it."""
@@ -267,14 +268,14 @@ class ClipEditorWidget(QWidget):
     def delete_selection(self):
         if self.is_busy() or not self.wav_path:
             return
-        sel = self.preview.current_selection()
+        sel = self.audio_graph.current_selection()
         if not sel or sel[1] - sel[0] <= 0:
             self.status.emit(f"Select part of the {self.noun} first, then Delete.")
             return
         # A clip trimmed to nothing is a wav with no frames, which every view
         # downstream has to special-case. A drag across the whole thing still
         # reaches it (the selection auto-scrolls), so it's refused here.
-        if sel[0] <= 0.0 and sel[1] >= self.preview.duration() - 1e-3:
+        if sel[0] <= 0.0 and sel[1] >= self.audio_graph.duration() - 1e-3:
             self.status.emit(f"That's the whole {self.noun}. "
                              f"{self.whole_clip_hint}".strip())
             return
@@ -284,9 +285,9 @@ class ClipEditorWidget(QWidget):
         self.history.checkpoint()
         # Kept until the cut lands so the view can be mapped through it, and so a
         # failed trim leaves the selection where it was to retry.
-        self._view_before_cut = self.preview.view_range()
+        self._view_before_cut = self.audio_graph.view_range()
         self._cut_applied = False
-        self.preview.mark_pending_cut(*sel)
+        self.audio_graph.mark_pending_cut(*sel)
         self.set_busy(True, "Deleting…")
         self.status.emit("Deleting…")
         self.worker = TrimWorker(self.wav_path, self.label, [sel])
@@ -309,14 +310,14 @@ class ClipEditorWidget(QWidget):
         """The wav is rewritten; detection is still running. Show the new audio
         now, at the same zoom, with the playhead parked on the seam. The overlay
         is dropped rather than left at offsets the cut has invalidated."""
-        view = view_after_cut(self._view_before_cut or self.preview.view_range(),
+        view = view_after_cut(self._view_before_cut or self.audio_graph.view_range(),
                               cut_start, removed, new_duration)
-        self.preview.load(self.wav_path, None, view=view)
+        self.audio_graph.load(self.wav_path, None, view=view)
         self.refresh_levels()                  # the audio under the lane changed
         self.set_busy(True, "Re-detecting…")   # load repositions the scrim
-        self.preview.clear_selection()
-        self.preview.flash_seam(cut_start)
-        self.preview.set_playhead(cut_start)
+        self.audio_graph.clear_selection()
+        self.audio_graph.flash_seam(cut_start)
+        self.audio_graph.set_playhead(cut_start)
         self._audio = None          # the samples changed under us
         self._play_from = cut_start
         self._stop_at = None
@@ -327,7 +328,7 @@ class ClipEditorWidget(QWidget):
 
     def _on_trim_done(self, srt_path):
         self._finish_worker()
-        self.preview.load_regions(srt_path)
+        self.audio_graph.load_regions(srt_path)
         self.set_busy(False)
         self.edited.emit()
         self.history_changed.emit()
@@ -377,8 +378,8 @@ class ClipEditorWidget(QWidget):
         self._cut_note = ""         # no longer describes what is on screen
         # Hold the zoom: undoing a cut should show you the seam coming back, not
         # the whole clip again.
-        self.preview.load(self.wav_path, self.srt_provider(),
-                          view=self.preview.view_range())
+        self.audio_graph.load(self.wav_path, self.srt_provider(),
+                          view=self.audio_graph.view_range())
         self.refresh_levels()
         self._audio = None
         self.edited.emit()
@@ -391,16 +392,16 @@ class ClipEditorWidget(QWidget):
     def _ensure_audio(self):
         if self._audio is not None:
             return
-        samples, sr = self.preview.playback_audio()
+        samples, sr = self.audio_graph.playback_audio()
         self._audio = samples
         self._sr = sr
-        self._duration = self.preview.duration()
+        self._duration = self.audio_graph.duration()
 
     def on_seek(self, seconds):
         """Clicking the waveform moves the playhead; play starts from there."""
         self._ensure_audio()
         self._play_from = max(0.0, min(seconds, self._duration))
-        self.preview.set_playhead(self._play_from)
+        self.audio_graph.set_playhead(self._play_from)
         if self._playing:
             self.play()
 
@@ -416,7 +417,7 @@ class ClipEditorWidget(QWidget):
         self._ensure_audio()
         if self._audio is None or not self._sr:
             return
-        sel = self.preview.current_selection()
+        sel = self.audio_graph.current_selection()
         if sel and sel[1] - sel[0] > 0:
             self._play_from, self._stop_at = sel
         else:
@@ -433,7 +434,7 @@ class ClipEditorWidget(QWidget):
         self._playing = True
         self.play_btn.setText(self._play_labels[1])
         self.play_btn.setIcon(icons.stop())
-        self.preview.set_playhead(self._play_from)
+        self.audio_graph.set_playhead(self._play_from)
         self._clock.restart()
         self._timer.start()
 
@@ -455,10 +456,10 @@ class ClipEditorWidget(QWidget):
         pos = self._heard_position()
         limit = self._stop_at if self._stop_at is not None else self._duration
         if pos >= limit:
-            self.preview.set_playhead(limit)
+            self.audio_graph.set_playhead(limit)
             self.stop_playback()
             return
-        self.preview.set_playhead(pos)
+        self.audio_graph.set_playhead(pos)
 
     def refresh_theme(self):
         """Icons take their colour from the theme, and a new font changes the
@@ -471,4 +472,4 @@ class ClipEditorWidget(QWidget):
         # Unlink first, or pyqtgraph paints a ViewBox that has already gone.
         if self.lane is not None:
             self.lane.cleanup()
-        self.preview.cleanup()
+        self.audio_graph.cleanup()

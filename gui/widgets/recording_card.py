@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMenu
 )
 from config.config import RATE
-from gui.widgets.audio_preview import AudioPreviewWidget
+from gui.widgets.audio_graph import AudioGraph, MODE_WAVEFORM
 from gui.services import library_ops, playback, strategies
 from gui.services.wav_files import wav_duration
 from gui import theme
@@ -85,12 +85,12 @@ def _parse_when(session_name):
     return stamp.strftime(f"%b %d, %Y, {hour}:%M %p")
 
 
-class SessionCard(QFrame):
+class RecordingCard(QFrame):
     """Read-only view of one recording session: a fixed-height waveform/
-    spectrogram preview with detection overlaid, plus play/pause, click- or
+    spectrogram audio graph with detection overlaid, plus play/pause, click- or
     drag-to-seek, and quick fit/start/expand controls."""
 
-    NORMAL_HEIGHT = 150     # consistent preview height across all cards
+    NORMAL_HEIGHT = 150     # consistent audio graph height across all cards
     EXPANDED_HEIGHT = 440   # height when the card is expanded in place
 
     started = pyqtSignal(object)   # emits self when playback begins
@@ -125,12 +125,12 @@ class SessionCard(QFrame):
 
         self._apply_border(False)
 
-        # Lazy preview: a pyqtgraph plot per recording is the expensive part of
+        # Lazy audio graph: a pyqtgraph plot per recording is the expensive part of
         # switching sounds (~50-220 ms each). A placeholder of the same height
-        # shows instantly; the library page drives load_preview() on demand.
-        self.preview = None
+        # shows instantly; the library page drives build_audio_graph() on demand.
+        self.audio_graph = None
         self._loaded = False
-        self._pending_mode = "waveform"
+        self._pending_mode = MODE_WAVEFORM
         self._pending_normalized = False
 
         self._layout = QVBoxLayout(self)
@@ -145,32 +145,32 @@ class SessionCard(QFrame):
             f"color: {theme.colors()['text_dim']}; border: none; background: transparent;")
         self._layout.addWidget(self._placeholder)
 
-    def load_preview(self):
-        """Build and load the waveform preview if it hasn't been yet. Cheap to
+    def build_audio_graph(self):
+        """Build and load the audio graph if it hasn't been yet. Cheap to
         call repeatedly (no-op once loaded)."""
         if self._loaded:
             return
         self._loaded = True
-        self.preview = AudioPreviewWidget()
+        self.audio_graph = AudioGraph()
         height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
-        self.preview.setFixedHeight(height)
-        problem = self.preview.load(self.wav_path, self.srt_path)
+        self.audio_graph.setFixedHeight(height)
+        problem = self.audio_graph.load(self.wav_path, self.srt_path)
         if problem:
-            # Kept, hidden, so the card's controls still have a preview to talk
+            # Kept, hidden, so the card's controls still have an audio graph to talk
             # to. With no samples they do nothing. The name, not the date: it's
             # the file to go and look at
-            self.preview.setParent(self)
-            self.preview.hide()
+            self.audio_graph.setParent(self)
+            self.audio_graph.hide()
             name = os.path.basename(self.wav_path)
             self._placeholder.setText(f"Can't read {name}\n{problem}")
             return
-        self.preview.set_mode(self._pending_mode)
-        self.preview.set_normalized(self._pending_normalized)
-        self.preview.seeked.connect(self._on_seek)
-        self.preview.pressed.connect(lambda: self.selected.emit(self))
-        self.preview.selection_changed.connect(self._on_selection_changed)
-        self.preview.selection_cleared.connect(self._on_selection_cleared)
-        self._layout.replaceWidget(self._placeholder, self.preview)
+        self.audio_graph.set_mode(self._pending_mode)
+        self.audio_graph.set_normalized(self._pending_normalized)
+        self.audio_graph.seeked.connect(self._on_seek)
+        self.audio_graph.pressed.connect(lambda: self.selected.emit(self))
+        self.audio_graph.selection_changed.connect(self._on_selection_changed)
+        self.audio_graph.selection_cleared.connect(self._on_selection_cleared)
+        self._layout.replaceWidget(self._placeholder, self.audio_graph)
         self._placeholder.setParent(None)
         self._placeholder.deleteLater()
         self._placeholder = None
@@ -313,58 +313,58 @@ class SessionCard(QFrame):
         t = theme.colors()
         color = t["accent"] if selected else t["border"]
         self.setStyleSheet(
-            "SessionCard { border: 1px solid %s; border-radius: %s; "
+            "RecordingCard { border: 1px solid %s; border-radius: %s; "
             "background-color: %s; } "
-            "SessionCard:hover { border-color: %s; }"
+            "RecordingCard:hover { border-color: %s; }"
             % (color, t["radius"], t["card"], t["accent"])
         )
 
     def set_mode(self, mode):
-        # Remember the choice so a not-yet-loaded preview adopts it on load.
+        # Remember the choice so a not-yet-built audio graph adopts it on load.
         self._pending_mode = mode
-        if self.preview is not None:
-            self.preview.set_mode(mode)
+        if self.audio_graph is not None:
+            self.audio_graph.set_mode(mode)
 
     def set_normalized(self, normalized):
         self._pending_normalized = normalized
-        if self.preview is not None:
-            self.preview.set_normalized(normalized)
+        if self.audio_graph is not None:
+            self.audio_graph.set_normalized(normalized)
 
     # ---- quick controls ------------------------------------------------
 
     def fit_view(self):
         self.selected.emit(self)
-        self.load_preview()
-        self.preview.toggle_fit()
+        self.build_audio_graph()
+        self.audio_graph.toggle_fit()
 
     def go_to_start(self):
         self.selected.emit(self)
-        self.load_preview()
+        self.build_audio_graph()
         if self._playing:
             self.play(from_seconds=0.0)
         else:
             self._position = 0.0
-            self.preview.set_playhead(0.0)
+            self.audio_graph.set_playhead(0.0)
 
     def toggle_expanded(self):
         self._expanded = not self._expanded
         height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
-        self.load_preview()
-        self.preview.setFixedHeight(height)
+        self.build_audio_graph()
+        self.audio_graph.setFixedHeight(height)
         if hasattr(self, "expand_btn"):
             self.expand_btn.setText("Collapse" if self._expanded else "Expand")
         self.selected.emit(self)
 
     def clear_selection(self):
-        if self.preview is not None:
-            self.preview._clear_selection()
+        if self.audio_graph is not None:
+            self.audio_graph._clear_selection()
 
     def deselect_or_start(self):
         """D/Esc: drop the selection if there is one, else jump to the start."""
         self.selected.emit(self)
-        self.load_preview()
-        if self.preview is not None and self.preview.current_selection() is not None:
-            self.preview._clear_selection()
+        self.build_audio_graph()
+        if self.audio_graph is not None and self.audio_graph.current_selection() is not None:
+            self.audio_graph._clear_selection()
         else:
             self.go_to_start()
 
@@ -373,16 +373,16 @@ class SessionCard(QFrame):
     def _load_audio(self):
         if self._audio is not None:
             return
-        # Reuse the samples the preview already decoded for the waveform instead
+        # Reuse the samples the audio graph already decoded for the waveform instead
         # of re-reading the whole WAV on the UI thread (which froze the first
         # play). These are mono float32 in [-1, 1] - sounddevice plays them as-is.
-        self.load_preview()
-        samples, sample_rate = self.preview.playback_audio()
+        self.build_audio_graph()
+        samples, sample_rate = self.audio_graph.playback_audio()
         if samples is None or sample_rate is None:
             return
         self._audio = samples
         self._sample_rate = sample_rate
-        self._duration = self.preview.duration()
+        self._duration = self.audio_graph.duration()
 
     def toggle_play(self):
         if self._playing:
@@ -428,7 +428,7 @@ class SessionCard(QFrame):
         self._playing = True
         self.play_btn.setIcon(self._pause_icon)
         self.play_btn.setText(" Pause")
-        self.preview.set_playhead(self._position)
+        self.audio_graph.set_playhead(self._position)
         self._clock.restart()
         self._timer.start()
 
@@ -441,7 +441,7 @@ class SessionCard(QFrame):
         self._timer.stop()
         self.play_btn.setIcon(self._play_icon)
         self.play_btn.setText(" Play")
-        self.preview.set_playhead(self._position)
+        self.audio_graph.set_playhead(self._position)
 
     def stop(self):
         """Stop playback without preserving position (used when another card plays)."""
@@ -455,8 +455,8 @@ class SessionCard(QFrame):
     def cleanup(self):
         """Release resources before deletion."""
         self.stop()
-        if self.preview is not None:
-            self.preview.cleanup()
+        if self.audio_graph is not None:
+            self.audio_graph.cleanup()
 
     def seek_relative(self, delta_seconds):
         pos = self._position
@@ -467,9 +467,9 @@ class SessionCard(QFrame):
     def _on_seek(self, seconds):
         # Clicking/scrubbing positions the playhead; it only plays if already
         # playing (jump and continue). Use Play / Space to start from a stop.
-        dur = self.preview.duration()
+        dur = self.audio_graph.duration()
         self._position = max(0.0, min(seconds, dur)) if dur else max(0.0, seconds)
-        self.preview.set_playhead(self._position)
+        self.audio_graph.set_playhead(self._position)
         if self._playing:
             self.play(from_seconds=self._position)
 
@@ -484,11 +484,11 @@ class SessionCard(QFrame):
         elapsed = self._heard_position()
         limit = self._stop_at if self._stop_at is not None else self._duration
         if elapsed >= limit:
-            self.preview.set_playhead(limit)
+            self.audio_graph.set_playhead(limit)
             self.stop()
             # Park at the selection start (loopable) or the clip start.
             self._position = self._sel_start if self._stop_at is not None else 0.0
-            self.preview.set_playhead(self._position)
+            self.audio_graph.set_playhead(self._position)
             return
         self._position = elapsed
-        self.preview.set_playhead(elapsed)
+        self.audio_graph.set_playhead(elapsed)
