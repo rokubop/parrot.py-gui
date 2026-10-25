@@ -48,6 +48,8 @@ class AboutPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # a Tab stop with no ring; Tab scrolls to what it focuses
+        self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         outer.addWidget(self.scroll, 1)
 
         body = QWidget()

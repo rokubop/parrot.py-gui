@@ -57,8 +57,11 @@ def enable_links(label):
     """A QLabel ignores clicks on <a> until told to accept them, so a link
     added to existing copy silently does nothing."""
     label.setTextFormat(Qt.TextFormat.RichText)
+    # mouse only: keyboard link access made every paragraph a Tab stop
+    # with no visible focus
     label.setTextInteractionFlags(
-        Qt.TextInteractionFlag.TextBrowserInteraction)
+        Qt.TextInteractionFlag.TextSelectableByMouse
+        | Qt.TextInteractionFlag.LinksAccessibleByMouse)
     label.setOpenExternalLinks(True)
     return label
 

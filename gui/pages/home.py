@@ -172,6 +172,8 @@ class HomePage(QWidget):
         scroll.setAccessibleName("Home")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # a Tab stop with no ring; Tab scrolls to what it focuses
+        scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         outer.addWidget(scroll)
 
         wrapper = QWidget()

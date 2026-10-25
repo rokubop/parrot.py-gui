@@ -155,6 +155,8 @@ class LiveTestDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # a Tab stop with no ring; Tab scrolls to what it focuses
+        scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         bars_widget = QWidget()
         self.bars_layout = QVBoxLayout(bars_widget)
         self.bars_layout.setSpacing(4)

@@ -627,6 +627,8 @@ class TrainView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # a Tab stop with no ring; Tab scrolls to what it focuses
+        scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(col)
         scroll.setFixedWidth(330)
