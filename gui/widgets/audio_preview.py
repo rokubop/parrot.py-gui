@@ -5,6 +5,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.srt import parse_srt_file
 from gui.services.wav_files import read_wav, UnreadableWav
+from gui.timing import debounced
 from config.config import MS_PER_FRAME
 from gui import theme
 
@@ -202,12 +203,9 @@ class AudioPreviewWidget(QWidget):
         self.plot.addItem(self.readout)
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
-        # Debounced re-render on zoom/pan
-        self._render_timer = QTimer(self)
-        self._render_timer.setSingleShot(True)
-        self._render_timer.setInterval(15)
-        self._render_timer.timeout.connect(self._render_waveform)
-        self._vb.sigXRangeChanged.connect(lambda *_: self._render_timer.start())
+        # Zoom and pan fire per mouse event; render once they settle
+        self._render_soon = debounced(self._render_waveform, wait_ms=15, owner=self)
+        self._vb.sigXRangeChanged.connect(self._render_soon)
         self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
         self._vb.sigXRangeChanged.connect(lambda *_: self._position_overlays())
 
@@ -674,7 +672,7 @@ class AudioPreviewWidget(QWidget):
     def cleanup(self):
         """Tear down plot items before deletion so pyqtgraph doesn't paint
         an InfiniteLine whose ViewBox has already gone away."""
-        self._render_timer.stop()
+        self._render_soon.cancel()
         self._drag_timer.stop()
         self._stop_seam()
         if self._anim is not None:

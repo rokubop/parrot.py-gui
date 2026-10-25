@@ -4,10 +4,11 @@ from PyQt6.QtWidgets import (
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QButtonGroup,
     QMenu, QInputDialog, QMessageBox, QDialog, QLineEdit, QDialogButtonBox
 )
-from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.session_card import SessionCard
+from gui.timing import debounced, staggered, next_tick
 from gui.services.wav_files import wav_duration
 from gui.widgets.output_picker import OutputPicker
 from gui.widgets.confirm_dialog import confirm_destructive
@@ -39,29 +40,14 @@ class SoundLibraryPage(QWidget):
         self._normalized = True
         self._rebuilding = False
 
-        # Debounce selection: rapid clicks through the list collapse to a single
-        # build of whatever is finally selected, instead of building (and tearing
-        # down) cards for every item flown past.
-        self._select_timer = QTimer(self)
-        self._select_timer.setSingleShot(True)
-        # Short debounce: just enough to collapse a burst of arrow-key scrolling
-        # into one build. Builds are cheap now (placeholders), so this can be low.
-        self._select_timer.setInterval(15)
-        self._select_timer.timeout.connect(self._build_current)
+        # Rapid clicks or arrowing through the list build only the sound
+        # finally selected. Builds are cheap (placeholders), so the wait is short
+        self._build_soon = debounced(self._build_current, wait_ms=15, owner=self)
 
-        # Old views awaiting teardown. Destroying loaded pyqtgraph scenes costs
-        # ~10 ms each; we defer it to after the new view paints so switching
-        # never blocks on the *previous* sound's cleanup.
-        self._garbage = []
-
-        # Progressive preview loader: cards are created cheaply (placeholder),
-        # then their waveforms are built one per event-loop tick so selecting a
-        # sound feels instant instead of freezing while every plot is built.
-        self._load_timer = QTimer(self)
-        self._load_timer.setSingleShot(True)
-        self._load_timer.setInterval(0)
-        self._load_timer.timeout.connect(self._load_next_pending)
-        self._pending_loads = []
+        # Cards are created cheaply (placeholder), then their waveforms are
+        # built one per tick, so selecting a sound doesn't freeze while every
+        # plot is built
+        self._load_previews = staggered(self._load_preview, owner=self)
 
         # ClickFocus: the Tab stop is the card area, after the header
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -95,7 +81,7 @@ class SoundLibraryPage(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.label_list.currentItemChanged.connect(lambda *_: self._select_timer.start())
+        self.label_list.currentItemChanged.connect(self._build_soon)
         self.label_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.label_list.customContextMenuRequested.connect(self._on_list_context_menu)
         self.label_list.installEventFilter(self)
@@ -313,12 +299,11 @@ class SoundLibraryPage(QWidget):
         if self._rebuilding:
             # A build is already in progress (e.g. re-entered via processEvents).
             # Re-arm so we rebuild for the latest selection once it finishes.
-            self._select_timer.start()
+            self._build_soon()
             return
         self._rebuilding = True
         # Cancel any in-flight progressive loads for the view we're replacing.
-        self._load_timer.stop()
-        self._pending_loads = []
+        self._load_previews.cancel()
         # Cards/container that are being replaced. We build the new view fully,
         # swap it in, and only THEN destroy these - so tearing down the old
         # pyqtgraph scenes can never disturb the layout we're inserting into.
@@ -392,25 +377,16 @@ class SoundLibraryPage(QWidget):
                 # the swap is instant, then queue every card to load in order
                 # (selected one first) on subsequent event-loop ticks.
                 self._mark_selected(self._cards[0])
-                self._pending_loads = list(self._cards)
-                self._load_timer.start()
+                self._load_previews(list(self._cards))
             # leave focus in the list, so arrowing through sounds keeps working
             if not self.label_list.hasFocus():
                 self.scroll.setFocus()
         finally:
-            # Queue the old view's teardown for the next event-loop tick so the
-            # new (placeholder) view paints first. Multiple rapid switches just
-            # stack up and get collected together.
+            # Destroying loaded pyqtgraph scenes costs ~10 ms each, so the old
+            # view goes after the new (placeholder) one paints
             if old_cards or old_container is not None:
-                self._garbage.append((old_cards, old_container))
-                QTimer.singleShot(0, self._collect_garbage)
+                next_tick(lambda: self._destroy_cards(old_cards, old_container))
             self._rebuilding = False
-
-    def _collect_garbage(self):
-        pending = self._garbage
-        self._garbage = []
-        for cards, container in pending:
-            self._destroy_cards(cards, container)
 
     def _new_container(self):
         """Create a fresh card container/layout (with a centered message label)."""
@@ -544,17 +520,9 @@ class SoundLibraryPage(QWidget):
         card.load_preview()
         card.set_selected(True)
 
-    def _load_next_pending(self):
-        """Build one queued card's waveform, then yield to the event loop and
-        re-arm for the next - so the UI stays responsive while previews fill in."""
-        while self._pending_loads:
-            card = self._pending_loads.pop(0)
-            if sip.isdeleted(card):
-                continue
+    def _load_preview(self, card):
+        if not sip.isdeleted(card):
             card.load_preview()
-            if self._pending_loads:
-                self._load_timer.start()
-            return
 
     # ---- keyboard ------------------------------------------------------
 
