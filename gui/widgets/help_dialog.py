@@ -878,7 +878,7 @@ def scrolled(content, max_height=560):
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.Shape.NoFrame)
-    # a Tab stop with no ring; Tab scrolls to what it focuses
+    # out of Tab: it showed no ring. Tabbing to a control inside still scrolls to it
     scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     scroll.setWidget(content)
     scroll.setMaximumHeight(max_height)
