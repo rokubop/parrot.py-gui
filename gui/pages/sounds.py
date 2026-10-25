@@ -67,8 +67,9 @@ class SoundsPage(QWidget):
         title_row.addWidget(help_dialog.help_button(self, "record"))
         left_layout.addLayout(title_row)
         self.sound_list = QTreeWidget()
+        self.sound_list.setAccessibleName("Sounds")
         self.sound_list.setColumnCount(3)
-        self.sound_list.setHeaderLabels(["Sound", "Data", "Time"])
+        self.sound_list.setHeaderLabels(["Sound", "Data", "Detected"])
         self.sound_list.setRootIsDecorated(False)
         self.sound_list.setUniformRowHeights(True)
         header = self.sound_list.header()
@@ -231,7 +232,7 @@ class SoundsPage(QWidget):
         for text, slot, tip in (
                 ("Rename", self._on_rename_sound, "Rename this sound"),
                 ("Clone", self._on_clone_sound, "Make a copy of this sound under a new name"),
-                ("Open folder", self._on_open_sound_folder, "Reveal this sound's folder"),
+                ("Open folder", self._on_open_sound_folder, "This sound's folder"),
                 ("Delete", self._on_delete_sound, "Delete this sound and all its recordings")):
             btn = QPushButton(text)
             btn.setObjectName("secondaryAction")
@@ -260,7 +261,7 @@ class SoundsPage(QWidget):
             quantity, _pct = get_quantity_rating(duration_ms)
             item = QTreeWidgetItem([label, quantity, duration])
             item.setData(0, Qt.ItemDataRole.UserRole, label)
-            color = self._QUANTITY_COLORS.get(quantity)
+            color = theme.QUANTITY_COLORS.get(quantity)
             if color:
                 item.setForeground(1, QColor(color))
             item.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -425,10 +426,6 @@ class SoundsPage(QWidget):
 
     # ---- selection / playback coordination -----------------------------
 
-    # Color cues for the data-quantity rating - shared with the training
-    # checklist so a rating reads identically in both places.
-    _QUANTITY_COLORS = theme.QUANTITY_COLORS
-
     def _sound_header_update(self, label, recordings):
         self.sound_title.setText(label)
         # Name the target on the button itself: "Add recording" alone reads as
@@ -456,14 +453,13 @@ class SoundsPage(QWidget):
 
     def _sound_quantity_update(self, detected_ms):
         quantity, percent_to_next = get_quantity_rating(detected_ms)
-        color = self._QUANTITY_COLORS.get(quantity, theme.colors()["text"])
+        color = theme.QUANTITY_COLORS.get(quantity, theme.colors()["text"])
         detected_str = ms_to_srt_timestring(int(detected_ms), False).split(",")[0]
-        names = list(QUANTITIES.values())
+        tail = ""
         if quantity != QUANTITIES["excellent"]:
+            names = list(QUANTITIES.values())
             next_quantity = names[names.index(quantity) + 1]
             tail = f"   ·   {round(percent_to_next)}% toward “{next_quantity}”"
-        else:
-            tail = "   ·   plenty of data for training"
         self.sound_quantity.setText(
             f"Data quantity:  <b style='color:{color};'>{quantity}</b>"
             f"   ({detected_str} of detected sound){tail}"
