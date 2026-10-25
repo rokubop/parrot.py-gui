@@ -134,6 +134,26 @@ def colors():
     return THEMES[_current]
 
 
+def padding_and_focus_ring(selector, padding, border=0):
+    """A widget's padding and its focus ring, set together because they
+    share the space.
+
+    Qt has no outline, so the ring is a 2px border and takes its width out of
+    the padding, or focusing would resize the widget. ``padding`` is CSS
+    shorthand; ``border`` is the widget's own border width, one number or
+    (top, right, bottom, left). ``selector`` may list several, comma
+    separated."""
+    t = colors()
+    pad = [int(v.removesuffix("px")) for v in padding.split()]
+    pad = {1: pad * 4, 2: pad * 2, 3: pad + pad[1:2], 4: pad}[len(pad)]
+    edge = (border,) * 4 if isinstance(border, int) else border
+    focused = " ".join(f"{p + e - 2}px" for p, e in zip(pad, edge))
+    focus = ", ".join(f"{s.strip()}:focus" for s in selector.split(","))
+    return (f"{selector} {{ padding: {padding}; }} "
+            f"{focus} {{ border: 2px solid {t['focus']}; "
+            f"border-radius: {t['radius']}; padding: {focused}; }} ")
+
+
 _STYLESHEET = Template("""
     * { font-size: ${fs_body}px; }
     QMainWindow, QWidget { background-color: $window; color: $text; }
@@ -146,20 +166,20 @@ _STYLESHEET = Template("""
         spacing: 4px; padding: 4px 8px;
     }
     QToolBar QToolButton {
-        color: $text_dim; padding: 6px 16px;
+        color: $text_dim;
         border-radius: $radius; font-weight: bold; outline: none;
     }
     QToolBar QToolButton:hover { background-color: $button_hover; color: $text_bright; }
     QToolBar QToolButton:checked { background-color: $accent; color: $accent_text; }
-    /* Border comes out of padding so focus doesn't resize. No :focus-visible
+    /* Padding and focus rings from padding_and_focus_ring. No :focus-visible
        in Qt, TabFocus does that */
-    QToolBar QToolButton:focus { border: 2px solid $focus; padding: 4px 14px; }
+    $toolbar_tab_box
     QPushButton {
-        padding: 6px 16px; border-radius: $radius;
+        border-radius: $radius;
         background-color: $button; border: 1px solid $control_border; color: $text;
         outline: none;
     }
-    QPushButton:focus { border: 2px solid $focus; padding: 5px 15px; }
+    $button_box
     QPushButton:hover { background-color: $button_hover; }
     QPushButton:checked { background-color: $accent; color: $accent_text; border-color: $accent; }
     QPushButton:disabled {
@@ -210,11 +230,9 @@ _STYLESHEET = Template("""
     /* QAbstractSpinBox, not QSpinBox: QSS matches by real inheritance, and
        QDoubleSpinBox is not a QSpinBox. */
     QLineEdit, QComboBox, QAbstractSpinBox {
-        padding: 5px 8px; border: 1px solid $control_border; border-radius: $radius; background-color: $base;
+        border: 1px solid $control_border; border-radius: $radius; background-color: $base;
     }
-    QLineEdit:focus, QComboBox:focus, QAbstractSpinBox:focus {
-        border: 2px solid $focus; padding: 4px 7px;
-    }
+    $input_box
     QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled {
         color: $disabled_text; border-color: $border;
     }
@@ -271,4 +289,11 @@ def apply(app, name):
     app.setFont(font)
     app.setPalette(_palette(t))
     subs = dict(t, **{f"fs_{k}": v for k, v in TYPE_SCALE.items()})
+    subs.update(
+        toolbar_tab_box=padding_and_focus_ring(
+            "QToolBar QToolButton", padding="6px 16px"),
+        button_box=padding_and_focus_ring(
+            "QPushButton", padding="6px 16px", border=1),
+        input_box=padding_and_focus_ring(
+            "QLineEdit, QComboBox, QAbstractSpinBox", padding="5px 8px", border=1))
     app.setStyleSheet(_STYLESHEET.substitute(subs))

@@ -367,7 +367,7 @@ class TrainView(QWidget):
                  f"border: none; }} "
                  f"QPushButton:hover {{ color: {t['text_bright']}; }} "
                  f"QPushButton::menu-indicator {{ width: 0px; }} "
-                 + components.focus_ring("QPushButton", padding="2px 6px"))
+                 + theme.padding_and_focus_ring("QPushButton", padding="2px 6px"))
 
         # "The same sounds as last time" is the common case for a second model;
         # every model already knows its own label list.

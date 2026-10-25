@@ -947,7 +947,7 @@ def _flat_help_button(parent):
         f"QPushButton {{ color: {t['text_dim']}; background: transparent; "
         f"border: none; }} "
         f"QPushButton:hover {{ color: {t['text_bright']}; }} "
-        + components.focus_ring("QPushButton", padding="2px 6px"))
+        + theme.padding_and_focus_ring("QPushButton", padding="2px 6px"))
     return btn
 
 
