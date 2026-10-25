@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, QTimer, QSize
 from gui.state import AppState
 from gui.services import profiles
 from gui.pages.home import HomePage
-from gui.pages.library import SoundLibraryPage
+from gui.pages.sounds import SoundsPage
 from gui import theme, icons
 
 
@@ -42,10 +42,10 @@ class MainWindow(QMainWindow):
         self.page_stack.addWidget(self.home_page)
         self.home_page.navigate.connect(self._go_to_page)
 
-        self.library_page = SoundLibraryPage(self.app_state, self)
-        self.page_stack.addWidget(self.library_page)
-        self.library_page.record_requested.connect(self._open_recording)
-        self.library_page.edit_requested.connect(self._open_edit)
+        self.sounds_page = SoundsPage(self.app_state, self)
+        self.page_stack.addWidget(self.sounds_page)
+        self.sounds_page.record_requested.connect(self._open_recording)
+        self.sounds_page.edit_requested.connect(self._open_edit)
 
         self.models_page = None
         self.integrations_page = None
@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         self.keys_label = QLabel("")
         self.keys_label.setStyleSheet(f"color: {theme.colors()['text_dim']}; padding-right: 8px;")
         self.status_bar.addPermanentWidget(self.keys_label)
-        self._wire_keybindings(self.library_page)
+        self._wire_keybindings(self.sounds_page)
         self._refresh_keybindings()
         self._build_zoom_shortcuts()
 
@@ -244,7 +244,7 @@ class MainWindow(QMainWindow):
         if name == "Home":
             self.page_stack.setCurrentWidget(self.home_page)
         elif name == "Sounds":
-            self.page_stack.setCurrentWidget(self.library_page)
+            self.page_stack.setCurrentWidget(self.sounds_page)
         elif name == "Models":
             self.page_stack.setCurrentWidget(self._get_models_page())
         elif name == "Integrations":
@@ -288,10 +288,10 @@ class MainWindow(QMainWindow):
             page.select_model(model_name)
 
     def _return_to_sounds(self, label):
-        self.page_stack.setCurrentWidget(self.library_page)
+        self.page_stack.setCurrentWidget(self.sounds_page)
         self.nav_actions["Sounds"].setChecked(True)
         if label:
-            self.library_page._select_label_by_name(label)
+            self.sounds_page._select_label_by_name(label)
 
     def _on_stack_changed(self, _index):
         current = self.page_stack.currentWidget()

@@ -55,7 +55,7 @@ class EditRecordingView(QWidget):
         self.setFocus()   # so hotkeys work immediately on entering the view
 
     def _current_srt(self):
-        """The SRT the library would show for this recording (MANUAL wins)."""
+        """The SRT the Sounds page would show for this recording (MANUAL wins)."""
         for rec in self.app_state.get_recordings_for_label(self.label):
             if rec["wav_path"] == self.wav_path:
                 return rec["srt_path"]

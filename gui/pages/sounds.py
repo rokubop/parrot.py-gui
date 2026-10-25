@@ -21,8 +21,8 @@ from lib.print_status import get_quantity_rating, QUANTITIES
 from gui import content
 
 
-class SoundLibraryPage(QWidget):
-    """Read-only landing page: browse recorded sounds and review each session's
+class SoundsPage(QWidget):
+    """Read-only landing page: browse recorded sounds and review each recording's
     waveform/spectrogram with detection overlaid. No recording or editing."""
 
     SEEK_STEP = 2.0  # seconds for arrow-key seeking
@@ -39,22 +39,15 @@ class SoundLibraryPage(QWidget):
         self._selected_card = None   # keyboard target
         self._mode = MODE_WAVEFORM
         self._normalized = True
-        self._rebuilding = False
 
-        # Rapid clicks or arrowing through the list build only the sound
-        # finally selected. Builds are cheap (placeholders), so the wait is short
-        self._build_soon = debounced(self._build_current, wait_ms=15, owner=self)
-
-        # Cards are created cheaply (placeholder), then their waveforms are
-        # built one per tick, so selecting a sound doesn't freeze while every
-        # plot is built
-        self._build_audio_graphs = staggered(self._build_audio_graph, owner=self)
+        # Stagger audio graph builds to not stall the main thread (50-220 ms each)
+        self._audio_graphs_build = staggered(RecordingCard.build_audio_graph, owner=self)
 
         # ClickFocus: the Tab stop is the card area, after the header
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self._setup_ui()
-        self._populate_labels()
-        self.app_state.recordings_changed.connect(self._populate_labels)
+        self._sound_list_populate()
+        self.app_state.recordings_changed.connect(self._sound_list_populate)
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
@@ -73,20 +66,22 @@ class SoundLibraryPage(QWidget):
         title_row.addStretch()
         title_row.addWidget(help_dialog.help_button(self, "record"))
         left_layout.addLayout(title_row)
-        self.label_list = QTreeWidget()
-        self.label_list.setColumnCount(3)
-        self.label_list.setHeaderLabels(["Sound", "Data", "Time"])
-        self.label_list.setRootIsDecorated(False)
-        self.label_list.setUniformRowHeights(True)
-        header = self.label_list.header()
+        self.sound_list = QTreeWidget()
+        self.sound_list.setColumnCount(3)
+        self.sound_list.setHeaderLabels(["Sound", "Data", "Time"])
+        self.sound_list.setRootIsDecorated(False)
+        self.sound_list.setUniformRowHeights(True)
+        header = self.sound_list.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.label_list.currentItemChanged.connect(self._build_soon)
-        self.label_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.label_list.customContextMenuRequested.connect(self._on_list_context_menu)
-        self.label_list.installEventFilter(self)
-        left_layout.addWidget(self.label_list)
+        # Debounce sound change in case arrow key is held
+        self.sound_list.currentItemChanged.connect(
+            debounced(self._cards_show_selected, wait_ms=15, owner=self))
+        self.sound_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.sound_list.customContextMenuRequested.connect(self._on_list_context_menu)
+        self.sound_list.installEventFilter(self)
+        left_layout.addWidget(self.sound_list)
 
         new_sound_btn = QPushButton("+ New sound")
         new_sound_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
@@ -102,18 +97,18 @@ class SoundLibraryPage(QWidget):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
-        right_layout.addWidget(self._build_header())
+        right_layout.addWidget(self._sound_header_build())
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.scroll.setObjectName("cardsScroll")
-        self.scroll.installEventFilter(self)
-        self.cards_container, self.cards_layout, self.message_label = self._new_container()
-        self.scroll.setWidget(self.cards_container)
-        right_layout.addWidget(self.scroll)
+        self.cards_scroll = QScrollArea()
+        self.cards_scroll.setWidgetResizable(True)
+        self.cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.cards_scroll.setObjectName("cardsScroll")
+        self.cards_scroll.installEventFilter(self)
+        self.cards_container, self.cards_layout, self.message_label = self._cards_container_new()
+        self.cards_scroll.setWidget(self.cards_container)
+        right_layout.addWidget(self.cards_scroll)
         splitter.addWidget(right)
 
         splitter.setStretchFactor(0, 0)   # left panel keeps its width
@@ -131,7 +126,7 @@ class SoundLibraryPage(QWidget):
         self.sound_quantity.setStyleSheet(f"color: {t['text_dim']}; margin-top: 2px;")
         # Scope styles to the objects themselves: a selector-less stylesheet on an
         # ancestor silently breaks :checked background-color on descendant buttons.
-        self.header_frame.setStyleSheet(
+        self.sound_header.setStyleSheet(
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
         # Add recording is the headline action - accent-filled, stands apart.
@@ -154,11 +149,11 @@ class SoundLibraryPage(QWidget):
             + theme.padding_and_focus_ring("QPushButton#viewToggle", padding="5px 14px", border=1))
         for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
             b.setStyleSheet(toggle_style)
-        self.view_label.setStyleSheet(f"color: {t['text_dim']};")
+        self.mode_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
         # A wide, always-present scrollbar plus a right-side gutter gives a
         # dedicated place to scroll the page even when waveforms fill the view.
-        self.scroll.setStyleSheet(
+        self.cards_scroll.setStyleSheet(
             f"QScrollBar:vertical {{ width: 16px; background: {t['base']}; }} "
             # transparent until focused, so the ring doesn't shift the cards
             f"QScrollArea#cardsScroll {{ border: 2px solid transparent; }} "
@@ -167,14 +162,14 @@ class SoundLibraryPage(QWidget):
     def refresh_theme(self):
         self._apply_theme_styles()
         # Rebuild cards so plot colors / borders pick up the new theme.
-        self._build_for_item(self.label_list.currentItem())
+        self._cards_populate(self.sound_list.currentItem())
 
-    def _build_header(self):
+    def _sound_header_build(self):
         """Per-sound header: title/stats, primary Add recording, view toggles,
         quiet management actions."""
         header = QFrame()
         header.setObjectName("soundHeader")
-        self.header_frame = header
+        self.sound_header = header
         v = QVBoxLayout(header)
         v.setContentsMargins(16, 12, 16, 12)
         v.setSpacing(2)
@@ -202,8 +197,8 @@ class SoundLibraryPage(QWidget):
         actions.addWidget(self.output_picker)
         actions.addSpacing(12)
 
-        self.view_label = QLabel("View:")
-        actions.addWidget(self.view_label)
+        self.mode_label = QLabel("View:")
+        actions.addWidget(self.mode_label)
         self._mode_group = QButtonGroup(self)
         self._mode_buttons = {}
         for mode, text in ((MODE_WAVEFORM, "Waveform"), (MODE_SPECTROGRAM, "Spectrogram")):
@@ -213,7 +208,7 @@ class SoundLibraryPage(QWidget):
             btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setChecked(mode == self._mode)
             btn.setToolTip("Toggle waveform / spectrogram (S)")
-            btn.clicked.connect(lambda _checked, m=mode: self._set_mode(m))
+            btn.clicked.connect(lambda _checked, m=mode: self._cards_set_mode(m))
             self._mode_group.addButton(btn)
             self._mode_buttons[mode] = btn
             actions.addWidget(btn)
@@ -224,7 +219,7 @@ class SoundLibraryPage(QWidget):
         self.normalize_btn.setChecked(self._normalized)
         self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.normalize_btn.setToolTip("Toggle amplitude normalization (A)")
-        self.normalize_btn.toggled.connect(self._set_normalized)
+        self.normalize_btn.toggled.connect(self._cards_set_normalized)
         actions.addSpacing(12)
         actions.addWidget(self.normalize_btn)
         v.addLayout(actions)
@@ -252,13 +247,13 @@ class SoundLibraryPage(QWidget):
 
     # ---- data ----------------------------------------------------------
 
-    def _populate_labels(self):
+    def _sound_list_populate(self):
         # Remember the selected sound by name so an in-place change (a recording
         # added/renamed/deleted, or a sound renamed) keeps focus and rebuilds the
         # right-hand cards instead of leaving a stale view.
         prev_label = self._current_label()
-        self.label_list.blockSignals(True)
-        self.label_list.clear()
+        self.sound_list.blockSignals(True)
+        self.sound_list.clear()
         for label in self.app_state.get_sound_labels():
             duration_ms = self.app_state.get_label_duration_ms(label)
             duration = ms_to_srt_timestring(duration_ms, False).split(",")[0]
@@ -269,14 +264,14 @@ class SoundLibraryPage(QWidget):
             if color:
                 item.setForeground(1, QColor(color))
             item.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.label_list.addTopLevelItem(item)
-        self.label_list.blockSignals(False)
+            self.sound_list.addTopLevelItem(item)
+        self.sound_list.blockSignals(False)
 
-        count = self.label_list.topLevelItemCount()
+        count = self.sound_list.topLevelItemCount()
         if count == 0:
-            # _build_for_item owns the empty state (header hidden, onboarding
+            # _cards_populate owns the empty state (header hidden, onboarding
             # panel in the body) - don't paint over it with a plain message.
-            self._build_for_item(None)
+            self._cards_populate(None)
             return
 
         # Setting the current item (signals now unblocked) fires the selection
@@ -284,27 +279,20 @@ class SoundLibraryPage(QWidget):
         target = None
         if prev_label is not None:
             for i in range(count):
-                if self.label_list.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == prev_label:
-                    target = self.label_list.topLevelItem(i)
+                if self.sound_list.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == prev_label:
+                    target = self.sound_list.topLevelItem(i)
                     break
         if target is None:
-            target = self.label_list.topLevelItem(0)
+            target = self.sound_list.topLevelItem(0)
         # Force a rebuild even when the same row index ends up current.
-        self.label_list.setCurrentItem(None)
-        self.label_list.setCurrentItem(target)
+        self.sound_list.setCurrentItem(None)
+        self.sound_list.setCurrentItem(target)
 
-    def _build_current(self):
-        self._build_for_item(self.label_list.currentItem())
+    def _cards_show_selected(self):
+        self._cards_populate(self.sound_list.currentItem())
 
-    def _build_for_item(self, current):
-        if self._rebuilding:
-            # A build is already in progress (e.g. re-entered via processEvents).
-            # Re-arm so we rebuild for the latest selection once it finishes.
-            self._build_soon()
-            return
-        self._rebuilding = True
-        # Cancel any in-flight progressive loads for the view we're replacing.
-        self._build_audio_graphs.cancel()
+    def _cards_populate(self, item):
+        self._audio_graphs_build.cancel()
         # Cards/container that are being replaced. We build the new view fully,
         # swap it in, and only THEN destroy these - so tearing down the old
         # pyqtgraph scenes can never disturb the layout we're inserting into.
@@ -316,21 +304,21 @@ class SoundLibraryPage(QWidget):
         self._selected_card = None
         self._cards = []
         try:
-            container, layout, message = self._new_container()
+            container, layout, message = self._cards_container_new()
             self.cards_container = container
             self.cards_layout = layout
             self.message_label = message
 
             recordings = []
-            if current is None:
+            if item is None:
                 # Every header control is about *a* sound; with none selected
                 # hide the panel entirely.
-                self.header_frame.setVisible(False)
+                self.sound_header.setVisible(False)
                 self.sound_title.setText("")
                 self.sound_stats.setText("")
                 self.sound_quantity.setText("")
                 message.setVisible(False)
-                if self.label_list.topLevelItemCount() == 0:
+                if self.sound_list.topLevelItemCount() == 0:
                     self._fill_empty_state(layout, self._build_empty_panel(
                         "No sounds yet",
                         "A sound is one noise you can make - a pop, a hiss, a "
@@ -340,10 +328,10 @@ class SoundLibraryPage(QWidget):
                     message.setVisible(True)
                     message.setText("Select a sound to review its recordings.")
             else:
-                self.header_frame.setVisible(True)
-                label = current.data(0, Qt.ItemDataRole.UserRole)
+                self.sound_header.setVisible(True)
+                label = item.data(0, Qt.ItemDataRole.UserRole)
                 recordings = self.app_state.get_recordings_for_label(label)
-                self._update_sound_header(label, recordings)
+                self._sound_header_update(label, recordings)
                 if not recordings:
                     message.setVisible(False)
                     self._fill_empty_state(layout, self._build_empty_panel(
@@ -370,26 +358,25 @@ class SoundLibraryPage(QWidget):
                     layout.insertWidget(layout.count() - 1, card)
 
             # Atomic swap: the scroll area now owns the fully-built container.
-            self.scroll.takeWidget()
-            self.scroll.setWidget(container)
+            self.cards_scroll.takeWidget()
+            self.cards_scroll.setWidget(container)
 
             if self._cards:
-                # Mark the first card selected (border only - no plot build) so
-                # the swap is instant, then queue every card to load in order
-                # (selected one first) on subsequent event-loop ticks.
+                # Mark the first card selected (border only, no audio graph
+                # build) so the swap is instant, then build the audio graphs
+                # in order, selected one first.
                 self._mark_selected(self._cards[0])
-                self._build_audio_graphs(list(self._cards))
+                self._audio_graphs_build(list(self._cards))
             # leave focus in the list, so arrowing through sounds keeps working
-            if not self.label_list.hasFocus():
-                self.scroll.setFocus()
+            if not self.sound_list.hasFocus():
+                self.cards_scroll.setFocus()
         finally:
-            # Destroying loaded pyqtgraph scenes costs ~10 ms each, so the old
-            # view goes after the new (placeholder) one paints
+            # Once the new cards have painted: a built audio graph takes ~10 ms
+            # to free, and switching sounds shouldn't wait on the last one's cleanup
             if old_cards or old_container is not None:
-                next_tick(lambda: self._destroy_cards(old_cards, old_container))
-            self._rebuilding = False
+                next_tick(lambda: self._cards_destroy(old_cards, old_container))
 
-    def _new_container(self):
+    def _cards_container_new(self):
         """Create a fresh card container/layout (with a centered message label)."""
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -425,7 +412,7 @@ class SoundLibraryPage(QWidget):
     def _fill_empty_state(self, layout, panel):
         components.center_in(layout, panel)
 
-    def _destroy_cards(self, cards, container):
+    def _cards_destroy(self, cards, container):
         """Stop and delete replaced cards, only after the new view is installed,
         so pyqtgraph never paints an item whose ViewBox is going away."""
         for card in cards:
@@ -441,7 +428,7 @@ class SoundLibraryPage(QWidget):
     # checklist so a rating reads identically in both places.
     _QUANTITY_COLORS = theme.QUANTITY_COLORS
 
-    def _update_sound_header(self, label, recordings):
+    def _sound_header_update(self, label, recordings):
         self.sound_title.setText(label)
         # Name the target on the button itself: "Add recording" alone reads as
         # a free-floating action, and a take always belongs to a sound.
@@ -464,9 +451,9 @@ class SoundLibraryPage(QWidget):
         # than a starting point - the empty-state panel says what to do instead.
         self.sound_quantity.setVisible(count > 0)
         if count:
-            self._update_quantity(detected_ms)
+            self._sound_quantity_update(detected_ms)
 
-    def _update_quantity(self, detected_ms):
+    def _sound_quantity_update(self, detected_ms):
         quantity, percent_to_next = get_quantity_rating(detected_ms)
         color = self._QUANTITY_COLORS.get(quantity, theme.colors()["text"])
         detected_str = ms_to_srt_timestring(int(detected_ms), False).split(",")[0]
@@ -481,12 +468,12 @@ class SoundLibraryPage(QWidget):
             f"   ({detected_str} of detected sound){tail}"
         )
 
-    def _set_mode(self, mode):
+    def _cards_set_mode(self, mode):
         self._mode = mode
         for card in self._cards:
             card.set_mode(mode)
 
-    def _set_normalized(self, normalized):
+    def _cards_set_normalized(self, normalized):
         self._normalized = normalized
         for card in self._cards:
             card.set_normalized(normalized)
@@ -521,15 +508,11 @@ class SoundLibraryPage(QWidget):
         card.build_audio_graph()
         card.set_selected(True)
 
-    def _build_audio_graph(self, card):
-        if not sip.isdeleted(card):
-            card.build_audio_graph()
-
     # ---- keyboard ------------------------------------------------------
 
     def tab_anchor(self, focused):
         """Tab from the card area starts at the selected card, not the top."""
-        if focused is self.scroll and self._selected_card is not None:
+        if focused is self.cards_scroll and self._selected_card is not None:
             return self._selected_card
         return focused
 
@@ -537,9 +520,9 @@ class SoundLibraryPage(QWidget):
         # the card area would scroll on Space and the arrows; the page's keys win.
         # The list keeps its arrows, but Space still plays
         if event.type() == QEvent.Type.KeyPress and (
-                (obj is self.scroll
+                (obj is self.cards_scroll
                  and event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab))
-                or (obj is self.label_list and event.key() == Qt.Key.Key_Space)):
+                or (obj is self.sound_list and event.key() == Qt.Key.Key_Space)):
             event.accept()
             self.keyPressEvent(event)
             return event.isAccepted()
@@ -585,7 +568,7 @@ class SoundLibraryPage(QWidget):
     def _toggle_mode(self):
         new_mode = MODE_SPECTROGRAM if self._mode == MODE_WAVEFORM else MODE_WAVEFORM
         self._mode_buttons[new_mode].setChecked(True)
-        self._set_mode(new_mode)
+        self._cards_set_mode(new_mode)
 
     def _step_selection(self, delta):
         if self._selected_card in self._cards:
@@ -595,26 +578,26 @@ class SoundLibraryPage(QWidget):
         index = max(0, min(len(self._cards) - 1, index + delta))
         card = self._cards[index]
         self._select_card(card)
-        self.scroll.ensureWidgetVisible(card)
+        self.cards_scroll.ensureWidgetVisible(card)
 
     # ---- sound-level management ----------------------------------------
 
     def _current_label(self):
-        item = self.label_list.currentItem()
+        item = self.sound_list.currentItem()
         return item.data(0, Qt.ItemDataRole.UserRole) if item else None
 
     def _select_label_by_name(self, name):
-        for i in range(self.label_list.topLevelItemCount()):
-            item = self.label_list.topLevelItem(i)
+        for i in range(self.sound_list.topLevelItemCount()):
+            item = self.sound_list.topLevelItem(i)
             if item.data(0, Qt.ItemDataRole.UserRole) == name:
-                self.label_list.setCurrentItem(item)
+                self.sound_list.setCurrentItem(item)
                 return
 
     def _on_list_context_menu(self, pos):
-        item = self.label_list.itemAt(pos)
+        item = self.sound_list.itemAt(pos)
         if item is None:
             return
-        self.label_list.setCurrentItem(item)
+        self.sound_list.setCurrentItem(item)
         menu = QMenu(self)
         menu.addAction("Add recording…", self._on_add_recording)
         menu.addAction("Rename…", self._on_rename_sound)
@@ -622,7 +605,7 @@ class SoundLibraryPage(QWidget):
         menu.addAction("Open folder", self._on_open_sound_folder)
         menu.addSeparator()
         menu.addAction("Delete sound", self._on_delete_sound)
-        menu.exec(self.label_list.viewport().mapToGlobal(pos))
+        menu.exec(self.sound_list.viewport().mapToGlobal(pos))
 
     def _prompt_new_sound_name(self):
         """Name prompt for a new sound. Not a bare QInputDialog: *which* noise

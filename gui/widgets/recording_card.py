@@ -86,12 +86,12 @@ def _parse_when(session_name):
 
 
 class RecordingCard(QFrame):
-    """Read-only view of one recording session: a fixed-height waveform/
-    spectrogram audio graph with detection overlaid, plus play/pause, click- or
-    drag-to-seek, and quick fit/start/expand controls."""
+    """One recording: when it was made, how long it is, and a waveform or
+    spectrogram with detection overlaid. Plays, seeks, and fits, starts or
+    expands from its controls."""
 
-    NORMAL_HEIGHT = 150     # consistent audio graph height across all cards
-    EXPANDED_HEIGHT = 440   # height when the card is expanded in place
+    AUDIO_GRAPH_HEIGHT = 150
+    AUDIO_GRAPH_EXPANDED_HEIGHT = 440
 
     started = pyqtSignal(object)   # emits self when playback begins
     selected = pyqtSignal(object)  # emits self when the card is interacted with
@@ -125,13 +125,11 @@ class RecordingCard(QFrame):
 
         self._apply_border(False)
 
-        # Lazy audio graph: a pyqtgraph plot per recording is the expensive part of
-        # switching sounds (~50-220 ms each). A placeholder of the same height
-        # shows instantly; the library page drives build_audio_graph() on demand.
+        # A placeholder until the Sounds page builds the audio graph
         self.audio_graph = None
-        self._loaded = False
-        self._pending_mode = MODE_WAVEFORM
-        self._pending_normalized = False
+        self._audio_graph_tried = False
+        self._mode = MODE_WAVEFORM
+        self._normalized = False
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(10, 6, 10, 6)
@@ -139,33 +137,32 @@ class RecordingCard(QFrame):
         self._layout.addLayout(self._build_header(session_name, thresholds_path))
 
         self._placeholder = QLabel("…")
-        self._placeholder.setFixedHeight(self.NORMAL_HEIGHT)
+        self._placeholder.setFixedHeight(self.AUDIO_GRAPH_HEIGHT)
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setStyleSheet(
             f"color: {theme.colors()['text_dim']}; border: none; background: transparent;")
         self._layout.addWidget(self._placeholder)
 
     def build_audio_graph(self):
-        """Build and load the audio graph if it hasn't been yet. Cheap to
-        call repeatedly (no-op once loaded)."""
-        if self._loaded:
+        """Build it, or say the file can't be read. Runs once."""
+        if self._audio_graph_tried:
             return
-        self._loaded = True
+        self._audio_graph_tried = True
         self.audio_graph = AudioGraph()
-        height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
+        height = self.AUDIO_GRAPH_EXPANDED_HEIGHT if self._expanded else self.AUDIO_GRAPH_HEIGHT
         self.audio_graph.setFixedHeight(height)
         problem = self.audio_graph.load(self.wav_path, self.srt_path)
         if problem:
-            # Kept, hidden, so the card's controls still have an audio graph to talk
-            # to. With no samples they do nothing. The name, not the date: it's
-            # the file to go and look at
+            # Kept hidden, so the card's controls have an audio graph to talk
+            # to. They do nothing without samples
             self.audio_graph.setParent(self)
             self.audio_graph.hide()
+            # The name, not the date: it's the file to go and look at
             name = os.path.basename(self.wav_path)
             self._placeholder.setText(f"Can't read {name}\n{problem}")
             return
-        self.audio_graph.set_mode(self._pending_mode)
-        self.audio_graph.set_normalized(self._pending_normalized)
+        self.audio_graph.set_mode(self._mode)
+        self.audio_graph.set_normalized(self._normalized)
         self.audio_graph.seeked.connect(self._on_seek)
         self.audio_graph.pressed.connect(lambda: self.selected.emit(self))
         self.audio_graph.selection_changed.connect(self._on_selection_changed)
@@ -320,13 +317,13 @@ class RecordingCard(QFrame):
         )
 
     def set_mode(self, mode):
-        # Remember the choice so a not-yet-built audio graph adopts it on load.
-        self._pending_mode = mode
+        # Remembered, so an audio graph built later starts in it
+        self._mode = mode
         if self.audio_graph is not None:
             self.audio_graph.set_mode(mode)
 
     def set_normalized(self, normalized):
-        self._pending_normalized = normalized
+        self._normalized = normalized
         if self.audio_graph is not None:
             self.audio_graph.set_normalized(normalized)
 
@@ -348,7 +345,7 @@ class RecordingCard(QFrame):
 
     def toggle_expanded(self):
         self._expanded = not self._expanded
-        height = self.EXPANDED_HEIGHT if self._expanded else self.NORMAL_HEIGHT
+        height = self.AUDIO_GRAPH_EXPANDED_HEIGHT if self._expanded else self.AUDIO_GRAPH_HEIGHT
         self.build_audio_graph()
         self.audio_graph.setFixedHeight(height)
         if hasattr(self, "expand_btn"):
