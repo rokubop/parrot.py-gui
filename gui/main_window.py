@@ -79,9 +79,8 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked, t=text: self._show_page(t))
             self._nav_group.addAction(action)
             toolbar.addAction(action)
-            button = toolbar.widgetForAction(action)
             # Qt default is NoFocus. TabFocus so a click doesn't leave a ring
-            button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+            toolbar.widgetForAction(action).setFocusPolicy(Qt.FocusPolicy.TabFocus)
             self.nav_actions[text] = action
         self.nav_actions["Home"].setChecked(True)
         self.page_stack.setCurrentWidget(self.home_page)

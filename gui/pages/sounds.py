@@ -26,20 +26,20 @@ SOUND_COLUMN, DATA_COLUMN, DETECTED_COLUMN = 0, 1, 2
 
 class SoundsPage(QWidget):
     """
-    ┌ sound_list ─────────┐┌ sound_header ───────────────────────────────────┐
-    │ Sound  Data  Detect.││ sound_title                                     │
-    │ pop    Good  1m 04s ││ sound_stats                                     │
-    │ ss     Good   51.0s ││ sound_quantity                                  │
+    ┌ sound_list ─────────┐┌ sound_header ────────────────────────────────────────────┐
+    │ Sound  Data  Detect.││ sound_title                                              │
+    │ pop    Good  1m 04s ││ sound_stats                                              │
+    │ ss     Good   51.0s ││ sound_quantity                                           │
     │                     ││ add_recording_btn  _graph_display_buttons  normalize_btn │
-    │                     ││ _secondary_btns                                 │
-    │                     │├ cards_scroll ───────────────────────────────────┤
-    │                     ││ ┌ cards_container ────────────────────────────┐ │
-    │                     ││ │ ┌ RecordingCard ──────────────────────────┐ │ │
-    │                     ││ │ │ play_btn  Aug 08, 2026, 10:55 AM  32.4s │ │ │
-    │                     ││ │ │ .:|:..:||:... audio_graph ..:||:..:|:.. │ │ │
-    │                     ││ │ └─────────────────────────────────────────┘ │ │
-    │                     ││ └─────────────────────────────────────────────┘ │
-    └─────────────────────┘└─────────────────────────────────────────────────┘
+    │                     ││ _secondary_btns                                          │
+    │                     │├ cards_scroll ────────────────────────────────────────────┤
+    │                     ││ ┌ cards_container ─────────────────────────────────────┐ │
+    │                     ││ │ ┌ RecordingCard ───────────────────────────────────┐ │ │
+    │                     ││ │ │ play_btn  Aug 08, 2026, 10:55 AM  32.4s          │ │ │
+    │                     ││ │ │ .:|:..:||:..:|:.. audio_graph ..:|:..:||:..:|:.. │ │ │
+    │                     ││ │ └──────────────────────────────────────────────────┘ │ │
+    │                     ││ └──────────────────────────────────────────────────────┘ │
+    └─────────────────────┘└──────────────────────────────────────────────────────────┘
     """
 
     SEEK_STEP = 2.0  # seconds for arrow-key seeking
@@ -160,18 +160,20 @@ class SoundsPage(QWidget):
         # View / Normalize are state toggles, not actions: the app-wide
         # :checked accent fill made three accent buttons compete with the one
         # real call to action, so they get a quieter segmented look.
-        toggle_style = (
+        setting_toggle_style = (
             # $text, not $text_dim: dim on the $button fill measures 3.29, and
             # the unselected half of a segmented control still has to be read.
-            f"QPushButton#viewToggle {{ background-color: {t['button']}; "
+            f"QPushButton#settingToggle {{ background-color: {t['button']}; "
             f"color: {t['text']}; border: 1px solid {t['control_border']}; "
             f"border-radius: {t['radius']}; }} "
-            f"QPushButton#viewToggle:checked {{ background-color: {t['panel']}; "
+            f"QPushButton#settingToggle:checked {{ background-color: {t['panel']}; "
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
-            f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }} "
-            + theme.padding_and_focus_ring("QPushButton#viewToggle", padding="5px 14px", border=1))
+            f"QPushButton#settingToggle:hover {{ color: {t['text_bright']}; }} "
+            f"QPushButton#settingToggle:disabled {{ background-color: {t['disabled_bg']}; "
+            f"color: {t['disabled_text']}; border: 1px solid {t['control_border']}; }} "
+            + theme.padding_and_focus_ring("QPushButton#settingToggle", padding="5px 14px", border=1))
         for b in list(self._graph_display_buttons.values()) + [self.normalize_btn]:
-            b.setStyleSheet(toggle_style)
+            b.setStyleSheet(setting_toggle_style)
         self.graph_display_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
         # A wide, always-present scrollbar plus a right-side gutter gives a
@@ -227,7 +229,7 @@ class SoundsPage(QWidget):
         for graph_display, text in ((GRAPH_DISPLAY_WAVEFORM, "Waveform"),
                                     (GRAPH_DISPLAY_SPECTROGRAM, "Spectrogram")):
             btn = QPushButton(text)
-            btn.setObjectName("viewToggle")
+            btn.setObjectName("settingToggle")
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setChecked(graph_display == self._graph_display)
@@ -239,7 +241,7 @@ class SoundsPage(QWidget):
             actions.addWidget(btn)
 
         self.normalize_btn = QPushButton("Normalize")
-        self.normalize_btn.setObjectName("viewToggle")
+        self.normalize_btn.setObjectName("settingToggle")
         self.normalize_btn.setCheckable(True)
         self.normalize_btn.setChecked(self._normalized)
         self.normalize_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
@@ -590,7 +592,7 @@ class SoundsPage(QWidget):
         # only via the button/menu, not a single keypress on a read-only view.
 
     def keybinding_hint(self):
-        return ("Space play  ·  F fit  ·  A normalize  ·  S spectrum  ·  "
+        return ("Space play  ·  F fit  ·  A normalize  ·  S spectrogram  ·  "
                 "D deselect/start  ·  V expand  ·  R add recording  ·  ↑↓ select")
 
     def _toggle_graph_display(self):

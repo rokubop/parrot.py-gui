@@ -4,7 +4,6 @@ import filecmp
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 from config.config import CLASSIFIER_FOLDER, REPLAYS_FOLDER
-from lib.srt import ms_to_srt_timestring
 from gui.services import library_ops
 from lib import recordings
 
