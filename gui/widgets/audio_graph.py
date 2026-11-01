@@ -20,7 +20,7 @@ Terms:
 """
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtCore import Qt, QRectF, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
 from lib.mfsc import hz_to_mel, mel_to_hz
@@ -64,11 +64,13 @@ def _to_mel_rows(db, bands):
 
 class AudioGraph(QWidget):
     """A recording as a waveform or a spectrogram, with detection shaded over
-    it. Both views share the time axis.
+    it, and a playhead. Both views share the time axis.
 
     Zoom and pan are X only. The waveform is re-rendered as a min/max envelope
     whenever the view changes, so detail sharpens on zoom instead of aliasing.
     """
+
+    seeked = pyqtSignal(float)   # seconds, from a click or a playhead drag
 
     SPECTROGRAM_FRAME_S = 0.032
     SPECTROGRAM_HOP_S = 0.004
@@ -144,6 +146,17 @@ class AudioGraph(QWidget):
 
         self._regions = []
 
+        # Grab the playhead to scrub. The hover pen widens it so it's easy
+        # to catch
+        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
+                                        pen=pg.mkPen(QColor(*t["playhead"]), width=2))
+        self.playhead.setHoverPen(pg.mkPen(QColor(*t["playhead"]), width=4))
+        self.playhead.setZValue(14)   # under the hover readout
+        self._dragging_playhead = False
+        self.playhead.sigDragged.connect(self._on_playhead_dragged)
+        self.playhead.sigPositionChangeFinished.connect(self._on_playhead_released)
+        self.plot.addItem(self.playhead)
+
         # Hover crosshair and time readout
         cursor_pen = pg.mkPen(QColor(t["text_dim"]), width=1, style=Qt.PenStyle.DashLine)
         self.cursor = pg.InfiniteLine(pos=0, angle=90, movable=False, pen=cursor_pen)
@@ -178,6 +191,7 @@ class AudioGraph(QWidget):
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
         self._vb.setXRange(0.0, self._duration, padding=0)
+        self.playhead.setBounds([0, self._duration])
         self._apply_y_range()
         self.load_regions(srt_path, label)
         self._render_waveform()
@@ -316,6 +330,37 @@ class AudioGraph(QWidget):
         self._max_curve.setData(t, env_max)
         self._min_curve.setData(t, env_min)
 
+    # ---- playhead ------------------------------------------------------
+
+    def playback_audio(self):
+        """(mono float32 samples, sample rate), already decoded for the plot,
+        so playing doesn't re-read the file."""
+        return self._samples, self._sample_rate
+
+    def duration(self):
+        return self._duration
+
+    def set_playhead(self, seconds):
+        # Don't fight the user while they drag it
+        if not self._dragging_playhead:
+            self.playhead.setPos(seconds)
+
+    def _on_playhead_dragged(self):
+        # Seek once on release, not on every move
+        self._dragging_playhead = True
+        x = max(0.0, min(self.playhead.value(), self._duration))
+        self.cursor.setVisible(False)
+        self.readout.setText(f"{x:.3f}s")
+        self.readout.setPos(x, self._vb.viewRange()[1][1])
+        self.readout.setVisible(True)
+
+    def _on_playhead_released(self):
+        if not self._dragging_playhead:
+            return
+        self._dragging_playhead = False
+        self.readout.setVisible(False)
+        self.seeked.emit(max(0.0, min(self.playhead.value(), self._duration)))
+
     # ---- zoom ----------------------------------------------------------
 
     def fit_full(self):
@@ -392,5 +437,10 @@ class AudioGraph(QWidget):
         self.readout.setVisible(True)
 
     def _on_clicked(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and event.double():
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if event.double():
             self.fit_full()
+            return
+        x = self._vb.mapSceneToView(event.scenePos()).x()
+        self.seeked.emit(max(0.0, min(x, self._duration)))

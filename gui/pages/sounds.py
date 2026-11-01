@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QRadioButton,
     QMessageBox
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QColor
 from gui.widgets.recording_card import RecordingCard
 from gui.widgets.audio_graph import GRAPH_DISPLAY_WAVEFORM, GRAPH_DISPLAY_SPECTROGRAM
@@ -19,6 +19,12 @@ from lib.wav import wav_duration
 SOUND_COLUMN, DATA_COLUMN, DETECTED_COLUMN = 0, 1, 2
 
 
+def _is_space(event):
+    # Bare Space only. Shift/Ctrl+Space keep their list meaning
+    return (event.key() == Qt.Key.Key_Space
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier)
+
+
 class SoundsPage(QWidget):
     """
     ┌ sound_list ─────────┐┌ sound_header ────────────────────────────────────────────┐
@@ -29,11 +35,11 @@ class SoundsPage(QWidget):
     │                     │├ cards_scroll ────────────────────────────────────────────┤
     │                     ││ ┌ cards_container ─────────────────────────────────────┐ │
     │                     ││ │ ┌ RecordingCard ───────────────────────────────────┐ │ │
-    │                     ││ │ │ Aug 08, 2026, 10:55 AM   32.4s                   │ │ │
+    │                     ││ │ │ play_btn  Aug 08, 2026, 10:55 AM   32.4s         │ │ │
     │                     ││ │ │ .:|:..:||:..:|:.. audio_graph ..:|:..:||:..:|:.. │ │ │
     │                     ││ │ └──────────────────────────────────────────────────┘ │ │
     │                     ││ │ ┌ RecordingCard ───────────────────────────────────┐ │ │
-    │                     ││ │ │ Aug 08, 2026, 11:02 AM   18.9s                   │ │ │
+    │                     ││ │ │ play_btn  Aug 08, 2026, 11:02 AM   18.9s         │ │ │
     │                     ││ │ │ .:|:..:||:..:|:.. audio_graph ..:|:..:||:..:|:.. │ │ │
     │                     ││ │ └──────────────────────────────────────────────────┘ │ │
     │                     ││ └──────────────────────────────────────────────────────┘ │
@@ -44,6 +50,7 @@ class SoundsPage(QWidget):
         super().__init__(parent)
         self.app_state = app_state
         self._cards = []
+        self._active_card = None   # what Space plays: last played, clicked or tabbed to
         self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._normalized = True
 
@@ -70,6 +77,7 @@ class SoundsPage(QWidget):
         left_layout.addWidget(self.left_title)
         self.sound_list = QTreeWidget()
         self.sound_list.setAccessibleName("Sounds")
+        self.sound_list.setAccessibleDescription("Space plays or pauses a recording")
         self.sound_list.setHeaderLabels(["Sound", "Data", "Detected"])
         self.sound_list.setRootIsDecorated(False)
         self.sound_list.setUniformRowHeights(True)
@@ -81,6 +89,8 @@ class SoundsPage(QWidget):
         # Debounce sound change in case arrow key is held
         self.sound_list.currentItemChanged.connect(
             debounced(self._cards_show_selected, wait_ms=15, owner=self))
+        # Space plays, even from the list, which would otherwise select a row
+        self.sound_list.installEventFilter(self)
         left_layout.addWidget(self.sound_list)
         # Where keyboard navigation to this page lands
         self.setFocusProxy(self.sound_list)
@@ -242,6 +252,7 @@ class SoundsPage(QWidget):
                 _cards_container_new
                 _card_new, per recording
             _cards_swap_in
+            _cards_tab_order
             _audio_graphs_build (staggered)
             _cards_destroy_later -> _cards_destroy
         """
@@ -250,9 +261,13 @@ class SoundsPage(QWidget):
         label = item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) if item else None
         recordings = self.app_state.get_recordings_for_label(label) if label else []
         self._sound_header_update(label, recordings)
+        for card in self._cards:
+            card.stop()
+        self._active_card = None
         old_cards = self._cards
         cards_container, self._cards = self._cards_build(label, recordings)
         old_cards_container = self._cards_swap_in(cards_container)
+        self._cards_tab_order()
         self._audio_graphs_build(self._cards)
         self._cards_destroy_later(old_cards, old_cards_container)
 
@@ -276,6 +291,9 @@ class SoundsPage(QWidget):
         card = RecordingCard(base, label, rec["wav_path"], rec["srt_path"])
         card.set_graph_display(self._graph_display)
         card.set_normalized(self._normalized)
+        card.started.connect(self._on_card_started)
+        card.picked.connect(self._on_card_picked)
+        card.failed.connect(self._on_card_failed)
         return card
 
     def _cards_container_new(self):
@@ -292,6 +310,17 @@ class SoundsPage(QWidget):
         old = self.cards_scroll.takeWidget()
         self.cards_scroll.setWidget(cards_container)
         return old
+
+    def _cards_tab_order(self):
+        """Put the Play buttons right after the recordings area. New widgets
+        join the tab chain at its end, after the toolbar.
+
+            Normalize -> recordings -> Play 1 -> Play 2 ... -> toolbar
+        """
+        previous = self.cards_scroll
+        for card in self._cards:
+            QWidget.setTabOrder(previous, card.play_btn)
+            previous = card.play_btn
 
     def _cards_destroy_later(self, cards, cards_container):
         """Once the new cards have painted: a built audio graph takes ~10 ms to free,
@@ -348,6 +377,42 @@ class SoundsPage(QWidget):
         self._normalized = normalized
         for card in self._cards:
             card.set_normalized(normalized)
+
+    # ---- playback ------------------------------------------------------
+
+    def _on_card_started(self, card):
+        # One stream at a time, so any other card is now stopped
+        for other in self._cards:
+            if other is not card:
+                other.stop()
+        self._active_card = card
+
+    def _on_card_picked(self, card):
+        # Only aims Space. What's playing keeps playing until another starts
+        self._active_card = card
+
+    def _on_card_failed(self, message):
+        QMessageBox.warning(self, "Playback", message)
+
+    def eventFilter(self, obj, event):
+        if (obj is self.sound_list and event.type() == QEvent.Type.KeyPress
+                and _is_space(event)):
+            if not event.isAutoRepeat():
+                self._toggle_play()
+            return True
+        return super().eventFilter(obj, event)
+
+    def keyPressEvent(self, event):
+        if _is_space(event):
+            if not event.isAutoRepeat():
+                self._toggle_play()
+        else:
+            super().keyPressEvent(event)
+
+    def _toggle_play(self):
+        card = self._active_card or next((c for c in self._cards if c.playable()), None)
+        if card is not None:
+            card.toggle_play()
 
     def _on_open_sound_folder(self):
         item = self.sound_list.currentItem()
