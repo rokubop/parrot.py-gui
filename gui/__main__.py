@@ -130,6 +130,11 @@ def _load_with_splash():
 
 
 def main():
+    from importlib.util import find_spec
+    missing = [m for m in ("PyQt6", "pyqtgraph") if find_spec(m) is None]
+    if missing:
+        sys.exit(f"The GUI needs {' and '.join(missing)}: "
+                 "pip install -r requirements-gui.txt")
     # Before everything: Qt reads QT_SCALE_FACTOR when the QApplication is
     # built, and ui_prefs is stdlib-only so this cannot disturb the torch
     # before Qt import order below.

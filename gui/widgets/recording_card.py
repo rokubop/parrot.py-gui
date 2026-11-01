@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 import numpy as np
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QPointF, QRectF, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPolygonF, QColor
@@ -7,10 +6,12 @@ from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMenu, QSizePolicy
 )
 from config.config import RATE
-from gui.widgets.audio_graph import AudioGraph, MODE_WAVEFORM
+from gui.widgets.audio_graph import AudioGraph, GRAPH_DISPLAY_WAVEFORM
 from gui.services import library_ops, playback, strategies
-from gui.services.wav_files import wav_duration
 from gui import theme
+from gui.formatters import recorded_at, duration_text
+from lib.recordings import get_recorded_at
+from lib.wav import wav_duration, UnreadableWav
 
 
 _ICON_CACHE = {}
@@ -68,21 +69,14 @@ def _dots_icon(color, size=13):
     return icon
 
 
-def _parse_when(session_name):
-    """Filenames end in __<unix-timestamp>; decode it to a readable date and
-    time. The time is not decoration: several takes of one sound in a sitting
-    is the normal way to record, and a date alone leaves those cards reading
-    identically."""
-    tail = session_name.rsplit("__", 1)[-1]
-    if not tail.isdigit():
-        return ""
-    try:
-        stamp = datetime.fromtimestamp(int(tail))
-    except (ValueError, OSError, OverflowError):
-        return ""
-    # %-I / %#I differ between posix and Windows, so trim the zero by hand.
-    hour = stamp.strftime("%I").lstrip("0") or "12"
-    return stamp.strftime(f"%b %d, %Y, {hour}:%M %p")
+def _unreadable(exc):
+    if exc.reason == UnreadableWav.NOT_16_BIT:
+        return f"{exc.bits}-bit audio, parrot.py records 16-bit"
+    return {
+        UnreadableWav.CANT_OPEN: "The file couldn't be opened",
+        UnreadableWav.NOT_PCM: "Unsupported wav format, parrot.py records 16-bit",
+        UnreadableWav.EMPTY: "The recording is empty",
+    }.get(exc.reason, "Not a wav file, or a damaged one")
 
 
 class RecordingCard(QFrame):
@@ -131,7 +125,7 @@ class RecordingCard(QFrame):
         # A placeholder until the Sounds page builds the audio graph
         self.audio_graph = None
         self._audio_graph_tried = False
-        self._mode = MODE_WAVEFORM
+        self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._normalized = False
 
         self._layout = QVBoxLayout(self)
@@ -154,17 +148,21 @@ class RecordingCard(QFrame):
         self.audio_graph = AudioGraph()
         height = self.AUDIO_GRAPH_EXPANDED_HEIGHT if self._expanded else self.AUDIO_GRAPH_HEIGHT
         self.audio_graph.setFixedHeight(height)
-        problem = self.audio_graph.load(self.wav_path, self.srt_path)
+        problem = self.audio_graph.load(self.wav_path, self.srt_path, self.label)
         if problem:
             # Kept hidden, so the card's controls have an audio graph to talk
             # to. They do nothing without samples
             self.audio_graph.setParent(self)
             self.audio_graph.hide()
             # The name, not the date: it's the file to go and look at
+            self._detection_note.setVisible(False)
             name = os.path.basename(self.wav_path)
-            self._placeholder.setText(f"Can't read {name}\n{problem}")
+            self._placeholder.setText(f"Can't read {name}\n{_unreadable(problem)}")
             return
-        self.audio_graph.set_mode(self._mode)
+        if self.audio_graph.regions_unreadable:
+            self._detection_note.setText(f"Can't read {os.path.basename(self.srt_path)}")
+            self._detection_note.setVisible(True)
+        self.audio_graph.set_graph_display(self._graph_display)
         self.audio_graph.set_normalized(self._normalized)
         self.audio_graph.seeked.connect(self._on_seek)
         self.audio_graph.pressed.connect(lambda: self.selected.emit(self))
@@ -212,7 +210,8 @@ class RecordingCard(QFrame):
 
         # When it was recorded, not "mici_0": the mic index is a filename
         # disambiguator and tells the user nothing they can act on.
-        title = _parse_when(session_name) or session_name
+        stamp = get_recorded_at(session_name)
+        title = recorded_at(stamp) if stamp else session_name
         name = QLabel(title)
         name.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")
         row.addWidget(name)
@@ -222,6 +221,12 @@ class RecordingCard(QFrame):
             meta = QLabel(meta_text)
             meta.setStyleSheet(f"color: {t['text_dim']}; border: none; background: transparent;")
             row.addWidget(meta)
+
+        # Otherwise a recording with no srt looks like one where nothing was detected
+        self._detection_note = QLabel("Not segmented yet")
+        self._detection_note.setStyleSheet(f"color: {t['text_dim']}; border: none; background: transparent;")
+        self._detection_note.setVisible(not self.srt_path)
+        row.addWidget(self._detection_note)
 
         row.addStretch()
 
@@ -262,7 +267,7 @@ class RecordingCard(QFrame):
         parts = []
         length = wav_duration(self.wav_path)
         if length:
-            parts.append(f"{length:.1f}s")
+            parts.append(duration_text(length))
         info = library_ops.read_mic_info(self.wav_path) or {}
         if info.get("mic_name"):
             parts.append(info["mic_name"])
@@ -304,7 +309,7 @@ class RecordingCard(QFrame):
             parts.append(dtype)
         return "  ·  ".join(parts)
 
-    # ---- selection / mode ---------------------------------------------
+    # ---- selection / graph display ------------------------------------
 
     def set_selected(self, selected):
         self._apply_border(selected)
@@ -319,11 +324,11 @@ class RecordingCard(QFrame):
             % (color, t["radius"], t["card"], t["accent"])
         )
 
-    def set_mode(self, mode):
+    def set_graph_display(self, graph_display):
         # Remembered, so an audio graph built later starts in it
-        self._mode = mode
+        self._graph_display = graph_display
         if self.audio_graph is not None:
-            self.audio_graph.set_mode(mode)
+            self.audio_graph.set_graph_display(graph_display)
 
     def set_normalized(self, normalized):
         self._normalized = normalized

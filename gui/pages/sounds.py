@@ -8,26 +8,29 @@ from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 from gui.widgets.recording_card import RecordingCard
-from gui.widgets.audio_graph import MODE_SPECTROGRAM, MODE_WAVEFORM
+from gui.widgets.audio_graph import GRAPH_DISPLAY_WAVEFORM, GRAPH_DISPLAY_SPECTROGRAM
 from gui.timing import debounced, staggered, next_tick
-from gui.services.wav_files import wav_duration
 from gui.widgets.output_picker import OutputPicker
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
 from gui.widgets import help_dialog
 from gui import components, theme
-from lib.srt import ms_to_srt_timestring
+from gui.formatters import duration_text, spoken_duration
+from lib.recordings import get_label_dir
 from lib.print_status import get_quantity_rating, QUANTITIES
+from lib.wav import wav_duration
 from gui import content
+
+SOUND_COLUMN, DATA_COLUMN, DETECTED_COLUMN = 0, 1, 2
 
 
 class SoundsPage(QWidget):
     """
     ┌ sound_list ─────────┐┌ sound_header ───────────────────────────────────┐
     │ Sound  Data  Detect.││ sound_title                                     │
-    │ pop    Good   01:04 ││ sound_stats                                     │
-    │ ss     Good   00:51 ││ sound_quantity                                  │
-    │                     ││ add_recording_btn  _mode_buttons  normalize_btn │
+    │ pop    Good  1m 04s ││ sound_stats                                     │
+    │ ss     Good   51.0s ││ sound_quantity                                  │
+    │                     ││ add_recording_btn  _graph_display_buttons  normalize_btn │
     │                     ││ _secondary_btns                                 │
     │                     │├ cards_scroll ───────────────────────────────────┤
     │                     ││ ┌ cards_container ────────────────────────────┐ │
@@ -51,11 +54,14 @@ class SoundsPage(QWidget):
         self._cards = []
         self._active_card = None     # currently playing
         self._selected_card = None   # keyboard target
-        self._mode = MODE_WAVEFORM
+        self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._normalized = True
 
         # Stagger audio graph builds to not stall the main thread (50-220 ms each)
         self._audio_graphs_build = staggered(RecordingCard.build_audio_graph, owner=self)
+        # Same for switching display: a long take's spectrogram is ~60 ms
+        self._graph_displays_set = staggered(
+            lambda card: card.set_graph_display(self._graph_display), owner=self)
 
         # ClickFocus: the Tab stop is the card area, after the header
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -87,9 +93,10 @@ class SoundsPage(QWidget):
         self.sound_list.setRootIsDecorated(False)
         self.sound_list.setUniformRowHeights(True)
         header = self.sound_list.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(SOUND_COLUMN, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(DATA_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(DETECTED_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
         # Debounce sound change in case arrow key is held
         self.sound_list.currentItemChanged.connect(
             debounced(self._cards_show_selected, wait_ms=15, owner=self))
@@ -120,6 +127,7 @@ class SoundsPage(QWidget):
         self.cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.cards_scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.cards_scroll.setObjectName("cardsScroll")
+        self.cards_scroll.setAccessibleName("Recordings")
         self.cards_scroll.installEventFilter(self)
         self.cards_container, self.cards_layout, self.message_label = self._cards_container_new()
         self.cards_scroll.setWidget(self.cards_container)
@@ -162,9 +170,9 @@ class SoundsPage(QWidget):
             f"color: {t['text_bright']}; border: 1px solid {t['accent']}; }} "
             f"QPushButton#viewToggle:hover {{ color: {t['text_bright']}; }} "
             + theme.padding_and_focus_ring("QPushButton#viewToggle", padding="5px 14px", border=1))
-        for b in list(self._mode_buttons.values()) + [self.normalize_btn]:
+        for b in list(self._graph_display_buttons.values()) + [self.normalize_btn]:
             b.setStyleSheet(toggle_style)
-        self.mode_label.setStyleSheet(f"color: {t['text_dim']};")
+        self.graph_display_label.setStyleSheet(f"color: {t['text_dim']};")
         self.message_label.setStyleSheet(f"color: {t['text_dim']};")
         # A wide, always-present scrollbar plus a right-side gutter gives a
         # dedicated place to scroll the page even when waveforms fill the view.
@@ -212,20 +220,22 @@ class SoundsPage(QWidget):
         actions.addWidget(self.output_picker)
         actions.addSpacing(12)
 
-        self.mode_label = QLabel("View:")
-        actions.addWidget(self.mode_label)
-        self._mode_group = QButtonGroup(self)
-        self._mode_buttons = {}
-        for mode, text in ((MODE_WAVEFORM, "Waveform"), (MODE_SPECTROGRAM, "Spectrogram")):
+        self.graph_display_label = QLabel("View:")
+        actions.addWidget(self.graph_display_label)
+        self._graph_display_group = QButtonGroup(self)
+        self._graph_display_buttons = {}
+        for graph_display, text in ((GRAPH_DISPLAY_WAVEFORM, "Waveform"),
+                                    (GRAPH_DISPLAY_SPECTROGRAM, "Spectrogram")):
             btn = QPushButton(text)
             btn.setObjectName("viewToggle")
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-            btn.setChecked(mode == self._mode)
+            btn.setChecked(graph_display == self._graph_display)
             btn.setToolTip("Toggle waveform / spectrogram (S)")
-            btn.clicked.connect(lambda _checked, m=mode: self._cards_set_mode(m))
-            self._mode_group.addButton(btn)
-            self._mode_buttons[mode] = btn
+            btn.clicked.connect(
+                lambda _checked, m=graph_display: self._cards_set_graph_display(m))
+            self._graph_display_group.addButton(btn)
+            self._graph_display_buttons[graph_display] = btn
             actions.addWidget(btn)
 
         self.normalize_btn = QPushButton("Normalize")
@@ -271,14 +281,17 @@ class SoundsPage(QWidget):
         self.sound_list.clear()
         for label in self.app_state.get_sound_labels():
             duration_ms = self.app_state.get_label_duration_ms(label)
-            duration = ms_to_srt_timestring(duration_ms, False).split(",")[0]
+            duration = duration_text(duration_ms / 1000.0)
             quantity, _pct = get_quantity_rating(duration_ms)
             item = QTreeWidgetItem([label, quantity, duration])
-            item.setData(0, Qt.ItemDataRole.UserRole, label)
+            item.setData(SOUND_COLUMN, Qt.ItemDataRole.UserRole, label)
+            # A screen reader reads only the first column otherwise
+            item.setData(SOUND_COLUMN, Qt.ItemDataRole.AccessibleTextRole,
+                         f"{label}, {quantity} data, {spoken_duration(duration_ms / 1000.0)} detected")
             color = theme.QUANTITY_COLORS.get(quantity)
             if color:
-                item.setForeground(1, QColor(color))
-            item.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                item.setForeground(DATA_COLUMN, QColor(color))
+            item.setTextAlignment(DETECTED_COLUMN, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.sound_list.addTopLevelItem(item)
         self.sound_list.blockSignals(False)
 
@@ -294,7 +307,7 @@ class SoundsPage(QWidget):
         target = None
         if prev_label is not None:
             for i in range(count):
-                if self.sound_list.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == prev_label:
+                if self.sound_list.topLevelItem(i).data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) == prev_label:
                     target = self.sound_list.topLevelItem(i)
                     break
         if target is None:
@@ -308,6 +321,7 @@ class SoundsPage(QWidget):
 
     def _cards_populate(self, item):
         self._audio_graphs_build.cancel()
+        self._graph_displays_set.cancel()
         # Cards/container that are being replaced. We build the new view fully,
         # swap it in, and only THEN destroy these - so tearing down the old
         # pyqtgraph scenes can never disturb the layout we're inserting into.
@@ -332,6 +346,7 @@ class SoundsPage(QWidget):
                 self.sound_title.setText("")
                 self.sound_stats.setText("")
                 self.sound_quantity.setText("")
+                self.cards_scroll.setAccessibleName("Recordings")
                 message.setVisible(False)
                 if self.sound_list.topLevelItemCount() == 0:
                     self._fill_empty_state(layout, self._build_empty_panel(
@@ -344,7 +359,7 @@ class SoundsPage(QWidget):
                     message.setText("Select a sound to review its recordings.")
             else:
                 self.sound_header.setVisible(True)
-                label = item.data(0, Qt.ItemDataRole.UserRole)
+                label = item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole)
                 recordings = self.app_state.get_recordings_for_label(label)
                 self._sound_header_update(label, recordings)
                 if not recordings:
@@ -363,7 +378,7 @@ class SoundsPage(QWidget):
                     segments_dir = os.path.join(os.path.dirname(os.path.dirname(rec["wav_path"])), "segments")
                     thresholds_path = os.path.join(segments_dir, base + "_thresholds.txt")
                     card = RecordingCard(base, rec["wav_path"], rec["srt_path"], thresholds_path)
-                    card.set_mode(self._mode)
+                    card.set_graph_display(self._graph_display)
                     card.set_normalized(self._normalized)
                     card.started.connect(self._on_card_started)
                     card.failed.connect(self._on_card_failed)
@@ -449,14 +464,14 @@ class SoundsPage(QWidget):
         count = len(recordings)
         recorded_s = sum(wav_duration(r["wav_path"]) for r in recordings)
         detected_ms = self.app_state.get_label_duration_ms(label)
-        detected_s = detected_ms / 1000.0
         noun = "recording" if count == 1 else "recordings"
+        self.cards_scroll.setAccessibleName(f"{count} {noun} of {label}")
         # Mic summary for the sound as a whole (per-take mic is on the card);
         # absent when the takes all predate the sidecar.
         mics = library_ops.describe_mics(library_ops.mics_for_labels([label]))
         self.sound_stats.setText(
-            f"{count} {noun}   ·   {recorded_s:.1f}s recorded   ·   "
-            f"{detected_s:.1f}s detected sound"
+            f"{count} {noun}   ·   {duration_text(recorded_s)} recorded   ·   "
+            f"{duration_text(detected_ms / 1000.0)} detected sound"
             + (f"   ·   {mics}" if mics else "")
         )
         # A brand-new sound scoring a red "Not enough" reads as a failure rather
@@ -468,21 +483,22 @@ class SoundsPage(QWidget):
     def _sound_quantity_update(self, detected_ms):
         quantity, percent_to_next = get_quantity_rating(detected_ms)
         color = theme.QUANTITY_COLORS.get(quantity, theme.colors()["text"])
-        detected_str = ms_to_srt_timestring(int(detected_ms), False).split(",")[0]
         tail = ""
         if quantity != QUANTITIES["excellent"]:
             names = list(QUANTITIES.values())
             next_quantity = names[names.index(quantity) + 1]
-            tail = f"   ·   {round(percent_to_next)}% toward “{next_quantity}”"
+            tail = f"   ·   {int(percent_to_next)}% toward “{next_quantity}”"
         self.sound_quantity.setText(
             f"Data quantity:  <b style='color:{color};'>{quantity}</b>"
-            f"   ({detected_str} of detected sound){tail}"
+            f"   ({duration_text(detected_ms / 1000.0)} of detected sound){tail}"
         )
 
-    def _cards_set_mode(self, mode):
-        self._mode = mode
-        for card in self._cards:
-            card.set_mode(mode)
+    def _cards_set_graph_display(self, graph_display):
+        self._graph_display = graph_display
+        # Normalize scales the waveform's height. Spectrograms are always scaled
+        # to each take's loudest bin
+        self.normalize_btn.setEnabled(graph_display == GRAPH_DISPLAY_WAVEFORM)
+        self._graph_displays_set(self._cards)
 
     def _cards_set_normalized(self, normalized):
         self._normalized = normalized
@@ -562,9 +578,10 @@ class SoundsPage(QWidget):
         elif key == Qt.Key.Key_Home:
             target.go_to_start()
         elif key == Qt.Key.Key_A:
-            self.normalize_btn.setChecked(not self.normalize_btn.isChecked())
+            if self.normalize_btn.isEnabled():     # off for spectrograms
+                self.normalize_btn.toggle()
         elif key == Qt.Key.Key_S:
-            self._toggle_mode()                # waveform <-> spectrum
+            self._toggle_graph_display()       # waveform <-> spectrogram
         elif key == Qt.Key.Key_R:
             self._on_add_recording()           # record a new session for this sound
         else:
@@ -576,10 +593,11 @@ class SoundsPage(QWidget):
         return ("Space play  ·  F fit  ·  A normalize  ·  S spectrum  ·  "
                 "D deselect/start  ·  V expand  ·  R add recording  ·  ↑↓ select")
 
-    def _toggle_mode(self):
-        new_mode = MODE_SPECTROGRAM if self._mode == MODE_WAVEFORM else MODE_WAVEFORM
-        self._mode_buttons[new_mode].setChecked(True)
-        self._cards_set_mode(new_mode)
+    def _toggle_graph_display(self):
+        graph_display = (GRAPH_DISPLAY_SPECTROGRAM if self._graph_display == GRAPH_DISPLAY_WAVEFORM
+                         else GRAPH_DISPLAY_WAVEFORM)
+        self._graph_display_buttons[graph_display].setChecked(True)
+        self._cards_set_graph_display(graph_display)
 
     def _step_selection(self, delta):
         if self._selected_card in self._cards:
@@ -595,12 +613,12 @@ class SoundsPage(QWidget):
 
     def _current_label(self):
         item = self.sound_list.currentItem()
-        return item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        return item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) if item else None
 
     def _select_label_by_name(self, name):
         for i in range(self.sound_list.topLevelItemCount()):
             item = self.sound_list.topLevelItem(i)
-            if item.data(0, Qt.ItemDataRole.UserRole) == name:
+            if item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) == name:
                 self.sound_list.setCurrentItem(item)
                 return
 
@@ -723,7 +741,7 @@ class SoundsPage(QWidget):
         if not label:
             return
         try:
-            library_ops.open_in_file_manager(library_ops.label_dir(label))
+            library_ops.open_in_file_manager(get_label_dir(label))
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't open folder", str(exc))
 

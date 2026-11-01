@@ -26,6 +26,7 @@ import shutil
 import subprocess
 
 from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER
+from lib.recordings import get_label_dir
 
 
 class LibraryOpError(Exception):
@@ -61,10 +62,6 @@ def sanitize_name(name, *, kind="name"):
 
 # ---- path helpers ------------------------------------------------------
 
-def label_dir(label):
-    return os.path.join(RECORDINGS_FOLDER, label)
-
-
 def source_dir(label):
     return os.path.join(RECORDINGS_FOLDER, label, "source")
 
@@ -74,7 +71,7 @@ def segments_dir(label):
 
 
 def sound_exists(label):
-    return os.path.isdir(label_dir(label))
+    return os.path.isdir(get_label_dir(label))
 
 
 def model_pkl_path(name):
@@ -117,7 +114,7 @@ def rename_sound(old, new):
         return old
     if sound_exists(new_label):
         raise LibraryOpError(f"A sound called '{new_label}' already exists.")
-    os.rename(label_dir(old), label_dir(new_label))
+    os.rename(get_label_dir(old), get_label_dir(new_label))
     return new_label
 
 
@@ -128,7 +125,7 @@ def clone_sound(src, new):
         raise LibraryOpError(f"Sound '{src}' no longer exists.")
     if sound_exists(new_label):
         raise LibraryOpError(f"A sound called '{new_label}' already exists.")
-    shutil.copytree(label_dir(src), label_dir(new_label))
+    shutil.copytree(get_label_dir(src), get_label_dir(new_label))
     return new_label
 
 
@@ -136,7 +133,7 @@ def delete_sound(label):
     """Delete a sound label and everything under it. Destructive."""
     if not sound_exists(label):
         raise LibraryOpError(f"Sound '{label}' no longer exists.")
-    shutil.rmtree(label_dir(label))
+    shutil.rmtree(get_label_dir(label))
 
 
 def sound_recording_count(label):

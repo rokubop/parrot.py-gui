@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 from gui import components, icons, theme
 from gui.services import levels, playback
 from gui.widgets.audio_graph import (
-    AudioGraph, MODE_SPECTROGRAM, MODE_WAVEFORM, view_after_cut)
+    AudioGraph, GRAPH_DISPLAY_SPECTROGRAM, GRAPH_DISPLAY_WAVEFORM, view_after_cut)
 from gui.widgets.level_lane import LaneSplitter, LevelLane
 from gui.workers.segment_worker import TrimWorker
 
@@ -66,7 +66,7 @@ class ClipEditorWidget(QWidget):
 
         # view toggles (mirror AudioGraph defaults)
         self._norm = False
-        self._mode = MODE_WAVEFORM
+        self._graph_display = GRAPH_DISPLAY_WAVEFORM
 
         # playback
         self._audio = None
@@ -174,7 +174,7 @@ class ClipEditorWidget(QWidget):
         self._play_from = 0.0
         self._stop_at = None
         view = None if reset_view else self.audio_graph.view_range()
-        self.audio_graph.load(wav_path, srt_path, view=view)
+        self.audio_graph.load(wav_path, srt_path, label, view=view)
         self.refresh_levels()
         if reset_view:
             self.audio_graph.fit_full()
@@ -193,7 +193,7 @@ class ClipEditorWidget(QWidget):
 
     def set_regions(self, srt_path):
         """Refresh only the detection overlay."""
-        self.audio_graph.load_regions(srt_path)
+        self.audio_graph.load_regions(srt_path, self.label)
 
     def clear(self):
         self.stop_playback()
@@ -246,9 +246,11 @@ class ClipEditorWidget(QWidget):
         self.audio_graph.set_normalized(self._norm)
 
     def toggle_spectrum(self):
-        self._mode = MODE_SPECTROGRAM if self._mode == MODE_WAVEFORM else MODE_WAVEFORM
-        self.spec_btn.setChecked(self._mode == MODE_SPECTROGRAM)
-        self.audio_graph.set_mode(self._mode)
+        self._graph_display = (GRAPH_DISPLAY_SPECTROGRAM
+                               if self._graph_display == GRAPH_DISPLAY_WAVEFORM
+                               else GRAPH_DISPLAY_WAVEFORM)
+        self.spec_btn.setChecked(self._graph_display == GRAPH_DISPLAY_SPECTROGRAM)
+        self.audio_graph.set_graph_display(self._graph_display)
 
     def toggle_levels(self):
         """Collapse the lane out of the way, or bring it back where you left it."""
@@ -312,7 +314,7 @@ class ClipEditorWidget(QWidget):
         is dropped rather than left at offsets the cut has invalidated."""
         view = view_after_cut(self._view_before_cut or self.audio_graph.view_range(),
                               cut_start, removed, new_duration)
-        self.audio_graph.load(self.wav_path, None, view=view)
+        self.audio_graph.load(self.wav_path, None, self.label, view=view)
         self.refresh_levels()                  # the audio under the lane changed
         self.set_busy(True, "Re-detecting…")   # load repositions the scrim
         self.audio_graph.clear_selection()
@@ -328,7 +330,7 @@ class ClipEditorWidget(QWidget):
 
     def _on_trim_done(self, srt_path):
         self._finish_worker()
-        self.audio_graph.load_regions(srt_path)
+        self.audio_graph.load_regions(srt_path, self.label)
         self.set_busy(False)
         self.edited.emit()
         self.history_changed.emit()
@@ -378,8 +380,8 @@ class ClipEditorWidget(QWidget):
         self._cut_note = ""         # no longer describes what is on screen
         # Hold the zoom: undoing a cut should show you the seam coming back, not
         # the whole clip again.
-        self.audio_graph.load(self.wav_path, self.srt_provider(),
-                          view=self.audio_graph.view_range())
+        self.audio_graph.load(self.wav_path, self.srt_provider(), self.label,
+                              view=self.audio_graph.view_range())
         self.refresh_levels()
         self._audio = None
         self.edited.emit()

@@ -3,10 +3,10 @@ import glob
 import filecmp
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
-from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER, REPLAYS_FOLDER, MS_PER_FRAME
-from lib.srt import (count_total_label_ms, ms_to_srt_timestring, get_srt_paths,
-                     get_srt_path_for_wav)
+from config.config import CLASSIFIER_FOLDER, REPLAYS_FOLDER
+from lib.srt import ms_to_srt_timestring
 from gui.services import library_ops
+from lib import recordings
 
 
 class AppState(QObject):
@@ -26,42 +26,16 @@ class AppState(QObject):
         self.recordings_changed.connect(self._invalidate_duration_cache)
 
     def get_sound_labels(self):
-        """Returns list of sound label directory names from data/recordings/."""
-        labels = []
-        if os.path.exists(RECORDINGS_FOLDER):
-            for entry in sorted(os.listdir(RECORDINGS_FOLDER)):
-                full_path = os.path.join(RECORDINGS_FOLDER, entry)
-                if os.path.isdir(full_path):
-                    labels.append(entry)
-        return labels
+        return recordings.get_labels()
 
     def get_recordings_for_label(self, label):
-        """Returns list of dicts with wav_path and srt_path for a label."""
-        recordings = []
-        source_dir = os.path.join(RECORDINGS_FOLDER, label, "source")
-        segments_dir = os.path.join(RECORDINGS_FOLDER, label, "segments")
-        if not os.path.isdir(source_dir):
-            return recordings
-
-        srt_paths = get_srt_paths(segments_dir)
-        for wav_file in sorted(f for f in os.listdir(source_dir) if f.endswith(".wav")):
-            srt_path = get_srt_path_for_wav(srt_paths, wav_file[:-len(".wav")])
-            recordings.append({"wav_path": os.path.join(source_dir, wav_file),
-                               "srt_path": srt_path, "filename": wav_file})
-        return recordings
+        return recordings.get_recordings(label)
 
     def get_label_duration_ms(self, label):
-        """Total recorded ms for a label. Cached until recordings change:
-        this walks every .srt the label owns, and pages ask for the same
-        numbers many times per refresh.
-        """
-        if label in self._duration_cache:
-            return self._duration_cache[label]
-        ms_per_frame = MS_PER_FRAME
-        value = count_total_label_ms(
-            label, os.path.join(RECORDINGS_FOLDER, label), ms_per_frame)
-        self._duration_cache[label] = value
-        return value
+        """Cached: it parses every srt the label has."""
+        if label not in self._duration_cache:
+            self._duration_cache[label] = recordings.get_detected_ms(label)
+        return self._duration_cache[label]
 
     def get_models(self):
         """Returns list of model files (.pkl and .pth.tar) in data/models/."""

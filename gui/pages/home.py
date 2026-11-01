@@ -175,6 +175,8 @@ class HomePage(QWidget):
         # No focus for Home page scroll. Tab goes to its controls instead.
         scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         outer.addWidget(scroll)
+        # Where keyboard navigation to this page lands
+        self.setFocusProxy(scroll)
 
         wrapper = QWidget()
         wrap_layout = QHBoxLayout(wrapper)

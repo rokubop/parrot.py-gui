@@ -1,16 +1,37 @@
+"""For waveform and spectrogram views
+
+Terms:
+    Spectrogram:
+        FFT       Fast Fourier Transform - transform frame of samples to strength/freq (np.fft.rfft)
+        frame     32 ms (SPECTROGRAM_FRAME_S) - one spectrogram column (nfft samples)
+        hop       4 ms (SPECTROGRAM_HOP_S) - time between frame starts (frames overlap). wider on takes over ~4 min
+        bin       31.25 Hz apart (bin_hz) - one freq slot of FFT output (1 / frame length)
+        window    fade curve, 0 at both ends (Hann / np.hanning) - multiplied into each frame
+        dB        20 * log10(strength)
+        mel       pitch scale modelled on hearing (hz_to_mel)
+        row       one freq band, evenly spaced in mel (SPECTROGRAM_ROWS)
+        levels    pg ImageItem colour range - dB drawn dark to light, top 60 dB (SPECTROGRAM_RANGE_DB)
+
+    Waveform:
+        envelope  min/max per view slice, filled between (_max_curve, _min_curve, _fill)
+
+    Both:
+        ViewBox   pg's zoomable plot area (_vb). items placed in data coords (seconds, amplitude or mel), not pixels
+"""
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer, QRectF, QVariantAnimation, QEasingCurve, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QScrollBar
-from lib.srt import parse_srt_file
-from gui.services.wav_files import read_wav, UnreadableWav
-from gui.timing import debounced
+from lib.mfsc import hz_to_mel, mel_to_hz
+from lib.srt import get_label_ranges_in_srt
+from lib.wav import read_wav, UnreadableWav
 from config.config import MS_PER_FRAME
 from gui import theme
+from gui.timing import debounced
 
-MODE_WAVEFORM = "waveform"
-MODE_SPECTROGRAM = "spectrogram"
+GRAPH_DISPLAY_WAVEFORM = "waveform"
+GRAPH_DISPLAY_SPECTROGRAM = "spectrogram"
 
 
 def view_after_cut(view, cut_start, removed, new_duration):
@@ -33,6 +54,32 @@ def view_after_cut(view, cut_start, removed, new_duration):
     return (x0, x0 + span)
 
 
+def _mel_bands(sample_rate, nfft, rows):
+    """Where each of `rows` evenly spaced mel rows falls among the FFT bins:
+    its centre, and the whole bins inside it."""
+    bin_hz = sample_rate / nfft
+    last_bin = nfft // 2
+    mel_edges = np.linspace(0.0, hz_to_mel(sample_rate / 2.0), rows + 1)
+    edges = mel_to_hz(mel_edges) / bin_hz
+    centres = np.minimum(mel_to_hz((mel_edges[:-1] + mel_edges[1:]) / 2.0) / bin_hz, last_bin)
+    starts = np.ceil(edges[:-1]).astype(int)
+    ends = np.minimum(np.floor(edges[1:]).astype(int), last_bin) + 1
+    return centres, starts, ends
+
+
+def _to_mel_rows(db, bands):
+    """Each row is the loudest bin in its band, so a tone between two row
+    centres still shows. Rows with no whole bin inside interpolate instead."""
+    centres, starts, ends = bands
+    lo = np.floor(centres).astype(int)
+    hi = np.minimum(lo + 1, db.shape[1] - 1)
+    frac = (centres - lo).astype(np.float32)
+    rows = db[:, lo] * (1.0 - frac) + db[:, hi] * frac
+    for row in np.flatnonzero(ends > starts):
+        rows[:, row] = db[:, starts[row]:ends[row]].max(axis=1)
+    return rows
+
+
 class AudioGraph(QWidget):
     """A single tall plot showing a recording as either a waveform or a
     spectrogram. Detection segments are overlaid as shaded regions, a playhead
@@ -48,15 +95,26 @@ class AudioGraph(QWidget):
     selection_changed = pyqtSignal(float, float)  # start, end (seconds)
     selection_cleared = pyqtSignal()
 
+    SPECTROGRAM_FRAME_S = 0.032
+    SPECTROGRAM_HOP_S = 0.004
+    # A long take gets wider columns rather than an image too big to keep per card
+    SPECTROGRAM_MAX_COLUMNS = 60_000
+    # Mel-spaced rows: 0-2 kHz gets half the height instead of a quarter,
+    # 4-8 kHz a quarter instead of half
+    SPECTROGRAM_ROWS = 160
+    SPECTROGRAM_RANGE_DB = 60
+    SPECTROGRAM_TICKS_HZ = ((1000, "1k"), (2000, "2k"), (4000, "4k"), (8000, "8k"))
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._samples = None      # mono float32, normalized to [-1, 1]
+        self.regions_unreadable = False
+        self._samples = None      # mono float32 in [-1, 1]
         self._sample_rate = None
         self._duration = 0.0
-        self._peak = 0.0          # max abs sample, for visual normalization
+        self._peak = 0.0          # max abs sample, for normalizing the view
         self._normalized = False
-        self._mode = MODE_WAVEFORM
-        self._spectrogram = None  # cached (image, levels)
+        self._graph_display = GRAPH_DISPLAY_WAVEFORM
+        self._spectrogram = None  # cached (image, levels, nfft, hop)
         self._anim = None
         self._seam_anim = None    # fade of the mark left by a cut
         self._busy = False        # an edit is running; the plot is inert
@@ -98,7 +156,7 @@ class AudioGraph(QWidget):
 
         self._vb = self.plot.getViewBox()
 
-        # Filled waveform (min/max envelope between two curves)
+        # Filled waveform: the min/max envelope between two curves
         pen = pg.mkPen(QColor(*t["wave"]), width=1)
         self._max_curve = self.plot.plot(pen=pen)
         self._min_curve = self.plot.plot(pen=pen)
@@ -106,8 +164,10 @@ class AudioGraph(QWidget):
                                         brush=QColor(*t["wave_fill"]))
         self.plot.addItem(self._fill)
 
-        # Spectrogram image (added lazily)
-        self._image = pg.ImageItem()
+        # Averages columns when there are more than pixels, instead of
+        # dropping most of them and thinning out every pop
+        self._image = pg.ImageItem(autoDownsample=True)
+        self._image.setZValue(-20)  # under the detection regions
         self._image.setVisible(False)
         self.plot.addItem(self._image)
 
@@ -194,21 +254,21 @@ class AudioGraph(QWidget):
             _line.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.plot.addItem(self.pending_item)
 
-        # Hover crosshair + time readout
+        # Hover crosshair and time readout
         cursor_pen = pg.mkPen(QColor(t["text_dim"]), width=1, style=Qt.PenStyle.DashLine)
         self.cursor = pg.InfiniteLine(pos=0, angle=90, movable=False, pen=cursor_pen)
         self.cursor.setZValue(15)
         self.cursor.setVisible(False)
         self.plot.addItem(self.cursor)
-        self.readout = pg.TextItem(color=QColor(t["text_bright"]), anchor=(0, 1))
+        self.readout = pg.TextItem(color=QColor(t["text_bright"]), anchor=(0, 0))
         self.readout.setZValue(16)
         self.readout.setVisible(False)
         self.plot.addItem(self.readout)
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
         # Zoom and pan fire per mouse event; render once they settle
-        self._render_soon = debounced(self._render_waveform, wait_ms=15, owner=self)
-        self._vb.sigXRangeChanged.connect(self._render_soon)
+        self._render_when_settled = debounced(self._render_waveform, wait_ms=15, owner=self)
+        self._vb.sigXRangeChanged.connect(self._render_when_settled)
         self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
         self._vb.sigXRangeChanged.connect(lambda *_: self._position_overlays())
 
@@ -216,8 +276,8 @@ class AudioGraph(QWidget):
 
     # ---- loading -------------------------------------------------------
 
-    def load(self, wav_path, srt_path, view=None):
-        """Why the wav can't be read, or None once it's on the plot.
+    def load(self, wav_path, srt_path, label, view=None):
+        """The UnreadableWav if it can't be read, or None once it's on the plot.
 
         ``view`` pins the visible X window in seconds; by default the whole
         clip is shown. An edit passes the window mapped through its own change
@@ -229,9 +289,8 @@ class AudioGraph(QWidget):
         except UnreadableWav as exc:
             self._samples = None
             self._duration = 0.0
-            return str(exc)
+            return exc
         self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
-        # From the samples, not the header, which can overcount (see wav_files)
         self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
@@ -243,32 +302,30 @@ class AudioGraph(QWidget):
         self._vb.setXRange(x0, x1, padding=0)
         self.playhead.setBounds([0, self._duration])
         self._apply_y_range()
-        self.load_regions(srt_path)
+        self.load_regions(srt_path, label)
         self._render_waveform()
         # Any pending-cut range was in the old clip's coordinates.
         self.clear_pending_cut()
         self._position_overlays()
         return None
 
-    def load_regions(self, srt_path):
+    def load_regions(self, srt_path, label):
         """Redraw just the detection overlay. Separate from ``load`` so work that
         only re-detects never re-decodes the wav or disturbs the view."""
         for region in self._regions:
             self.plot.removeItem(region)
         self._regions = []
+        self.regions_unreadable = False
         if not srt_path:
             return
         try:
-            events = parse_srt_file(srt_path, MS_PER_FRAME, show_errors=False)
-        except Exception:
+            ranges = get_label_ranges_in_srt(label, srt_path, MS_PER_FRAME)
+        except (OSError, ValueError, IndexError):
+            self.regions_unreadable = True
             return
-        for i, event in enumerate(events):
-            if event.label == "silence":
-                continue
-            start = event.start_ms / 1000.0
-            end = events[i + 1].start_ms / 1000.0 if i + 1 < len(events) else self._duration
+        for start_ms, end_ms in ranges:
             region = pg.LinearRegionItem(
-                values=[start, end], movable=False,
+                values=[start_ms / 1000.0, end_ms / 1000.0], movable=False,
                 brush=QColor(*self._colors["detect_brush"]),
                 pen=pg.mkPen(QColor(*self._colors["detect_pen"])),
             )
@@ -276,20 +333,19 @@ class AudioGraph(QWidget):
             self.plot.addItem(region)
             self._regions.append(region)
 
-    # ---- view mode -----------------------------------------------------
+    # ---- graph display -------------------------------------------------
 
-    def set_mode(self, mode):
-        if mode == self._mode:
+    def set_graph_display(self, graph_display):
+        if graph_display == self._graph_display:
             return
-        self._mode = mode
-        is_wave = mode == MODE_WAVEFORM
+        self._graph_display = graph_display
+        is_wave = graph_display == GRAPH_DISPLAY_WAVEFORM
         self._max_curve.setVisible(is_wave)
         self._min_curve.setVisible(is_wave)
         self._fill.setVisible(is_wave)
         self._image.setVisible(not is_wave)
         if is_wave:
-            self.plot.setLabel("left", "")
-            self.plot.setMouseEnabled(x=True, y=False)
+            self.plot.getAxis("left").setTicks(None)
             self._apply_y_range()
             self._render_waveform()
         else:
@@ -297,7 +353,7 @@ class AudioGraph(QWidget):
 
     def set_normalized(self, normalized):
         self._normalized = normalized
-        if self._mode == MODE_WAVEFORM:
+        if self._graph_display == GRAPH_DISPLAY_WAVEFORM:
             self._apply_y_range()
 
     def _apply_y_range(self):
@@ -315,30 +371,48 @@ class AudioGraph(QWidget):
             self._spectrogram = self._compute_spectrogram()
         if self._spectrogram is None:
             return
-        img, levels = self._spectrogram
-        nyquist = self._sample_rate / 2.0
+        img, levels, nfft, hop = self._spectrogram
+        sr = self._sample_rate
+        top_mel = float(hz_to_mel(sr / 2.0))
         self._image.setImage(img, autoLevels=False, levels=levels)
-        self._image.setRect(QRectF(0, 0, self._duration, nyquist))
+        # Each column centred on its frame, so it lines up with the time
+        # axis and the detection regions
+        x0 = (nfft - hop) / 2.0 / sr
+        self._image.setRect(QRectF(x0, 0, len(img) * hop / sr, top_mel))
         self._image.setLookupTable(pg.colormap.get("inferno").getLookupTable(0.0, 1.0, 256))
-        self.plot.setLabel("left", "Frequency", units="Hz")
-        self.plot.setLimits(yMin=0, yMax=nyquist)
-        self._vb.setYRange(0, nyquist, padding=0)
+        # The y axis is in mel, labelled in kHz
+        self.plot.getAxis("left").setTicks([[
+            (float(hz_to_mel(hz)), text) for hz, text in self.SPECTROGRAM_TICKS_HZ
+            if hz <= sr / 2.0]])
+        self.plot.setLimits(yMin=0, yMax=top_mel)
+        self._vb.setYRange(0, top_mel, padding=0)
 
-    def _compute_spectrogram(self, nfft=1024, hop=256):
-        samples = self._samples
-        if samples is None or len(samples) < nfft:
+    def _compute_spectrogram(self):
+        samples, sr = self._samples, self._sample_rate
+        if samples is None or not len(samples):
             return None
+        nfft = max(2, int(round(sr * self.SPECTROGRAM_FRAME_S)))
+        if len(samples) < nfft:
+            samples = np.pad(samples, (0, nfft - len(samples)))
+        hop = max(int(round(sr * self.SPECTROGRAM_HOP_S)),
+                  int(np.ceil((len(samples) - nfft) / self.SPECTROGRAM_MAX_COLUMNS)), 1)
+        # samples (n,) -> frames (cols, nfft) -> rfft (cols, nfft/2+1) -> dB -> mel rows (cols, ROWS)
         frames = np.lib.stride_tricks.sliding_window_view(samples, nfft)[::hop]
         window = np.hanning(nfft).astype(np.float32)
-        mag = np.abs(np.fft.rfft(frames * window, axis=1))
-        db = 20.0 * np.log10(mag + 1e-6)  # shape (time, freq)
+        bands = _mel_bands(sr, nfft, self.SPECTROGRAM_ROWS)
+        db = np.empty((len(frames), self.SPECTROGRAM_ROWS), np.float32)
+        # In chunks: a whole long take at once peaks at ~20x the image's size
+        chunk = 4096
+        for i in range(0, len(frames), chunk):
+            mag = np.abs(np.fft.rfft(frames[i:i + chunk] * window, axis=1))
+            db[i:i + chunk] = _to_mel_rows(20.0 * np.log10(mag + 1e-6), bands)
         top = float(db.max())
-        return db, (top - 80.0, top)
+        return db, (top - self.SPECTROGRAM_RANGE_DB, top), nfft, hop
 
     # ---- waveform envelope --------------------------------------------
 
     def _render_waveform(self):
-        if self._mode != MODE_WAVEFORM or self._samples is None or self._sample_rate is None:
+        if self._graph_display != GRAPH_DISPLAY_WAVEFORM or self._samples is None or self._sample_rate is None:
             return
         x0, x1 = self._vb.viewRange()[0]
         x0 = max(0.0, x0)
@@ -362,12 +436,10 @@ class AudioGraph(QWidget):
             self._min_curve.setData(t, seg)
             return
 
-        trim = len(seg) - (len(seg) % buckets)
-        reshaped = seg[:trim].reshape(buckets, -1)
-        env_max = reshaped.max(axis=1)
-        env_min = reshaped.min(axis=1)
-        step = (trim / buckets) / sr
-        t = x0 + (np.arange(buckets) + 0.5) * step
+        edges = np.linspace(0, len(seg), buckets + 1).astype(int)
+        env_max = np.maximum.reduceat(seg, edges[:-1])
+        env_min = np.minimum.reduceat(seg, edges[:-1])
+        t = (i0 + (edges[:-1] + edges[1:]) / 2.0) / sr
         self._max_curve.setData(t, env_max)
         self._min_curve.setData(t, env_min)
 
@@ -487,7 +559,7 @@ class AudioGraph(QWidget):
             a, b = self._selection
             if b - a > 0:
                 self._animate_x_range(a, b)
-                if self._mode == MODE_WAVEFORM:
+                if self._graph_display == GRAPH_DISPLAY_WAVEFORM:
                     self._apply_y_range()
                 return
         self.fit_full()
@@ -496,7 +568,7 @@ class AudioGraph(QWidget):
         if self._duration <= 0:
             return
         self._animate_x_range(0.0, self._duration)
-        if self._mode == MODE_WAVEFORM:
+        if self._graph_display == GRAPH_DISPLAY_WAVEFORM:
             self._apply_y_range()
 
     def toggle_fit(self):
@@ -623,7 +695,7 @@ class AudioGraph(QWidget):
     # ---- horizontal scrollbar -----------------------------------------
 
     def _sync_scrollbar(self):
-        """Mirror the visible X window onto the scrollbar; hide it when the whole
+        """Mirror the visible window onto the scrollbar; hidden when the whole
         clip is in view."""
         if self._updating_scroll or self._duration <= 0:
             return
@@ -673,9 +745,9 @@ class AudioGraph(QWidget):
         self._anim = anim
 
     def cleanup(self):
-        """Tear down plot items before deletion so pyqtgraph doesn't paint
-        an InfiniteLine whose ViewBox has already gone away."""
-        self._render_soon.cancel()
+        """Tear down plot items before deletion, so pyqtgraph never paints an
+        item whose ViewBox has already gone."""
+        self._render_when_settled.cancel()
         self._drag_timer.stop()
         self._stop_seam()
         if self._anim is not None:
@@ -688,6 +760,12 @@ class AudioGraph(QWidget):
             except (TypeError, RuntimeError):
                 pass
         self.plot.clear()
+
+    def leaveEvent(self, event):
+        # Leaving the widget fires no scene move, so the hover would linger
+        self.cursor.setVisible(False)
+        self.readout.setVisible(False)
+        super().leaveEvent(event)
 
     def _on_mouse_moved(self, scene_pos):
         if self._samples is None or self._busy:
