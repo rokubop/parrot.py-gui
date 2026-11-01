@@ -1,5 +1,6 @@
 from .typing import DetectionLabel, DetectionFrame, DetectionEvent, DetectionState
-from config.config import BACKGROUND_LABEL, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, MS_PER_FRAME, RATE, CURRENT_VERSION, CURRENT_DETECTION_STRATEGY, THRESHOLD_DETECTION
+from config.config import BACKGROUND_LABEL, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, MS_PER_FRAME, RATE, CURRENT_VERSION, CURRENT_DETECTION_STRATEGY, THRESHOLD_DETECTION, TWO_PASS_DETECTION
+from lib.frame_stats import stat_arrays, drop_cache
 from typing import List
 import wave
 import numpy as np
@@ -10,7 +11,7 @@ import os
 
 snr_cutoff = 30
 
-def detect_wav_frames(input_file, detection_state, progress_callback = None):
+def detect_wav_frames(input_file, detection_state, progress_callback = None, progress_start = 0, progress_end = 0.75):
     """Run live detection over a wav, frame by frame. Updates detection_state as it goes."""
     audioFrames = []
     wf = wave.open(input_file, 'rb')
@@ -25,7 +26,7 @@ def detect_wav_frames(input_file, detection_state, progress_callback = None):
     detection_frames = []
 
     if progress_callback is not None:
-        progress_callback(0, detection_state)
+        progress_callback(progress_start, detection_state)
     
     while( wf.tell() < total_frames ):
         index = index + 1
@@ -48,18 +49,18 @@ def detect_wav_frames(input_file, detection_state, progress_callback = None):
         # Convert from different byte sizes to 16bit for proper progress
         progress = wf.tell() / total_frames
         if progress_callback is not None and progress < 1:
-            # For the initial pass we calculate 75% of the progress
-            # This progress partitioning is completely arbitrary
-            progress_callback(progress * 0.75, detection_state)
+            progress_callback(progress_start + progress * (progress_end - progress_start), detection_state)
 
     wf.close()
     return detection_frames, number_channels
 
-def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels, progress_callback = None, comparison_srt_file = None, override_file = None, print_statistics = False):
+def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels, progress_callback = None, comparison_srt_file = None, override_file = None, print_statistics = False, two_pass = None, strategy = None):
+    if two_pass is None:
+        two_pass = TWO_PASS_DETECTION
     ms_per_frame = MS_PER_FRAME
     sample_width = 2# 16 bit = 2 bytes
     
-    detection_strategy = CURRENT_DETECTION_STRATEGY
+    detection_strategy = strategy if strategy else CURRENT_DETECTION_STRATEGY
     
     detection_labels = []
     override_labels = []
@@ -85,17 +86,44 @@ def process_wav_file(input_file, srt_file, output_file, thresholds_file, labels,
             override_labels.append(DetectionLabel(override_label, 0, 0, duration_type, 0, min_dBFS, 0, 0, 0))    
     detection_state.override_labels = override_labels
 
-    detection_frames, number_channels = detect_wav_frames(input_file, detection_state, progress_callback)
-    
+    # The pass(es) fill 75% of the progress, post processing the remaining 25%
+    # This progress partitioning is completely arbitrary
+    first_pass_end = 0.375 if two_pass else 0.75
+    detection_frames, number_channels = detect_wav_frames(input_file, detection_state, progress_callback, 0, first_pass_end)
+
+    # Second pass - settle the thresholds over the whole recording and re-judge
+    # every frame, so the start is detected with the same criteria as the end.
+    if two_pass and len(detection_frames) > 0:
+        settle_detection_state(detection_frames, detection_state)
+        detection_frames, number_channels = detect_wav_frames(input_file, detection_state, progress_callback, first_pass_end, 0.75)
+
     output_wave_file = wave.open(output_file, 'wb')
     output_wave_file.setnchannels(number_channels)
     output_wave_file.setsampwidth(sample_width)
     output_wave_file.setframerate(RATE)
-    
+
     post_processing(detection_frames, detection_state, srt_file, thresholds_file, progress_callback, output_wave_file, comparison_srt_file, print_statistics )
     progress = 1
     if progress_callback is not None:
         progress_callback(progress, detection_state)
+
+def settle_detection_state(detection_frames: List[DetectionFrame], detection_state: DetectionState):
+    """Prepare the second detection pass - settle the thresholds over the WHOLE
+    recording, freeze them, and reset the counters so every frame can be
+    re-judged from the start with criteria that no longer drift."""
+    for label in detection_state.labels:
+        duration_type = determine_duration_type(label, detection_frames)
+        if duration_type:
+            label.duration_type = duration_type
+    determine_detection_state(detection_frames, detection_state)
+    for label in detection_state.labels:
+        label.ms_detected = 0
+    detection_state.ms_recorded = 0
+    # Between sounds only onsets may start a detection, exactly like mid-file
+    detection_state.current_dBFS_threshold = 0
+    detection_state.frozen = True
+    # The cached stat arrays belong to the first pass' frames
+    drop_cache(detection_state)
 
 def process_audio_frame(index, audioFrames, detection_state, detection_frames, current_occurrence, false_occurrence):
     current_detection_frame = determine_detection_frame(index, detection_state, audioFrames, detection_frames)    
@@ -183,7 +211,7 @@ def process_audio_frame(index, audioFrames, detection_state, detection_frames, c
     
     # Recalculate the noise floor / signal strength every 15 frames
     # For performance reason and because the statistical likelyhood of things changing every 150ms is pretty low
-    if len(detection_frames) % 15 == 0:
+    if len(detection_frames) % 15 == 0 and not detection_state.frozen:
         detection_state = determine_detection_state(detection_frames, detection_state)
 
     # On-line rejection - This may be undone in post-processing later
@@ -528,23 +556,22 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
     return frames
 
 def determine_detection_state(detection_frames: List[DetectionFrame], detection_state: DetectionState) -> DetectionState:
-    dBFS_frames = np.array([frame.dBFS for frame in detection_frames])
-    spectral_flux_frames = np.array([frame.spectral_flux for frame in detection_frames])
+    dBFS_arr, spectral_flux_arr = stat_arrays(detection_state, detection_frames)
     threshold_confidence = 1 if THRESHOLD_DETECTION == "strict" else 0.5
     
     # Calculate the onset thresholds using spectral flux
-    spectral_flux_max = np.percentile(spectral_flux_frames, 95)
-    spectral_flux_min = np.percentile(spectral_flux_frames, 5)
+    spectral_flux_max = np.percentile(spectral_flux_arr, 95)
+    spectral_flux_min = np.percentile(spectral_flux_arr, 5)
     detection_state.spectral_onset_threshold = (spectral_flux_max - spectral_flux_min) * 0.5
 
     # Calculate the signal variance
-    std_dBFS = np.std(dBFS_frames)
+    std_dBFS = np.std(dBFS_arr)
     detection_state.expected_snr = std_dBFS * 2
-    detection_state.expected_noise_floor = np.percentile(dBFS_frames, 10)
+    detection_state.expected_noise_floor = np.percentile(dBFS_arr, 10)
     
     # Determine an error margin of about 4% of the rough dBFS range
-    dBFS_max = np.percentile(dBFS_frames, 95)
-    dBFS_min = np.percentile(dBFS_frames, 5)
+    dBFS_max = np.percentile(dBFS_arr, 95)
+    dBFS_min = np.percentile(dBFS_arr, 5)
     detection_state.dBFS_error_margin = abs(dBFS_min - dBFS_max) / 25
 
     # Determine a upper bound of dBFS threshold based on the known valleys determined by the onset detection
