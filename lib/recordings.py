@@ -47,3 +47,38 @@ def get_recorded_at(filename):
         return datetime.fromtimestamp(int(tail))
     except (ValueError, OSError, OverflowError):
         return None
+
+# A sound's name is also written inside its srts (the event text) and
+# thresholds files (the keys, e.g. pop_min_dbfs). Detected time, the overlay
+# and threshold overrides match on it, so a renamed or moved sound rewrites them.
+def relabel_segment_files(paths, old_label, new_label):
+    for path in paths:
+        if path.endswith(".srt"):
+            _rewrite_lines(path, lambda lines: _relabel_srt(lines, old_label, new_label))
+        elif path.endswith("_thresholds.txt"):
+            _rewrite_lines(path, lambda lines: _relabel_thresholds(lines, old_label, new_label))
+
+def _relabel_srt(lines, old_label, new_label):
+    out = []
+    for i, line in enumerate(lines):
+        is_event_text = i > 0 and "-->" in lines[i - 1]
+        if is_event_text and line.strip().lower() == old_label.lower():
+            line = new_label + line[len(line.rstrip("\r\n")):]
+        out.append(line)
+    return out
+
+def _relabel_thresholds(lines, old_label, new_label):
+    prefix = old_label.lower() + "_"
+    return [new_label.lower() + "_" + line[len(prefix):] if line.lower().startswith(prefix) else line
+            for line in lines]
+
+def _rewrite_lines(path, change):
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        lines = f.read().splitlines(keepends=True)
+    changed = change(lines)
+    if changed == lines:
+        return
+    temp = path + ".tmp"
+    with open(temp, "w", encoding="utf-8", newline="") as f:
+        f.writelines(changed)
+    os.replace(temp, path)

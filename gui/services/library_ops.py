@@ -26,7 +26,7 @@ import shutil
 import subprocess
 
 from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER
-from lib.recordings import get_label_dir
+from lib.recordings import get_label_dir, relabel_segment_files
 
 
 class LibraryOpError(Exception):
@@ -115,6 +115,7 @@ def rename_sound(old, new):
     if sound_exists(new_label):
         raise LibraryOpError(f"A sound called '{new_label}' already exists.")
     os.rename(get_label_dir(old), get_label_dir(new_label))
+    _relabel_sound(old, new_label)
     return new_label
 
 
@@ -126,7 +127,14 @@ def clone_sound(src, new):
     if sound_exists(new_label):
         raise LibraryOpError(f"A sound called '{new_label}' already exists.")
     shutil.copytree(get_label_dir(src), get_label_dir(new_label))
+    _relabel_sound(src, new_label)
     return new_label
+
+
+def _relabel_sound(old, new_label):
+    seg = segments_dir(new_label)
+    if os.path.isdir(seg):
+        relabel_segment_files([os.path.join(seg, f) for f in os.listdir(seg)], old, new_label)
 
 
 def delete_sound(label):
@@ -308,10 +316,13 @@ def move_recording(wav_path, dest_label):
     if os.path.exists(new_wav):
         raise LibraryOpError(
             f"'{dest_label}' already has a recording called '{base}'.")
+    old_label = recording_label(wav_path)
+    moved = []
     for f in recording_sibling_files(wav_path):
         name = os.path.basename(f)
         dest = dest_src if name.lower().endswith(".wav") else dest_seg
-        shutil.move(f, os.path.join(dest, name))
+        moved.append(shutil.move(f, os.path.join(dest, name)))
+    relabel_segment_files(moved, old_label, dest_label)
     return new_wav
 
 
