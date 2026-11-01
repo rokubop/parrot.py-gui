@@ -18,7 +18,7 @@ import time
 import numpy as np
 import sounddevice as sd
 
-_CHUNK = 256   # frames per write - small enough that stop() responds promptly
+_CHUNK = 256   # frames per write: stop() takes effect within one
 
 
 class PlaybackError(Exception):
@@ -28,7 +28,6 @@ class PlaybackError(Exception):
 class _Player:
     def __init__(self):
         self._lock = threading.Lock()
-        self._stream = None
         self._token = None   # identity of the current play() request
         self._thread = None  # the writer, so shutdown() can wait for it
 
@@ -49,28 +48,28 @@ class _Player:
             stream = sd.OutputStream(samplerate=sample_rate, channels=1,
                                      dtype="float32", blocksize=0,
                                      latency="low")
+        except Exception as exc:
+            raise PlaybackError(str(exc)) from exc
+        try:
             stream.start()
         except Exception as exc:
+            stream.close(ignore_errors=True)
             raise PlaybackError(str(exc)) from exc
         token = object()
         worker = threading.Thread(target=self._run, args=(samples, stream, token),
                                   daemon=True)
         with self._lock:
             self._token = token
-            self._stream = stream
             self._thread = worker
         worker.start()
         return float(stream.latency)
 
     def stop(self):
-        """Cut playback now, without draining what PortAudio has buffered."""
-        # Abort, not close: it unblocks a write() in flight, and the writer
-        # closes the stream after. Under the lock, so the stream can't be
-        # closed between reading it and aborting it.
+        """Cut playback, without draining what PortAudio has buffered. The
+        writer aborts its own stream between writes: aborting from here while
+        it is inside write() crashes on Windows MME."""
         with self._lock:
             self._token = None
-            if self._stream is not None:
-                self._stream.abort(ignore_errors=True)
 
     def shutdown(self):
         """Stop, and wait for the writer to leave PortAudio. Call before
@@ -100,14 +99,13 @@ class _Player:
                 while self._token is token and time.monotonic() < deadline:
                     time.sleep(0.01)
         except Exception:
-            pass                    # aborted by stop(), device vanished, etc.
+            pass                    # device vanished, etc.
         finally:
             with self._lock:
                 if self._token is token:
                     self._token = None
-                if self._stream is stream:
-                    self._stream = None
-                stream.close(ignore_errors=True)
+            stream.abort(ignore_errors=True)
+            stream.close(ignore_errors=True)
 
 
 _player = _Player()
