@@ -20,7 +20,6 @@ SOUND_COLUMN, DATA_COLUMN, DETECTED_COLUMN = 0, 1, 2
 
 
 def _is_space(event):
-    # Bare Space only. Shift/Ctrl+Space keep their list meaning
     return (event.key() == Qt.Key.Key_Space
             and event.modifiers() == Qt.KeyboardModifier.NoModifier)
 
