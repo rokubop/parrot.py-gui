@@ -29,15 +29,12 @@ class _Player:
     def __init__(self):
         self._lock = threading.Lock()
         self._token = None   # identity of the current play() request
-        self._thread = None  # the writer, so shutdown() can wait for it
+        self._thread = None  # the writer
 
     def play(self, samples, sample_rate):
-        """Start playing mono float32 `samples`; returns immediately.
-
-        Returns the output latency in seconds - audio reaches the speakers that
-        long after this call, so a playhead clocked from now must lag by it.
-        The stream is opened here rather than on the worker (~5 ms) so the
-        figure is exact by the time the caller starts its clock.
+        """Start playing mono float32 `samples` and return the output latency
+        in seconds: a playhead clocked from now must lag by it. Stream opened
+        here, not on the worker, so latency is known before the clock starts.
         """
         self.stop()
         # The old writer may still be closing its stream

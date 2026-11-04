@@ -146,8 +146,7 @@ class AudioGraph(QWidget):
 
         self._regions = []
 
-        # Grab the playhead to scrub. The hover pen widens it so it's easy
-        # to catch
+        # Wider on hover, easier to grab
         self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
                                         pen=pg.mkPen(QColor(*t["playhead"]), width=2))
         self.playhead.setHoverPen(pg.mkPen(QColor(*t["playhead"]), width=4))
@@ -333,8 +332,8 @@ class AudioGraph(QWidget):
     # ---- playhead ------------------------------------------------------
 
     def playback_audio(self):
-        """(mono float32 samples, sample rate), already decoded for the plot,
-        so playing doesn't re-read the file."""
+        """Return (mono float32 samples, sample rate), already decoded for the
+        plot, so playing doesn't re-read the file."""
         return self._samples, self._sample_rate
 
     def duration(self):

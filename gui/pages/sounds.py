@@ -381,14 +381,12 @@ class SoundsPage(QWidget):
     # ---- playback ------------------------------------------------------
 
     def _on_card_started(self, card):
-        # One stream at a time, so any other card is now stopped
         for other in self._cards:
             if other is not card:
                 other.stop()
         self._active_card = card
 
     def _on_card_picked(self, card):
-        # Only aims Space. What's playing keeps playing until another starts
         self._active_card = card
 
     def _on_card_failed(self, message):

@@ -14,8 +14,8 @@ ICON_SIZE = 13
 
 
 def _media_icon(draw, color):
-    """A drawn glyph as a fixed-size icon: the text glyphs differ in height
-    and shift the layout when swapped."""
+    """Draw a glyph as a fixed-size icon: text glyphs differ in height and
+    shift the layout when swapped."""
     scale = 2   # sharp on high-DPI screens
     pixmap = QPixmap(ICON_SIZE * scale, ICON_SIZE * scale)
     pixmap.setDevicePixelRatio(scale)
@@ -86,7 +86,7 @@ class RecordingCard(QFrame):
         self._sample_rate = None
         self._duration = 0.0
         self._position = 0.0       # playhead, kept across pause
-        self._play_start = 0.0     # where the current play began
+        self._play_start = 0.0
         self._playing = False
         self._latency = 0.0        # output buffer delay of the current play
 
@@ -206,8 +206,6 @@ class RecordingCard(QFrame):
         if self.audio_graph is None:
             return      # unreadable, the card already says why
         if self._audio is None:
-            # The samples the audio graph already decoded, so the first play
-            # doesn't re-read the file on the UI thread
             self._audio, self._sample_rate = self.audio_graph.playback_audio()
             self._duration = self.audio_graph.duration()
 
@@ -223,7 +221,6 @@ class RecordingCard(QFrame):
         try:
             self._latency = playback.play(clip, self._sample_rate)
         except playback.PlaybackError:
-            # A seek while playing already stopped the old stream
             self._show_stopped()
             self.failed.emit("The default playback device would not open.")
             return
@@ -260,7 +257,6 @@ class RecordingCard(QFrame):
         return super().eventFilter(obj, event)
 
     def _on_seek(self, seconds):
-        # Moves the playhead. Keeps playing if it was, else waits for Play
         self.picked.emit(self)
         self._position = seconds
         self.audio_graph.set_playhead(seconds)
