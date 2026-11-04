@@ -4,7 +4,7 @@ import time
 import numpy as np
 import sounddevice as sd
 
-_SAMPLES_AT_A_TIME = 256
+_SAMPLES_PER_CHUNK = 256
 
 
 class PlaybackError(Exception):
@@ -58,12 +58,12 @@ class _Player:
 
     def _playback_loop(self, samples, stream, token):
         try:
-            for i in range(0, len(samples), _SAMPLES_AT_A_TIME):
+            for i in range(0, len(samples), _SAMPLES_PER_CHUNK):
                 if self._token is not token:
                     break
-                block = np.ascontiguousarray(samples[i:i + _SAMPLES_AT_A_TIME],
+                chunk = np.ascontiguousarray(samples[i:i + _SAMPLES_PER_CHUNK],
                                              dtype=np.float32)
-                stream.write(block.reshape(-1, 1))
+                stream.write(chunk.reshape(-1, 1))
             else:
                 deadline = time.monotonic() + stream.latency + 0.02
                 while self._token is token and time.monotonic() < deadline:
