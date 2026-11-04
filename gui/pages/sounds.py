@@ -251,7 +251,7 @@ class SoundsPage(QWidget):
                 _cards_container_new
                 _card_new, per recording
             _cards_swap_in
-            _cards_tab_order
+            _cards_set_tab_order
             _audio_graphs_build (staggered)
             _cards_destroy_later -> _cards_destroy
         """
@@ -266,7 +266,7 @@ class SoundsPage(QWidget):
         old_cards = self._cards
         cards_container, self._cards = self._cards_build(label, recordings)
         old_cards_container = self._cards_swap_in(cards_container)
-        self._cards_tab_order()
+        self._cards_set_tab_order()
         self._audio_graphs_build(self._cards)
         self._cards_destroy_later(old_cards, old_cards_container)
 
@@ -310,7 +310,7 @@ class SoundsPage(QWidget):
         self.cards_scroll.setWidget(cards_container)
         return old
 
-    def _cards_tab_order(self):
+    def _cards_set_tab_order(self):
         """Put the Play buttons right after the recordings area. New widgets
         join the tab chain at its end, after the toolbar.
 
