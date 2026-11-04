@@ -189,8 +189,6 @@ class RecordingCard(QFrame):
         if self.audio_graph is not None:
             self.audio_graph.set_normalized(normalized)
 
-    # ---- playback ------------------------------------------------------
-
     def playable(self):
         self.build_audio_graph()
         return self.audio_graph is not None
