@@ -15,11 +15,11 @@ class _Player:
     def __init__(self):
         self._lock = threading.Lock()
         self._token = None
-        self._thread = None
+        self._playback_thread = None
 
     def play(self, samples, sample_rate):
         self.stop()
-        self._join_writer()
+        self._wait_for_playback_thread()
         if samples is None or not sample_rate or len(samples) == 0:
             return 0.0
         try:
@@ -34,12 +34,12 @@ class _Player:
             stream.close(ignore_errors=True)
             raise PlaybackError(str(exc)) from exc
         token = object()
-        worker = threading.Thread(target=self._run, args=(samples, stream, token),
-                                  daemon=True)
+        playback_thread = threading.Thread(
+            target=self._playback_loop, args=(samples, stream, token), daemon=True)
         with self._lock:
             self._token = token
-            self._thread = worker
-        worker.start()
+            self._playback_thread = playback_thread
+        playback_thread.start()
         return float(stream.latency)
 
     def stop(self):
@@ -48,15 +48,15 @@ class _Player:
 
     def shutdown(self):
         self.stop()
-        self._join_writer()
+        self._wait_for_playback_thread()
 
-    def _join_writer(self):
+    def _wait_for_playback_thread(self):
         with self._lock:
-            worker = self._thread
-        if worker is not None:
-            worker.join(timeout=2.0)
+            playback_thread = self._playback_thread
+        if playback_thread is not None:
+            playback_thread.join(timeout=2.0)
 
-    def _run(self, samples, stream, token):
+    def _playback_loop(self, samples, stream, token):
         try:
             for i in range(0, len(samples), _CHUNK):
                 if self._token is not token:

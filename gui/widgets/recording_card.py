@@ -270,7 +270,7 @@ class RecordingCard(QFrame):
     def _tick(self):
         heard = self._heard_position()
         if heard >= self._duration:
-            # The writer finishes the stream itself. Aborting here would race it
+            # The playback thread finishes the stream itself. Aborting here would race it
             self._show_stopped()
             self._position = 0.0
             self.audio_graph.set_playhead(0.0)
