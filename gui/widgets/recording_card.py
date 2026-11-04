@@ -172,7 +172,7 @@ class RecordingCard(QFrame):
         self.audio_graph = graph
         self.audio_graph.set_graph_display(self._graph_display)
         self.audio_graph.set_normalized(self._normalized)
-        self.audio_graph.seeked.connect(self._on_seek)
+        self.audio_graph.seek_requested.connect(self._on_seek_requested)
         self._layout.replaceWidget(self._placeholder, self.audio_graph)
         self._placeholder.setParent(None)
         self._placeholder.deleteLater()
@@ -254,7 +254,7 @@ class RecordingCard(QFrame):
             self.picked.emit(self)
         return super().eventFilter(obj, event)
 
-    def _on_seek(self, seconds):
+    def _on_seek_requested(self, seconds):
         self.picked.emit(self)
         self._position = seconds
         self.audio_graph.set_playhead(seconds)

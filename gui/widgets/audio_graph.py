@@ -70,7 +70,7 @@ class AudioGraph(QWidget):
     whenever the view changes, so detail sharpens on zoom instead of aliasing.
     """
 
-    seeked = pyqtSignal(float)   # seconds, from a click or a playhead drag
+    seek_requested = pyqtSignal(float)   # seconds, from a click or a playhead drag
 
     SPECTROGRAM_FRAME_S = 0.032
     SPECTROGRAM_HOP_S = 0.004
@@ -358,7 +358,7 @@ class AudioGraph(QWidget):
             return
         self._dragging_playhead = False
         self.readout.setVisible(False)
-        self.seeked.emit(max(0.0, min(self.playhead.value(), self._duration)))
+        self.seek_requested.emit(max(0.0, min(self.playhead.value(), self._duration)))
 
     # ---- zoom ----------------------------------------------------------
 
@@ -442,4 +442,4 @@ class AudioGraph(QWidget):
             self.fit_full()
             return
         x = self._vb.mapSceneToView(event.scenePos()).x()
-        self.seeked.emit(max(0.0, min(x, self._duration)))
+        self.seek_requested.emit(max(0.0, min(x, self._duration)))
