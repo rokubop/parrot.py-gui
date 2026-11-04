@@ -372,8 +372,6 @@ class SoundsPage(QWidget):
         for card in self._cards:
             card.set_normalized(normalized)
 
-    # ---- playback ------------------------------------------------------
-
     def _on_card_started(self, card):
         for other in self._cards:
             if other is not card:
