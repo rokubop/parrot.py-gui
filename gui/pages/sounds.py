@@ -50,7 +50,7 @@ class SoundsPage(QWidget):
         super().__init__(parent)
         self.app_state = app_state
         self._cards = []
-        self._active_card = None   # what Space plays: last played, clicked or tabbed to
+        self._active_card = None
         self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._normalized = True
 
