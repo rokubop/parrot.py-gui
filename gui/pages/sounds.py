@@ -310,11 +310,7 @@ class SoundsPage(QWidget):
         return old
 
     def _cards_set_tab_order(self):
-        """Put the Play buttons right after the recordings area. New widgets
-        join the tab chain at its end, after the toolbar.
-
-            Normalize -> recordings -> Play 1 -> Play 2 ... -> toolbar
-        """
+        """Order: Normalize, recordings, Play 1, Play 2 ..., toolbar"""
         previous = self.cards_scroll
         for card in self._cards:
             QWidget.setTabOrder(previous, card.play_btn)
