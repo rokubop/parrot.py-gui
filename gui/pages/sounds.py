@@ -88,7 +88,6 @@ class SoundsPage(QWidget):
         # Debounce sound change in case arrow key is held
         self.sound_list.currentItemChanged.connect(
             debounced(self._cards_show_selected, wait_ms=15, owner=self))
-        # Space plays, even from the list, which would otherwise select a row
         self.sound_list.installEventFilter(self)
         left_layout.addWidget(self.sound_list)
         # Where keyboard navigation to this page lands
