@@ -310,7 +310,7 @@ class SoundsPage(QWidget):
         return old
 
     def _cards_set_tab_order(self):
-        """Order: Normalize, recordings, Play 1, Play 2 ..., toolbar"""
+        """Order: cards_scroll, Play 1, Play 2 ..."""
         previous = self.cards_scroll
         for card in self._cards:
             QWidget.setTabOrder(previous, card.play_btn)
