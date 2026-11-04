@@ -59,9 +59,9 @@ class RecordingCard(QFrame):
 
     AUDIO_GRAPH_HEIGHT = 150
 
-    started = pyqtSignal(object)   # self, when playback begins
-    failed = pyqtSignal(str)       # playback could not start
-    picked = pyqtSignal(object)    # self, when its graph is clicked or Play focused
+    playback_started = pyqtSignal(object)   # self
+    playback_failed = pyqtSignal(str)       # message
+    picked = pyqtSignal(object)             # self, when its graph is clicked or Play focused
 
     def __init__(self, name, label, wav_path, srt_path, parent=None):
         super().__init__(parent)
@@ -212,7 +212,7 @@ class RecordingCard(QFrame):
         if self._position >= self._duration:
             self._position = 0.0
         self._position = max(0.0, self._position)
-        self.started.emit(self)
+        self.playback_started.emit(self)
 
         self._play_start = self._position
         clip = self._audio[int(self._position * self._sample_rate):]
@@ -220,7 +220,7 @@ class RecordingCard(QFrame):
             self._latency = playback.play(clip, self._sample_rate)
         except playback.PlaybackError:
             self._show_stopped()
-            self.failed.emit("The default playback device would not open.")
+            self.playback_failed.emit("The default playback device would not open.")
             return
 
         self._playing = True

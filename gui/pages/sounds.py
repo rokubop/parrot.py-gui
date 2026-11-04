@@ -289,9 +289,9 @@ class SoundsPage(QWidget):
         card = RecordingCard(base, label, rec["wav_path"], rec["srt_path"])
         card.set_graph_display(self._graph_display)
         card.set_normalized(self._normalized)
-        card.started.connect(self._on_card_started)
+        card.playback_started.connect(self._on_card_playback_started)
         card.picked.connect(self._on_card_picked)
-        card.failed.connect(self._on_card_failed)
+        card.playback_failed.connect(self._on_card_playback_failed)
         return card
 
     def _cards_container_new(self):
@@ -372,7 +372,7 @@ class SoundsPage(QWidget):
         for card in self._cards:
             card.set_normalized(normalized)
 
-    def _on_card_started(self, card):
+    def _on_card_playback_started(self, card):
         for other in self._cards:
             if other is not card:
                 other.stop()
@@ -381,7 +381,7 @@ class SoundsPage(QWidget):
     def _on_card_picked(self, card):
         self._active_card = card
 
-    def _on_card_failed(self, message):
+    def _on_card_playback_failed(self, message):
         QMessageBox.warning(self, "Playback", message)
 
     def eventFilter(self, obj, event):
