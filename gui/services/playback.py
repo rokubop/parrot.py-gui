@@ -1,43 +1,24 @@
-"""Preview playback that survives a busy UI thread.
-
-`sd.play()` runs its callback in Python, so every buffer needs the GIL, and
-playhead repaints hold the main thread long enough for the callback to miss
-its deadline - playback crackles. PortAudio's blocking `write()` buffers in C,
-so writing happens on a worker thread; nothing Python sits in the audio path.
-
-One stream at a time: starting a clip replaces whatever was playing, on the
-default output device.
-
-Buffering stays as small as CoreAudio allows (~133 ms at 16 kHz): larger blocks
-are audible lag. `play()` returns the stream's real latency so callers
-can hold their playhead back by it.
-"""
 import threading
 import time
 
 import numpy as np
 import sounddevice as sd
 
-_CHUNK = 256   # frames per write: stop() takes effect within one
+_CHUNK = 256
 
 
 class PlaybackError(Exception):
-    """The output device could not be opened."""
+    pass
 
 
 class _Player:
     def __init__(self):
         self._lock = threading.Lock()
-        self._token = None   # identity of the current play() request
-        self._thread = None  # the writer
+        self._token = None
+        self._thread = None
 
     def play(self, samples, sample_rate):
-        """Start playing mono float32 `samples` and return the output latency
-        in seconds: a playhead clocked from now must lag by it. Stream opened
-        here, not on the worker, so latency is known before the clock starts.
-        """
         self.stop()
-        # The old writer may still be closing its stream
         self._join_writer()
         if samples is None or not sample_rate or len(samples) == 0:
             return 0.0
@@ -62,16 +43,10 @@ class _Player:
         return float(stream.latency)
 
     def stop(self):
-        """Cut playback, without draining what PortAudio has buffered. The
-        writer aborts its own stream between writes: aborting from here while
-        it is inside write() crashes on Windows MME."""
         with self._lock:
             self._token = None
 
     def shutdown(self):
-        """Stop, and wait for the writer to leave PortAudio. Call before
-        quitting: the writer is a daemon thread, and tearing the interpreter
-        down while it is inside stream.write() segfaults."""
         self.stop()
         self._join_writer()
 
@@ -90,13 +65,11 @@ class _Player:
                                              dtype=np.float32)
                 stream.write(block.reshape(-1, 1))
             else:
-                # Ran to the end. Closing discards what is still buffered, so
-                # wait that out. A sleep, not stream.stop(), so stop() can cut in
                 deadline = time.monotonic() + stream.latency + 0.02
                 while self._token is token and time.monotonic() < deadline:
                     time.sleep(0.01)
         except Exception:
-            pass                    # device vanished, etc.
+            pass
         finally:
             with self._lock:
                 if self._token is token:
