@@ -34,7 +34,7 @@ GRAPH_DISPLAY_WAVEFORM = "waveform"
 GRAPH_DISPLAY_SPECTROGRAM = "spectrogram"
 
 Z_SPECTROGRAM = -20
-Z_REGIONS = -10
+Z_DETECTION_REGIONS = -10
 Z_WAVEFORM_FILL = -1
 Z_WAVEFORM = 0
 Z_PLAYHEAD = 14
@@ -225,7 +225,7 @@ class AudioGraph(QWidget):
                 brush=QColor(*self._colors["detect_brush"]),
                 pen=pg.mkPen(QColor(*self._colors["detect_pen"])),
             )
-            region.setZValue(Z_REGIONS)
+            region.setZValue(Z_DETECTION_REGIONS)
             self.plot.addItem(region)
             self._regions.append(region)
 
