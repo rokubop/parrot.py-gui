@@ -33,13 +33,13 @@ from gui.timing import debounced
 GRAPH_DISPLAY_WAVEFORM = "waveform"
 GRAPH_DISPLAY_SPECTROGRAM = "spectrogram"
 
-# Draw order, back to front
 Z_SPECTROGRAM = -20
-Z_REGIONS = -10      # over the spectrogram, under the waveform
-# waveform: curves at 0 (pg default), fill at -1 (pg puts it under its curves)
+Z_REGIONS = -10
+Z_WAVEFORM_FILL = -1
+Z_WAVEFORM = 0
 Z_PLAYHEAD = 14
-Z_CURSOR = 15        # hover line
-Z_READOUT = 16       # time label
+Z_CURSOR = 15
+Z_READOUT = 16
 
 pg.setConfigOptions(antialias=True)
 
@@ -141,8 +141,11 @@ class AudioGraph(QWidget):
         pen = pg.mkPen(QColor(*t["wave"]), width=1)
         self._max_curve = self.plot.plot(pen=pen)
         self._min_curve = self.plot.plot(pen=pen)
+        self._max_curve.setZValue(Z_WAVEFORM)
+        self._min_curve.setZValue(Z_WAVEFORM)
         self._fill = pg.FillBetweenItem(self._max_curve, self._min_curve,
                                         brush=QColor(*t["wave_fill"]))
+        self._fill.setZValue(Z_WAVEFORM_FILL)
         self.plot.addItem(self._fill)
 
         # Averages columns when there are more than pixels, instead of
