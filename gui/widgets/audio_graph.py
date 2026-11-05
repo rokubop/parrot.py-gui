@@ -146,7 +146,6 @@ class AudioGraph(QWidget):
 
         self._regions = []
 
-        # Wider on hover, easier to grab
         self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
                                         pen=pg.mkPen(QColor(*t["playhead"]), width=2))
         self.playhead.setHoverPen(pg.mkPen(QColor(*t["playhead"]), width=4))
