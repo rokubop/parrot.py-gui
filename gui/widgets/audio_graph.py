@@ -33,6 +33,14 @@ from gui.timing import debounced
 GRAPH_DISPLAY_WAVEFORM = "waveform"
 GRAPH_DISPLAY_SPECTROGRAM = "spectrogram"
 
+# Draw order, back to front
+Z_SPECTROGRAM = -20
+Z_REGIONS = -10      # over the spectrogram, under the waveform
+# waveform: curves at 0 (pg default), fill at -1 (pg puts it under its curves)
+Z_PLAYHEAD = 14
+Z_CURSOR = 15        # hover line
+Z_READOUT = 16       # time label
+
 pg.setConfigOptions(antialias=True)
 
 
@@ -140,7 +148,7 @@ class AudioGraph(QWidget):
         # Averages columns when there are more than pixels, instead of
         # dropping most of them and thinning out every pop
         self._image = pg.ImageItem(autoDownsample=True)
-        self._image.setZValue(-20)  # under the detection regions
+        self._image.setZValue(Z_SPECTROGRAM)
         self._image.setVisible(False)
         self.plot.addItem(self._image)
 
@@ -149,7 +157,7 @@ class AudioGraph(QWidget):
         self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
                                         pen=pg.mkPen(QColor(*t["playhead"]), width=2))
         self.playhead.setHoverPen(pg.mkPen(QColor(*t["playhead"]), width=4))
-        self.playhead.setZValue(14)   # under the hover readout
+        self.playhead.setZValue(Z_PLAYHEAD)
         self._dragging_playhead = False
         self.playhead.sigDragged.connect(self._on_playhead_dragged)
         self.playhead.sigPositionChangeFinished.connect(self._on_playhead_released)
@@ -158,11 +166,11 @@ class AudioGraph(QWidget):
         # Hover crosshair and time readout
         cursor_pen = pg.mkPen(QColor(t["text_dim"]), width=1, style=Qt.PenStyle.DashLine)
         self.cursor = pg.InfiniteLine(pos=0, angle=90, movable=False, pen=cursor_pen)
-        self.cursor.setZValue(15)
+        self.cursor.setZValue(Z_CURSOR)
         self.cursor.setVisible(False)
         self.plot.addItem(self.cursor)
         self.readout = pg.TextItem(color=QColor(t["text_bright"]), anchor=(0, 0))
-        self.readout.setZValue(16)
+        self.readout.setZValue(Z_READOUT)
         self.readout.setVisible(False)
         self.plot.addItem(self.readout)
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
@@ -214,7 +222,7 @@ class AudioGraph(QWidget):
                 brush=QColor(*self._colors["detect_brush"]),
                 pen=pg.mkPen(QColor(*self._colors["detect_pen"])),
             )
-            region.setZValue(-10)
+            region.setZValue(Z_REGIONS)
             self.plot.addItem(region)
             self._regions.append(region)
 
