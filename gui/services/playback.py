@@ -14,7 +14,7 @@ class PlaybackError(Exception):
 class _Player:
     def __init__(self):
         self._lock = threading.Lock()
-        self._token = None
+        self._current_play_id = None
         self._playback_thread = None
 
     def play(self, samples, sample_rate):
@@ -33,18 +33,18 @@ class _Player:
         except Exception as exc:
             stream.close(ignore_errors=True)
             raise PlaybackError(str(exc)) from exc
-        token = object()
+        play_id = object()
         playback_thread = threading.Thread(
-            target=self._playback_loop, args=(samples, stream, token), daemon=True)
+            target=self._playback_loop, args=(samples, stream, play_id), daemon=True)
         with self._lock:
-            self._token = token
+            self._current_play_id = play_id
             self._playback_thread = playback_thread
         playback_thread.start()
         return float(stream.latency)
 
     def stop(self):
         with self._lock:
-            self._token = None
+            self._current_play_id = None
 
     def shutdown(self):
         self.stop()
@@ -56,24 +56,24 @@ class _Player:
         if playback_thread is not None:
             playback_thread.join(timeout=2.0)
 
-    def _playback_loop(self, samples, stream, token):
+    def _playback_loop(self, samples, stream, play_id):
         try:
             for i in range(0, len(samples), _SAMPLES_PER_CHUNK):
-                if self._token is not token:
+                if self._current_play_id is not play_id:
                     break
                 chunk = np.ascontiguousarray(samples[i:i + _SAMPLES_PER_CHUNK],
                                              dtype=np.float32)
                 stream.write(chunk.reshape(-1, 1))
             else:
                 deadline = time.monotonic() + stream.latency + 0.02
-                while self._token is token and time.monotonic() < deadline:
+                while self._current_play_id is play_id and time.monotonic() < deadline:
                     time.sleep(0.01)
         except Exception:
             pass
         finally:
             with self._lock:
-                if self._token is token:
-                    self._token = None
+                if self._current_play_id is play_id:
+                    self._current_play_id = None
             stream.abort(ignore_errors=True)
             stream.close(ignore_errors=True)
 
