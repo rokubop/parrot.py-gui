@@ -357,18 +357,28 @@ class AudioGraph(QWidget):
     def _on_playhead_dragged(self):
         # Seek once on release, not on every move
         self._dragging_playhead = True
-        x = max(0.0, min(self.playhead.value(), self._duration))
+        x = self._clamp_to_clip(self.playhead.value())
         self.cursor.setVisible(False)
-        self.readout.setText(f"{x:.3f}s")
-        self.readout.setPos(x, self._vb.viewRange()[1][1])
-        self.readout.setVisible(True)
+        self._show_readout(x)
 
     def _on_playhead_released(self):
         if not self._dragging_playhead:
             return
         self._dragging_playhead = False
         self.readout.setVisible(False)
-        self.seek_requested.emit(max(0.0, min(self.playhead.value(), self._duration)))
+        self.seek_requested.emit(self._clamp_to_clip(self.playhead.value()))
+
+    def _clamp_to_clip(self, seconds):
+        return max(0.0, min(seconds, self._duration))
+
+    def _seconds_at(self, scene_pos):
+        return self._vb.mapSceneToView(scene_pos).x()
+
+    def _show_readout(self, seconds):
+        top_of_view = self._vb.viewRange()[1][1]
+        self.readout.setText(f"{seconds:.3f}s")
+        self.readout.setPos(seconds, top_of_view)
+        self.readout.setVisible(True)
 
     # ---- zoom ----------------------------------------------------------
 
@@ -451,5 +461,5 @@ class AudioGraph(QWidget):
         if event.double():
             self.fit_full()
             return
-        x = self._vb.mapSceneToView(event.scenePos()).x()
-        self.seek_requested.emit(max(0.0, min(x, self._duration)))
+        x = self._seconds_at(event.scenePos())
+        self.seek_requested.emit(self._clamp_to_clip(x))
