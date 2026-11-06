@@ -1,46 +1,12 @@
 import os
-from PyQt6.QtCore import Qt, QEvent, QTimer, QElapsedTimer, QPointF, QRectF, QSize, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPolygonF, QColor
+from PyQt6.QtCore import Qt, QEvent, QTimer, QElapsedTimer, QSize, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QPushButton
 from gui.widgets.audio_graph import AudioGraph, GRAPH_DISPLAY_WAVEFORM
 from gui.services import playback
-from gui import theme
+from gui import icons, theme
 from gui.formatters import recorded_at, duration_text
 from lib.recordings import get_recorded_at
 from lib.wav import wav_duration, UnreadableWav
-
-
-ICON_SIZE = 13
-
-
-def _media_icon(draw, color):
-    """Draw a glyph as a fixed-size icon: text glyphs differ in height and
-    shift the layout when swapped."""
-    scale = 2   # sharp on high-DPI screens
-    pixmap = QPixmap(ICON_SIZE * scale, ICON_SIZE * scale)
-    pixmap.setDevicePixelRatio(scale)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(color))
-    draw(painter, ICON_SIZE * 0.16)
-    painter.end()
-    return QIcon(pixmap)
-
-
-def _draw_play(painter, margin):
-    painter.drawPolygon(QPolygonF([QPointF(margin, margin),
-                                   QPointF(margin, ICON_SIZE - margin),
-                                   QPointF(ICON_SIZE - margin, ICON_SIZE / 2)]))
-
-
-def _draw_pause(painter, margin):
-    bar_width = ICON_SIZE * 0.24
-    gap = ICON_SIZE * 0.18
-    height = ICON_SIZE - 2 * margin
-    painter.drawRect(QRectF(ICON_SIZE / 2 - gap / 2 - bar_width, margin, bar_width, height))
-    painter.drawRect(QRectF(ICON_SIZE / 2 + gap / 2, margin, bar_width, height))
 
 
 def _unreadable(exc):
@@ -110,10 +76,10 @@ class RecordingCard(QFrame):
     def _build_header(self, name):
         row = QHBoxLayout()
         t = theme.colors()
-        self._play_icon = _media_icon(_draw_play, t["text_bright"])
-        self._pause_icon = _media_icon(_draw_pause, t["text_bright"])
+        self._play_icon = icons.play()
+        self._pause_icon = icons.pause()
         self.play_btn = QPushButton(self._play_icon, " Play")
-        self.play_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.play_btn.setIconSize(QSize(14, 14))
         self.play_btn.setFixedWidth(90)
         self.play_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.play_btn.setToolTip("Space plays the last recording played, clicked or focused")
