@@ -64,7 +64,7 @@ class _Player:
                 chunk = np.ascontiguousarray(samples[i:i + _SAMPLES_PER_CHUNK],
                                              dtype=np.float32)
                 stream.write(chunk.reshape(-1, 1))
-            else:
+            else:  # for loop finished without a break
                 deadline = time.monotonic() + stream.latency + 0.02
                 while self._current_play_id is play_id and time.monotonic() < deadline:
                     time.sleep(0.01)
