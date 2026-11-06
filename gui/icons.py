@@ -42,8 +42,6 @@ def _button_icon(draw, size=14, dpr=None):
     return icon
 
 
-# ---- transport ----------------------------------------------------------
-
 def _draw_play(painter, colour):
     """Filled triangle, nudged right: centred on the box it reads left-heavy."""
     painter.setPen(Qt.PenStyle.NoPen)
