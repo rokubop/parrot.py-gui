@@ -339,7 +339,7 @@ class AudioGraph(QWidget):
         self._max_curve.setData(t, env_max)
         self._min_curve.setData(t, env_min)
 
-    # ---- playhead ------------------------------------------------------
+    # ---- playback ------------------------------------------------------
 
     def playback_audio(self):
         """Return (mono float32 samples, sample rate), already decoded for the
