@@ -51,8 +51,8 @@ class RecordingCard(QFrame):
         self._samples = None
         self._sample_rate = None
         self._duration = 0.0
-        self._playhead_seconds = 0.0   # kept across pause
-        self._play_started_from = 0.0
+        self._playhead_position = 0.0   # kept across pause
+        self._play_start_position = 0.0
         self._playing = False
         self._output_latency = 0.0     # of the current play
 
@@ -162,7 +162,7 @@ class RecordingCard(QFrame):
         else:
             self.play()
 
-    def play(self, from_seconds=None):
+    def play(self, from_position=None):
         self.build_audio_graph()
         if self.audio_graph is None:
             return      # unreadable, the card already says why
@@ -170,15 +170,15 @@ class RecordingCard(QFrame):
             self._samples, self._sample_rate = self.audio_graph.playback_audio()
             self._duration = self.audio_graph.duration()
 
-        if from_seconds is not None:
-            self._playhead_seconds = from_seconds
-        if self._playhead_seconds >= self._duration:
-            self._playhead_seconds = 0.0
-        self._playhead_seconds = max(0.0, self._playhead_seconds)
+        if from_position is not None:
+            self._playhead_position = from_position
+        if self._playhead_position >= self._duration:
+            self._playhead_position = 0.0
+        self._playhead_position = max(0.0, self._playhead_position)
         self.playback_started.emit(self)
 
-        self._play_started_from = self._playhead_seconds
-        rest_of_clip = self._samples[int(self._playhead_seconds * self._sample_rate):]
+        self._play_start_position = self._playhead_position
+        rest_of_clip = self._samples[int(self._playhead_position * self._sample_rate):]
         try:
             self._output_latency = playback.play(rest_of_clip, self._sample_rate)
         except playback.PlaybackError:
@@ -189,16 +189,16 @@ class RecordingCard(QFrame):
         self._playing = True
         self.play_btn.setIcon(self._pause_icon)
         self.play_btn.setText(" Pause")
-        self.audio_graph.set_playhead(self._playhead_seconds)
+        self.audio_graph.set_playhead(self._playhead_position)
         self._play_clock.restart()
         self._playhead_timer.start()
 
     def pause(self):
         if self._playing:
             playback.stop()
-            self._playhead_seconds = min(self._heard_position(), self._duration)
+            self._playhead_position = min(self._heard_position(), self._duration)
         self._show_stopped()
-        self.audio_graph.set_playhead(self._playhead_seconds)
+        self.audio_graph.set_playhead(self._playhead_position)
 
     def stop(self):
         """Stop, leaving the playhead where it is."""
@@ -217,30 +217,31 @@ class RecordingCard(QFrame):
             self.picked.emit(self)
         return super().eventFilter(obj, event)
 
-    def _on_seek_requested(self, seconds):
+    def _on_seek_requested(self, position):
         self.picked.emit(self)
-        self._playhead_seconds = seconds
-        self.audio_graph.set_playhead(seconds)
+        self._playhead_position = position
+        self.audio_graph.set_playhead(position)
         if self._playing:
-            self.play(from_seconds=seconds)
+            self.play(from_position=position)
 
     def _heard_position(self):
         """Where playback has reached, in seconds. Audio leaves the device a
         buffer after play() is called, so without subtracting that the
         playhead runs ahead of what you hear."""
-        seconds_since_play = self._play_clock.elapsed() / 1000.0
-        return self._play_started_from + max(0.0, seconds_since_play - self._output_latency)
+        seconds_since_play_started = self._play_clock.elapsed() / 1000.0
+        heard_seconds = max(0.0, seconds_since_play_started - self._output_latency)
+        return self._play_start_position + heard_seconds
 
     def _tick(self):
-        heard = self._heard_position()
-        if heard >= self._duration:
+        heard_position = self._heard_position()
+        if heard_position >= self._duration:
             # The playback thread finishes the stream itself. Aborting here would race it
             self._show_stopped()
-            self._playhead_seconds = 0.0
+            self._playhead_position = 0.0
             self.audio_graph.set_playhead(0.0)
             return
-        self._playhead_seconds = heard
-        self.audio_graph.set_playhead(heard)
+        self._playhead_position = heard_position
+        self.audio_graph.set_playhead(heard_position)
 
     def cleanup(self):
         """Stop, and release plot items before deletion."""

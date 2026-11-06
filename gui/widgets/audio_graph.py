@@ -78,7 +78,7 @@ class AudioGraph(QWidget):
     whenever the view changes, so detail sharpens on zoom instead of aliasing.
     """
 
-    seek_requested = pyqtSignal(float)   # seconds, from a click or a playhead drag
+    seek_requested = pyqtSignal(float)   # position in seconds, from a click or a playhead drag
 
     SPECTROGRAM_FRAME_S = 0.032
     SPECTROGRAM_HOP_S = 0.004
@@ -349,17 +349,17 @@ class AudioGraph(QWidget):
     def duration(self):
         return self._duration
 
-    def set_playhead(self, seconds):
+    def set_playhead(self, position):
         # Don't fight the user while they drag it
         if not self._dragging_playhead:
-            self.playhead.setPos(seconds)
+            self.playhead.setPos(position)
 
     def _on_playhead_dragged(self):
         # Seek once on release, not on every move
         self._dragging_playhead = True
-        x = self._clamp_to_clip(self.playhead.value())
+        position = self._clamp_to_clip(self.playhead.value())
         self.cursor.setVisible(False)
-        self._show_readout(x)
+        self._show_readout(position)
 
     def _on_playhead_released(self):
         if not self._dragging_playhead:
@@ -368,17 +368,17 @@ class AudioGraph(QWidget):
         self.readout.setVisible(False)
         self.seek_requested.emit(self._clamp_to_clip(self.playhead.value()))
 
-    def _clamp_to_clip(self, seconds):
-        return max(0.0, min(seconds, self._duration))
+    def _clamp_to_clip(self, position):
+        return max(0.0, min(position, self._duration))
 
-    def _seconds_at(self, scene_pos):
+    def _position_at(self, scene_pos):
         return self._vb.mapSceneToView(scene_pos).x()
 
-    def _show_readout(self, seconds):
+    def _show_readout(self, position):
         # e.g. "14.023s", next to the playhead
         top_of_view = self._vb.viewRange()[1][1]
-        self.readout.setText(f"{seconds:.3f}s")
-        self.readout.setPos(seconds, top_of_view)
+        self.readout.setText(f"{position:.3f}s")
+        self.readout.setPos(position, top_of_view)
         self.readout.setVisible(True)
 
     # ---- zoom ----------------------------------------------------------
@@ -462,5 +462,5 @@ class AudioGraph(QWidget):
         if event.double():
             self.fit_full()
             return
-        x = self._seconds_at(event.scenePos())
-        self.seek_requested.emit(self._clamp_to_clip(x))
+        position = self._position_at(event.scenePos())
+        self.seek_requested.emit(self._clamp_to_clip(position))
