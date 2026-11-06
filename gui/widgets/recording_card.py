@@ -48,18 +48,18 @@ class RecordingCard(QFrame):
         self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._normalized = False
 
-        self._audio = None
+        self._samples = None
         self._sample_rate = None
         self._duration = 0.0
-        self._position = 0.0       # playhead, kept across pause
-        self._play_start = 0.0
+        self._playhead_seconds = 0.0   # kept across pause
+        self._play_started_from = 0.0
         self._playing = False
-        self._latency = 0.0        # output buffer delay of the current play
+        self._output_latency = 0.0     # of the current play
 
-        self._timer = QTimer(self)
-        self._timer.setInterval(16)
-        self._timer.timeout.connect(self._tick)
-        self._clock = QElapsedTimer()
+        self._playhead_timer = QTimer(self)
+        self._playhead_timer.setInterval(16)
+        self._playhead_timer.timeout.connect(self._tick)
+        self._play_clock = QElapsedTimer()
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(10, 6, 10, 6)
@@ -169,21 +169,21 @@ class RecordingCard(QFrame):
         self.build_audio_graph()
         if self.audio_graph is None:
             return      # unreadable, the card already says why
-        if self._audio is None:
-            self._audio, self._sample_rate = self.audio_graph.playback_audio()
+        if self._samples is None:
+            self._samples, self._sample_rate = self.audio_graph.playback_audio()
             self._duration = self.audio_graph.duration()
 
         if from_seconds is not None:
-            self._position = from_seconds
-        if self._position >= self._duration:
-            self._position = 0.0
-        self._position = max(0.0, self._position)
+            self._playhead_seconds = from_seconds
+        if self._playhead_seconds >= self._duration:
+            self._playhead_seconds = 0.0
+        self._playhead_seconds = max(0.0, self._playhead_seconds)
         self.playback_started.emit(self)
 
-        self._play_start = self._position
-        clip = self._audio[int(self._position * self._sample_rate):]
+        self._play_started_from = self._playhead_seconds
+        rest_of_clip = self._samples[int(self._playhead_seconds * self._sample_rate):]
         try:
-            self._latency = playback.play(clip, self._sample_rate)
+            self._output_latency = playback.play(rest_of_clip, self._sample_rate)
         except playback.PlaybackError:
             self._show_stopped()
             self.playback_failed.emit("The default playback device would not open.")
@@ -192,16 +192,16 @@ class RecordingCard(QFrame):
         self._playing = True
         self.play_btn.setIcon(self._pause_icon)
         self.play_btn.setText(" Pause")
-        self.audio_graph.set_playhead(self._position)
-        self._clock.restart()
-        self._timer.start()
+        self.audio_graph.set_playhead(self._playhead_seconds)
+        self._play_clock.restart()
+        self._playhead_timer.start()
 
     def pause(self):
         if self._playing:
             playback.stop()
-            self._position = min(self._heard_position(), self._duration)
+            self._playhead_seconds = min(self._heard_position(), self._duration)
         self._show_stopped()
-        self.audio_graph.set_playhead(self._position)
+        self.audio_graph.set_playhead(self._playhead_seconds)
 
     def stop(self):
         """Stop, leaving the playhead where it is."""
@@ -211,7 +211,7 @@ class RecordingCard(QFrame):
 
     def _show_stopped(self):
         self._playing = False
-        self._timer.stop()
+        self._playhead_timer.stop()
         self.play_btn.setIcon(self._play_icon)
         self.play_btn.setText(" Play")
 
@@ -222,7 +222,7 @@ class RecordingCard(QFrame):
 
     def _on_seek_requested(self, seconds):
         self.picked.emit(self)
-        self._position = seconds
+        self._playhead_seconds = seconds
         self.audio_graph.set_playhead(seconds)
         if self._playing:
             self.play(from_seconds=seconds)
@@ -231,17 +231,18 @@ class RecordingCard(QFrame):
         """Where playback has reached, in seconds. Audio leaves the device a
         buffer after play() is called, so without subtracting that the
         playhead runs ahead of what you hear."""
-        return self._play_start + max(0.0, self._clock.elapsed() / 1000.0 - self._latency)
+        seconds_since_play = self._play_clock.elapsed() / 1000.0
+        return self._play_started_from + max(0.0, seconds_since_play - self._output_latency)
 
     def _tick(self):
         heard = self._heard_position()
         if heard >= self._duration:
             # The playback thread finishes the stream itself. Aborting here would race it
             self._show_stopped()
-            self._position = 0.0
+            self._playhead_seconds = 0.0
             self.audio_graph.set_playhead(0.0)
             return
-        self._position = heard
+        self._playhead_seconds = heard
         self.audio_graph.set_playhead(heard)
 
     def cleanup(self):
