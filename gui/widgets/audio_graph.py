@@ -100,23 +100,39 @@ class AudioGraph(QWidget):
         self._normalized = False
         self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._spectrogram = None  # cached (image, levels, nfft, hop)
-
-        t = theme.colors()
-        self._colors = t
+        self._regions = []
+        self._colors = theme.colors()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        self._add_plot(layout)
+        self._add_scrollbar(layout)
+        self._add_waveform()
+        self._add_spectrogram_image()
+        self._add_playhead()
+        self._add_hover_cursor_and_readout()
+        self._connect_view_and_mouse()
 
-        self.plot = pg.PlotWidget(background=t["plot_bg"])
+    # ---- building ------------------------------------------------------
+
+    def _add_plot(self, layout):
+        self.plot = pg.PlotWidget(background=self._colors["plot_bg"])
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setMenuEnabled(False)
         self.plot.hideButtons()
         # Nothing to do with the keyboard, and no ring to show it had focus
         self.plot.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.plot.setMouseEnabled(x=True, y=False)
-        self.plot.showGrid(x=True, y=False, alpha=t["grid_alpha"])
+        self.plot.showGrid(x=True, y=False, alpha=self._colors["grid_alpha"])
         layout.addWidget(self.plot)
 
+        self._vb = self.plot.getViewBox()
+        # Drag pan off, drag reserved for selecting a range. Pan via scrollbar
+        self._vb.mouseDragEvent = lambda event, axis=None: event.ignore()
+        # Wheel zooms time over the left axis too, so there's no dead zone
+        self.plot.getAxis("left").wheelEvent = self._vb.wheelEvent
+
+    def _add_scrollbar(self, layout):
         # Shown only when zoomed in. A fixed-height row, so showing it never
         # shifts the plot above.
         self._scroll_scale = 1000.0  # view seconds <-> scrollbar units (ms)
@@ -131,23 +147,19 @@ class AudioGraph(QWidget):
         scroll_layout.addWidget(self.hscroll)
         layout.addWidget(self._scroll_row)
 
-        self._vb = self.plot.getViewBox()
-        # Drag pan off, drag reserved for selecting a range. Pan via scrollbar
-        self._vb.mouseDragEvent = lambda event, axis=None: event.ignore()
-        # Wheel zooms time over the left axis too, so there's no dead zone
-        self.plot.getAxis("left").wheelEvent = self._vb.wheelEvent
-
+    def _add_waveform(self):
         # Filled waveform: the min/max envelope between two curves
-        pen = pg.mkPen(QColor(*t["wave"]), width=1)
+        pen = pg.mkPen(QColor(*self._colors["wave"]), width=1)
         self._max_curve = self.plot.plot(pen=pen)
         self._min_curve = self.plot.plot(pen=pen)
         self._max_curve.setZValue(Z_WAVEFORM)
         self._min_curve.setZValue(Z_WAVEFORM)
         self._fill = pg.FillBetweenItem(self._max_curve, self._min_curve,
-                                        brush=QColor(*t["wave_fill"]))
+                                        brush=QColor(*self._colors["wave_fill"]))
         self._fill.setZValue(Z_WAVEFORM_FILL)
         self.plot.addItem(self._fill)
 
+    def _add_spectrogram_image(self):
         # Averages columns when there are more than pixels, instead of
         # dropping most of them and thinning out every pop
         self._image = pg.ImageItem(autoDownsample=True)
@@ -155,35 +167,36 @@ class AudioGraph(QWidget):
         self._image.setVisible(False)
         self.plot.addItem(self._image)
 
-        self._regions = []
-
+    def _add_playhead(self):
+        color = QColor(*self._colors["playhead"])
         self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
-                                        pen=pg.mkPen(QColor(*t["playhead"]), width=2))
-        self.playhead.setHoverPen(pg.mkPen(QColor(*t["playhead"]), width=4))
+                                        pen=pg.mkPen(color, width=2))
+        self.playhead.setHoverPen(pg.mkPen(color, width=4))
         self.playhead.setZValue(Z_PLAYHEAD)
         self._dragging_playhead = False
         self.playhead.sigDragged.connect(self._on_playhead_dragged)
         self.playhead.sigPositionChangeFinished.connect(self._on_playhead_released)
         self.plot.addItem(self.playhead)
 
-        # Hover crosshair and time readout
-        cursor_pen = pg.mkPen(QColor(t["text_dim"]), width=1, style=Qt.PenStyle.DashLine)
+    def _add_hover_cursor_and_readout(self):
+        cursor_pen = pg.mkPen(QColor(self._colors["text_dim"]), width=1,
+                              style=Qt.PenStyle.DashLine)
         self.cursor = pg.InfiniteLine(pos=0, angle=90, movable=False, pen=cursor_pen)
         self.cursor.setZValue(Z_CURSOR)
         self.cursor.setVisible(False)
         self.plot.addItem(self.cursor)
-        self.readout = pg.TextItem(color=QColor(t["text_bright"]), anchor=(0, 0))
+        self.readout = pg.TextItem(color=QColor(self._colors["text_bright"]), anchor=(0, 0))
         self.readout.setZValue(Z_READOUT)
         self.readout.setVisible(False)
         self.plot.addItem(self.readout)
-        self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
+    def _connect_view_and_mouse(self):
         # Redraw once zooming or panning settles
         self._render_when_settled = debounced(
             self._render_waveform, wait_ms=15, owner=self)
         self._vb.sigXRangeChanged.connect(self._render_when_settled)
         self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
-
+        self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
         self.plot.scene().sigMouseClicked.connect(self._on_clicked)
 
     # ---- loading -------------------------------------------------------
