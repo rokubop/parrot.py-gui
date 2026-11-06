@@ -65,9 +65,7 @@ class _Player:
                                              dtype=np.float32)
                 stream.write(chunk.reshape(-1, 1))
             else:  # for loop finished without break - played to end
-                deadline = time.monotonic() + stream.latency + 0.02
-                while self._current_play_id is play_id and time.monotonic() < deadline:
-                    time.sleep(0.01)
+                self._wait_for_last_chunk_to_play(stream, play_id)
         except Exception:
             pass
         finally:
@@ -76,6 +74,11 @@ class _Player:
                     self._current_play_id = None
             stream.abort(ignore_errors=True)
             stream.close(ignore_errors=True)
+
+    def _wait_for_last_chunk_to_play(self, stream, play_id):
+        heard_by = time.monotonic() + stream.latency + 0.02
+        while self._current_play_id is play_id and time.monotonic() < heard_by:
+            time.sleep(0.01)
 
 
 _player = _Player()
