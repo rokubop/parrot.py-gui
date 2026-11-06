@@ -84,7 +84,6 @@ class RecordingCard(QFrame):
         self.play_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.play_btn.setToolTip("Space plays the last recording played, clicked or focused")
         self.play_btn.clicked.connect(self.toggle_play)
-        # Tabbing to a card aims Space at it, same as clicking its graph
         self.play_btn.installEventFilter(self)
         row.addWidget(self.play_btn)
 
