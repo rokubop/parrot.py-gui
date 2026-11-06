@@ -109,8 +109,6 @@ class RecordingCard(QFrame):
         row.addWidget(self._detection_note)
 
         row.addStretch()
-        # Which recording, for a screen reader: every card has a Play. Fixed,
-        # so Play/Pause doesn't announce over the audio
         self.play_btn.setAccessibleName(
             f"{title_text}, {duration_text(length)}" if length else title_text)
         return row
