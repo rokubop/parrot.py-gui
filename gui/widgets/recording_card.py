@@ -25,9 +25,9 @@ class RecordingCard(QFrame):
 
     AUDIO_GRAPH_HEIGHT = 150
 
-    playback_started = pyqtSignal(object)   # self
-    playback_failed = pyqtSignal(str)       # message
-    picked = pyqtSignal(object)             # self, when its graph is clicked or Play focused
+    playback_started = pyqtSignal(object)
+    playback_failed = pyqtSignal(str)
+    picked = pyqtSignal(object)
 
     def __init__(self, name, label, wav_path, srt_path, parent=None):
         super().__init__(parent)
