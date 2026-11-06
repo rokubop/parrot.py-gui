@@ -375,6 +375,7 @@ class AudioGraph(QWidget):
         return self._vb.mapSceneToView(scene_pos).x()
 
     def _show_readout(self, seconds):
+        # e.g. "14.023s", at the top of the view just right of the line
         top_of_view = self._vb.viewRange()[1][1]
         self.readout.setText(f"{seconds:.3f}s")
         self.readout.setPos(seconds, top_of_view)
