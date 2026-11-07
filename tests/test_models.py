@@ -10,6 +10,7 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
 import joblib
+import numpy as np
 import torch
 from lib import models
 from lib.audio_model import AudioModel
@@ -49,10 +50,14 @@ class ModelsFolder(unittest.TestCase):
     # The fields lib/audio_net.py saves after each epoch
     def save_checkpoint(self, filename, **fields):
         checkpoint = {"state_dict": {"fc1.weight": torch.zeros(2, 2)}, "input_size": 120,
-                      "labels": ["pop", "silence"], "accuracy": 0.9, "last_row": [],
+                      "labels": ["pop", "silence"], "accuracy": 0.9,
+                      "last_row": {"epoch": 3, "loss": np.sum([0.1]),
+                                   "avg_validation_accuracy": np.average([0.9]),
+                                   "pop": 0.9, "silence": 0.9},
                       "loss": 0.1, "epoch": 3, "random_seed": 1,
-                      "label_accuracy": [0.9, 0.9], "combined_accuracy": 0.9,
-                      "label_frames": [10, 10], "trained_at": 1786747776, "run_settings": {}}
+                      "label_accuracy": {"pop": 0.9, "silence": 0.9}, "combined_accuracy": 0.9,
+                      "label_frames": {"pop": 10, "silence": 10}, "trained_at": 1786747776,
+                      "run_settings": {}}
         checkpoint.update(fields)
         path = os.path.join(self.models_dir, filename)
         torch.save(checkpoint, path)
@@ -130,7 +135,7 @@ class TestReadModelLabels(ModelsFolder):
 class TestGetTrainingRunTimes(ModelsFolder):
 
     def test_newest_run_per_model(self):
-        # "pkl1000" lists before "pkl900"
+        # Newest isn't last alphabetically
         self.touch(self.replays_dir, "model_training_pop.pkl1000.csv")
         self.touch(self.replays_dir, "model_training_pop.pkl900.csv")
         self.touch(self.replays_dir, "model_training_click.pkl200.csv")
@@ -149,6 +154,11 @@ class TestGetTrainedAt(ModelsFolder):
         self.touch(self.models_dir, "pop.pkl")
         self.assertEqual(models.get_trained_at("pop", {"trained_at": 500}, {"pop": 300}),
                          (500, "checkpoint"))
+
+    def test_checkpoint_from_before_trained_at(self):
+        self.touch(self.models_dir, "pop.pkl")
+        self.touch(self.replays_dir, "model_training_pop.pkl300.csv")
+        self.assertEqual(models.get_trained_at("pop", {"epoch": 3}), (300, "replay"))
 
     def test_then_training_run(self):
         self.touch(self.models_dir, "pop.pkl")
@@ -172,7 +182,7 @@ class TestGetNewestFirstKey(ModelsFolder):
 
     def test_mtime_counts_to_the_day(self):
         day = 86400 * 20000
-        trained_at = {"b": (day + 5, "mtime"), "a": (day + 9, "mtime"), "c": (day + 1, "checkpoint")}
+        trained_at = {"b": (day + 9, "mtime"), "a": (day + 5, "mtime"), "c": (day + 1, "checkpoint")}
         self.assertEqual(sorted(trained_at, key=lambda name: models.get_newest_first_key(name, trained_at[name])),
                          ["c", "a", "b"])
 

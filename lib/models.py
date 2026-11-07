@@ -12,7 +12,7 @@ def get_model_names():
     return sorted(f[:-len(".pkl")] for f in os.listdir(CLASSIFIER_FOLDER)
                   if f.endswith(".pkl"))
 
-# The pkl, then every checkpoint training wrote for it.
+# The pkl, then every file training wrote for it.
 # Example: "pop" -> ["data/models/pop.pkl",
 #                    "data/models/pop.pkl_1-BEST-weights.pth.tar",
 #                    "data/models/pop.pkl_1-weights.pth.tar"]
@@ -23,7 +23,7 @@ def get_model_files(name):
     if os.path.isdir(CLASSIFIER_FOLDER):
         prefix = name + ".pkl_"
         files += [os.path.join(CLASSIFIER_FOLDER, f) for f in sorted(os.listdir(CLASSIFIER_FOLDER))
-                  if f.startswith(prefix) and f.endswith("-weights.pth.tar")]
+                  if f.startswith(prefix)]
     return files
 
 # One per net, holding its best epoch. A combined model has none.
@@ -70,7 +70,7 @@ def get_training_run_times():
 
 # (unix time, source), most trustworthy source first: a checkpoint survives a
 # copy and a rename, a training run's replay csv survives a copy, the pkl's
-# mtime survives neither.
+# mtime survives neither. Pass read_checkpoint() of a best checkpoint to use it.
 # Example: "pop" -> (1786747776, "checkpoint")
 def get_trained_at(name, checkpoint=None, run_times=None):
     if checkpoint and checkpoint.get("trained_at"):
@@ -84,7 +84,7 @@ def get_trained_at(name, checkpoint=None, run_times=None):
     return None, None
 
 # Sorts newest first. Copying a data folder gives every pkl the same mtime to
-# the second, so an mtime counts only to the day, or the order is copy order.
+# the second, so an mtime counts only to the (UTC) day, or the order is copy order.
 def get_newest_first_key(name, trained_at):
     when, source = trained_at
     when = when or 0
