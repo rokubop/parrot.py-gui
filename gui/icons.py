@@ -1,9 +1,9 @@
 """Icons
 
-- Prefer painted paths over text glyphs (▶ ⏸) or emoji
-- Same height in every font, so swapping play/pause doesn't shift the button
-- Theme colours, including hover and disabled. Emoji bring their own
-- Sharp at any size or screen scale
+Prefer painted paths over text glyphs (▶ ⏸) or emoji, because of:
+a) same height in every font, so swapping play/pause doesn't shift the button
+b) theme colours, including focus and disabled. Emoji bring their own
+c) sharp at any size or screen scale
 """
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
