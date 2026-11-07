@@ -242,7 +242,7 @@ class RecordingCard(QFrame):
             return
         self._playhead_position = heard_position
         self.audio_graph.set_playhead(heard_position)
-        if playback.failed():
+        if playback.failed_mid_play():
             self._show_stopped()
 
     def cleanup(self):
