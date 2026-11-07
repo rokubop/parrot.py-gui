@@ -1,8 +1,10 @@
 """Recorded sounds: their labels, recordings and detected time."""
 import os
+import re
 from datetime import datetime
+from typing import Tuple
 from config.config import RECORDINGS_FOLDER, MS_PER_FRAME
-from lib.srt import get_srt_paths, get_srt_path_for_wav, count_label_ms_in_srt
+from lib.srt import get_srt_paths, get_srt_path_for_wav, count_label_ms_in_srt, current_v_ending
 
 def get_label_dir(label):
     return os.path.join(RECORDINGS_FOLDER, label)
@@ -47,3 +49,52 @@ def get_recorded_at(filename):
         return datetime.fromtimestamp(int(tail))
     except (ValueError, OSError, OverflowError):
         return None
+
+class InvalidLabel(Exception):
+    EMPTY = "empty"
+    ILLEGAL_CHARACTER = "illegal_character"
+    STARTS_WITH_DOT = "starts_with_dot"
+    EXISTS = "exists"
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+# Path separators and what Windows forbids, so a label is always one folder
+_ILLEGAL_LABEL_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+def clean_label(name: str) -> str:
+    """A new label, trimmed e.g. "  pop " -> "pop". Raises InvalidLabel. No leading
+    dot: get_labels skips those"""
+    label = (name or "").strip()
+    if not label:
+        raise InvalidLabel(InvalidLabel.EMPTY)
+    if _ILLEGAL_LABEL_CHARACTERS.search(label):
+        raise InvalidLabel(InvalidLabel.ILLEGAL_CHARACTER)
+    if label.startswith("."):
+        raise InvalidLabel(InvalidLabel.STARTS_WITH_DOT)
+    return label
+
+def create_label(name: str) -> str:
+    """An empty label with its source and segments folders. Raises InvalidLabel,
+    EXISTS if it is there already"""
+    label = clean_label(name)
+    if os.path.isdir(get_label_dir(label)):
+        raise InvalidLabel(InvalidLabel.EXISTS)
+    os.makedirs(os.path.join(get_label_dir(label), "source"))
+    os.makedirs(os.path.join(get_label_dir(label), "segments"))
+    return label
+
+def create_recording_paths(label: str, mic_index: int, time_string: str) -> Tuple[str, str]:
+    """Wav and srt paths for a new recording, folders made if missing. Mics
+    recording together share a time_string
+
+    e.g. ("pop", 1, "1786747776") -> ("data/recordings/pop/source/mici_1__1786747776.wav",
+                                      "data/recordings/pop/segments/mici_1__1786747776.v3.srt")
+    """
+    base = f"mici_{mic_index}__{time_string}"
+    source_dir = os.path.join(get_label_dir(label), "source")
+    segments_dir = os.path.join(get_label_dir(label), "segments")
+    os.makedirs(source_dir, exist_ok=True)
+    os.makedirs(segments_dir, exist_ok=True)
+    return os.path.join(source_dir, base + ".wav"), os.path.join(segments_dir, base + current_v_ending)

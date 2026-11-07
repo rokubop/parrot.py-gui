@@ -54,9 +54,29 @@ def _draw_pause(painter, colour):
         painter.drawRoundedRect(QRectF(x, 0.20, 0.16, 0.60), 0.05, 0.05)
 
 
+def _draw_record(painter, colour):
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(colour)
+    painter.drawEllipse(QRectF(0.26, 0.26, 0.48, 0.48))
+
+
+def _draw_stop(painter, colour):
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(colour)
+    painter.drawRoundedRect(QRectF(0.24, 0.24, 0.52, 0.52), 0.06, 0.06)
+
+
 def play():
     return _button_icon(_draw_play)
 
 
 def pause():
     return _button_icon(_draw_pause)
+
+
+def record():
+    return _button_icon(_draw_record)
+
+
+def stop():
+    return _button_icon(_draw_stop)
