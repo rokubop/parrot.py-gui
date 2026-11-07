@@ -60,12 +60,7 @@ class AboutPage(QWidget):
         layout.addSpacing(10)
         layout.addWidget(rule)
 
-        for spec in tab["topics"]:
-            layout.addSpacing(22)
-            heading = QLabel(spec["title"])
-            heading.setStyleSheet(components.heading_style("card"))
-            layout.addWidget(heading)
-            layout.addSpacing(8)
-            # The same widget the topic's own Help button opens.
-            layout.addWidget(help_dialog.topic_content(spec, stretch=False))
+        layout.addSpacing(22)
+        # The same widgets the Help buttons open
+        layout.addWidget(help_dialog.topics_content(tab["topics"], stretch=False))
         return section

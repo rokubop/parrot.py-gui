@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QWidget, QFrame, QSizePolicy
 )
 
-from gui import content, theme
+from gui import components, content, theme
 
 
 class WrappedBody(QLabel):
@@ -249,6 +249,27 @@ def topic_content(key, parent=None, stretch=True):
     return panel
 
 
+def topics_content(keys, parent=None, stretch=True):
+    """Several topics, each under its own title. How a screen shows just the
+    help it needs, and how About shows a tab's."""
+    panel = QWidget(parent)
+    inner = QVBoxLayout(panel)
+    inner.setContentsMargins(0, 0, 0, 0)
+    inner.setSpacing(0)
+    for i, key in enumerate(keys):
+        spec = content.get(key) if isinstance(key, str) else key
+        if i:
+            inner.addSpacing(22)
+        heading = QLabel(spec["title"])
+        heading.setStyleSheet(components.heading_style("card"))
+        inner.addWidget(heading)
+        inner.addSpacing(8)
+        inner.addWidget(topic_content(spec, stretch=False))
+    if stretch:
+        inner.addStretch(1)
+    return panel
+
+
 def scrolled(content, max_height=560):
     """Wrap embedded topic content so a long topic scrolls instead of growing
     its dialog past the screen. Short content still sizes to fit."""
@@ -275,12 +296,12 @@ def _fit_to_screen(dlg, content_widget, width=760):
                min(wanted.height() + 96, max_h))
 
 
-def show_help(parent, key):
+def show_help(parent, title, keys):
     dlg = QDialog(parent)
-    dlg.setWindowTitle(content.title(key))
+    dlg.setWindowTitle(title)
     v = QVBoxLayout(dlg)
     v.setContentsMargins(20, 16, 20, 16)
-    panel = topic_content(key)
+    panel = topics_content(keys)
     v.addWidget(scrolled(panel, max_height=16777215))
 
     close = QPushButton("Close")
@@ -294,8 +315,8 @@ def show_help(parent, key):
     dlg.exec()
 
 
-def help_button(parent, key):
-    """Flat '? Help' button wired to the topic's modal."""
+def help_button(parent, title, keys):
+    """Flat '? Help' button opening these topics in a modal."""
     t = theme.colors()
     btn = QPushButton("?  Help", parent)
     btn.setFlat(True)
@@ -306,5 +327,5 @@ def help_button(parent, key):
         f"QPushButton:hover {{ color: {t['text_bright']}; }} "
         f"QPushButton:focus {{ border: 2px solid {t['focus']}; "
         f"border-radius: {t['radius']}; padding: 0px 4px; }}")
-    btn.clicked.connect(lambda: show_help(parent, key))
+    btn.clicked.connect(lambda: show_help(parent, title, keys))
     return btn

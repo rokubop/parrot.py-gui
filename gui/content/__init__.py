@@ -44,13 +44,10 @@ from gui.content import sounds  # noqa: E402
 TABS = (sounds.TAB,)
 
 # Every topic by key. Keys are the app-wide handle for a piece of help -
-# help_button(self, "record") - so they outlive whichever tab a topic sits in.
+# topics_content(["choosing", "frames"]) - so they outlive whichever tab a
+# topic sits in.
 TOPICS = {t["key"]: t for tb in TABS for t in tb["topics"]}
 
 
 def get(key):
     return TOPICS[key]
-
-
-def title(key):
-    return TOPICS[key]["title"]

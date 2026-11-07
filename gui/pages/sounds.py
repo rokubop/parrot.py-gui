@@ -104,7 +104,8 @@ class SoundsPage(QWidget):
         self.left_title = QLabel("Sounds")
         title_row.addWidget(self.left_title)
         title_row.addStretch()
-        title_row.addWidget(help_dialog.help_button(self, "record"))
+        title_row.addWidget(help_dialog.help_button(
+            self, "Sounds", ["frames", "choosing", "quantity"]))
         left_layout.addLayout(title_row)
         self.sound_list = QTreeWidget()
         self.sound_list.setAccessibleName("Sounds")
@@ -572,12 +573,9 @@ class SoundsPage(QWidget):
         problem.setStyleSheet("color: #e05a5a;")
         v.addWidget(problem)
 
-        tips_title = QLabel("Choosing a sound")
-        tips_title.setStyleSheet(
-            f"color: {t['text_bright']}; font-weight: bold; margin-top: 6px;")
-        v.addWidget(tips_title)
+        v.addSpacing(10)
         v.addWidget(help_dialog.scrolled(
-            help_dialog.topic_content("sounds"), max_height=520))
+            help_dialog.topics_content(["choosing", "frames"]), max_height=520))
 
         row = QHBoxLayout()
         row.setContentsMargins(0, 6, 0, 0)
