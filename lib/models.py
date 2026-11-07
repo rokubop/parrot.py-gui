@@ -16,7 +16,7 @@ def get_model_names() -> List[str]:
                   if f.endswith(".pkl") and not f.startswith("."))
 
 def get_model_files(name: str) -> List[str]:
-    """The pkl, then every checkpoint training wrote for it
+    """A model's pkl and its checkpoints
 
     e.g. "model_a" -> ["data/models/model_a.pkl",
                        "data/models/model_a.pkl_1-BEST-weights.pth.tar",
