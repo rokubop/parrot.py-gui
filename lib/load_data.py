@@ -216,28 +216,40 @@ def sample_data_from_label(label, grouped_data_directories, sample_strategies, i
         for file_index, full_filename in enumerate( listed_source_files ):
             if stop_check is not None and stop_check():
                 raise LoadingStopped()
-            label_samples = load_wav_data_from_srt(listed_files[full_filename], full_filename, input_type,
+            label_samples = load_wav_data_from_srt(
+                listed_files[full_filename],
+                full_filename,
+                input_type,
                 with_offset=should_oversample,
                 should_augment=False,
                 background=False)
             for sample in label_samples:
                 total_label_samples.append([full_filename, sample])
 
-            augmented_samples = load_wav_data_from_srt(listed_files[full_filename], full_filename, input_type,
+            augmented_samples = load_wav_data_from_srt(
+                listed_files[full_filename],
+                full_filename,
+                input_type,
                 with_offset=should_oversample,
                 should_augment=True,
                 background=False)
             for augmented_sample in augmented_samples:
                 total_augmented_samples.append([full_filename, augmented_sample])
 
-            background_samples = load_wav_data_from_srt(listed_files[full_filename], full_filename, input_type,
+            background_samples = load_wav_data_from_srt(
+                listed_files[full_filename],
+                full_filename,
+                input_type,
                 with_offset=False,
                 should_augment=False,
                 background=True)
             for background_sample in background_samples:
                 total_background_samples.append([full_filename, background_sample])
             
-            augmented_background_samples = load_wav_data_from_srt(listed_files[full_filename], full_filename, input_type,
+            augmented_background_samples = load_wav_data_from_srt(
+                listed_files[full_filename],
+                full_filename,
+                input_type,
                 with_offset=False,
                 should_augment=True,
                 background=True)
