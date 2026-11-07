@@ -78,7 +78,7 @@ class AudioGraph(QWidget):
     whenever the view changes, so detail sharpens on zoom instead of aliasing.
     """
 
-    seek_requested = pyqtSignal(float)   # position in seconds, from a click or a playhead drag
+    seek_requested = pyqtSignal(float)   # position in seconds, from a click
 
     SPECTROGRAM_FRAME_S = 0.032
     SPECTROGRAM_HOP_S = 0.004
@@ -171,13 +171,9 @@ class AudioGraph(QWidget):
 
     def _add_playhead(self):
         color = QColor(*self._colors["playhead"])
-        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
+        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=False,
                                         pen=pg.mkPen(color, width=2))
-        self.playhead.setHoverPen(pg.mkPen(color, width=4))
         self.playhead.setZValue(Z_PLAYHEAD)
-        self._dragging_playhead = False
-        self.playhead.sigDragged.connect(self._on_playhead_dragged)
-        self.playhead.sigPositionChangeFinished.connect(self._on_playhead_released)
         self.plot.addItem(self.playhead)
 
     def _add_hover_cursor_and_readout(self):
@@ -215,7 +211,6 @@ class AudioGraph(QWidget):
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
         self._vb.setXRange(0.0, self._duration, padding=0)
-        self.playhead.setBounds([0, self._duration])
         self._apply_y_range()
         self.load_regions(srt_path, label)
         self._render_waveform()
@@ -365,36 +360,13 @@ class AudioGraph(QWidget):
         return self._duration
 
     def set_playhead(self, position):
-        # Don't fight the user while they drag it
-        if not self._dragging_playhead:
-            self.playhead.setPos(position)
-
-    def _on_playhead_dragged(self):
-        # Seek once on release, not on every move
-        self._dragging_playhead = True
-        position = self._clamp_to_clip(self.playhead.value())
-        self.cursor.setVisible(False)
-        self._show_readout(position)
-
-    def _on_playhead_released(self):
-        if not self._dragging_playhead:
-            return
-        self._dragging_playhead = False
-        self.readout.setVisible(False)
-        self.seek_requested.emit(self._clamp_to_clip(self.playhead.value()))
+        self.playhead.setPos(position)
 
     def _clamp_to_clip(self, position):
         return max(0.0, min(position, self._duration))
 
     def _position_at(self, scene_pos):
         return self._vb.mapSceneToView(scene_pos).x()
-
-    def _show_readout(self, position):
-        # e.g. "14.023s", next to the playhead
-        top_of_view = self._vb.viewRange()[1][1]
-        self.readout.setText(f"{position:.3f}s")
-        self.readout.setPos(position, top_of_view)
-        self.readout.setVisible(True)
 
     # ---- zoom ----------------------------------------------------------
 
