@@ -50,7 +50,7 @@ def read_checkpoint(path: str) -> Optional[Checkpoint]:
 
 def read_model_labels(name: str) -> List[str]:
     """Labels from the pkl, for a model without checkpoints. Slow: unpickles the
-    whole model. [] if unreadable e.g. ["pop", "silence"]"""
+    whole model e.g. ["pop", "silence"]. [] if unreadable"""
     import joblib
     try:
         model = joblib.load(get_model_path(name))
