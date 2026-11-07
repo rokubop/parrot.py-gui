@@ -127,9 +127,13 @@ class AudioGraph(QWidget):
         layout.addWidget(self.plot)
 
         self._vb = self.plot.getViewBox()
-        # Drag pan off, drag reserved for selecting a range. Pan via scrollbar
+        self._turn_off_drag_to_pan()
+        self._wheel_over_left_axis_zooms_time()
+
+    def _turn_off_drag_to_pan(self):
         self._vb.mouseDragEvent = lambda event, axis=None: event.ignore()
-        # Wheel zooms time over the left axis too, so there's no dead zone
+
+    def _wheel_over_left_axis_zooms_time(self):
         self.plot.getAxis("left").wheelEvent = self._vb.wheelEvent
 
     def _add_scrollbar(self, layout):
