@@ -35,7 +35,7 @@ def get_best_checkpoint_paths(name: str) -> List[str]:
     return [path for path in get_model_files(name) if path.endswith("-BEST-weights.pth.tar")]
 
 def read_checkpoint(path: str) -> Optional[Checkpoint]:
-    """Checkpoint contents, minus the weights. None if unreadable"""
+    """Checkpoint data without state_dict. None if unreadable"""
     import torch
     try:
         checkpoint = torch.load(path, map_location="cpu", weights_only=False)
