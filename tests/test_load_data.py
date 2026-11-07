@@ -2,7 +2,6 @@ import os
 import shutil
 import tempfile
 import unittest
-import warnings
 
 import numpy as np
 
@@ -31,7 +30,6 @@ class TestSampleDataFromLabel(unittest.TestCase):
     def sample(self):
         from config.config import TYPE_FEATURE_ENGINEERING_NORM_MFSC
         from lib.load_data import generate_data_balance_strategy_map, sample_data_from_label
-        warnings.filterwarnings("ignore")
         strategies = generate_data_balance_strategy_map(self.grouped, "all", True)
         return sample_data_from_label("pop", self.grouped, strategies,
                                       TYPE_FEATURE_ENGINEERING_NORM_MFSC, "all")
@@ -47,6 +45,7 @@ class TestSampleDataFromLabel(unittest.TestCase):
         data = self.sample()
         plain = np.array([x[1] for x in data["background"]])
         augmented = np.array([x[1] for x in data["background_augmented"]])
+        self.assertEqual(augmented.shape, plain.shape)
         self.assertFalse(np.allclose(plain, augmented))
 
 
