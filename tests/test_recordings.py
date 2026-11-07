@@ -14,7 +14,7 @@ from lib import recordings
 from lib.srt import current_v_ending, manual_ending
 
 
-class TestRecordings(unittest.TestCase):
+class RecordingsFolder(unittest.TestCase):
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -30,6 +30,9 @@ class TestRecordings(unittest.TestCase):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "w").close()
         return path
+
+
+class TestRecordings(RecordingsFolder):
 
     def test_labels_are_folders_in_order(self):
         self.touch("pop", "source", "a.wav")
@@ -90,6 +93,136 @@ class TestRecordedAt(unittest.TestCase):
         for name in ("pop.wav", "mici_1__take2.wav", "mici_1__99999999999999999999.wav"):
             with self.subTest(name=name):
                 self.assertIsNone(recordings.get_recorded_at(name))
+
+
+class TestCleanLabel(unittest.TestCase):
+
+    def test_trimmed(self):
+        self.assertEqual(recordings.clean_label("  pop "), "pop")
+
+    def test_rejected(self):
+        InvalidLabel = recordings.InvalidLabel
+        cases = [(None, InvalidLabel.EMPTY), ("  ", InvalidLabel.EMPTY),
+                 ("a/b", InvalidLabel.ILLEGAL_CHARACTER), ("a\\b", InvalidLabel.ILLEGAL_CHARACTER),
+                 ("a:b", InvalidLabel.ILLEGAL_CHARACTER), ("..", InvalidLabel.STARTS_WITH_DOT),
+                 (".pop", InvalidLabel.STARTS_WITH_DOT)]
+        for name, reason in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(InvalidLabel) as raised:
+                    recordings.clean_label(name)
+                self.assertEqual(raised.exception.reason, reason)
+
+
+class TestCreateLabel(RecordingsFolder):
+
+    def test_source_and_segments(self):
+        self.assertEqual(recordings.create_label(" pop "), "pop")
+        self.assertTrue(os.path.isdir(os.path.join(self.dir, "pop", "source")))
+        self.assertTrue(os.path.isdir(os.path.join(self.dir, "pop", "segments")))
+        self.assertEqual(recordings.get_labels(), ["pop"])
+
+    def test_exists(self):
+        os.makedirs(os.path.join(self.dir, "pop"))
+        with self.assertRaises(recordings.InvalidLabel) as raised:
+            recordings.create_label("pop")
+        self.assertEqual(raised.exception.reason, recordings.InvalidLabel.EXISTS)
+
+
+
+class TestRenameLabel(RecordingsFolder):
+
+    def test_folder_and_label_inside_files(self):
+        wav = self.touch("pop", "source", "a.wav")
+        srt = self.touch("pop", "segments", "a" + current_v_ending)
+        with open(srt, "w") as f:
+            f.write("1\n00:00:01,000 --> 00:00:01,600\npop\n\n")
+        self.assertEqual(recordings.rename_label("pop", " click "), "click")
+        self.assertEqual(recordings.get_labels(), ["click"])
+        with open(os.path.join(self.dir, "click", "segments", "a" + current_v_ending)) as f:
+            self.assertIn("\nclick\n", f.read())
+        self.assertTrue(os.path.isfile(os.path.join(self.dir, "click", "source", "a.wav")))
+
+    def test_same_name(self):
+        os.makedirs(os.path.join(self.dir, "pop"))
+        self.assertEqual(recordings.rename_label("pop", "pop"), "pop")
+
+    def test_taken(self):
+        os.makedirs(os.path.join(self.dir, "pop"))
+        os.makedirs(os.path.join(self.dir, "click"))
+        with self.assertRaises(recordings.InvalidLabel) as raised:
+            recordings.rename_label("pop", "click")
+        self.assertEqual(raised.exception.reason, recordings.InvalidLabel.EXISTS)
+
+
+class TestCloneLabel(RecordingsFolder):
+
+    def test_copy_relabelled(self):
+        self.touch("pop", "source", "a.wav")
+        srt = self.touch("pop", "segments", "a" + current_v_ending)
+        with open(srt, "w") as f:
+            f.write("1\n00:00:01,000 --> 00:00:01,600\npop\n\n")
+        self.assertEqual(recordings.clone_label("pop", "pop2"), "pop2")
+        self.assertEqual(recordings.get_labels(), ["pop", "pop2"])
+        self.assertEqual(recordings.get_detected_ms("pop2"), 600)
+        self.assertEqual(recordings.get_detected_ms("pop"), 600)
+
+    def test_taken(self):
+        os.makedirs(os.path.join(self.dir, "pop"))
+        with self.assertRaises(recordings.InvalidLabel) as raised:
+            recordings.clone_label("pop", "pop")
+        self.assertEqual(raised.exception.reason, recordings.InvalidLabel.EXISTS)
+
+
+class TestDeleteLabel(RecordingsFolder):
+
+    def test_everything_goes(self):
+        self.touch("pop", "source", "a.wav")
+        self.touch("pop", "segments", "a" + current_v_ending)
+        self.touch("click", "source", "b.wav")
+        recordings.delete_label("pop")
+        self.assertEqual(recordings.get_labels(), ["click"])
+
+
+class TestRelabelSegmentFiles(unittest.TestCase):
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+
+    def write(self, name, text):
+        path = os.path.join(self.dir, name)
+        with open(path, "w", newline="") as f:
+            f.write(text)
+        return path
+
+    def read(self, path):
+        with open(path, newline="") as f:
+            return f.read()
+
+    def test_srt(self):
+        path = self.write("a.v3.srt", "1\r\n00:00:00,250 --> 00:00:00,500\r\nPop\r\n\r\n"
+                                      "2\r\n00:00:01,000 --> 00:00:01,250\r\npop\r\n\r\n")
+        recordings.relabel_segment_files([path], "pop", "click")
+        self.assertEqual(self.read(path), "1\r\n00:00:00,250 --> 00:00:00,500\r\nclick\r\n\r\n"
+                                          "2\r\n00:00:01,000 --> 00:00:01,250\r\nclick\r\n\r\n")
+
+    def test_srt_other_text_kept(self):
+        text = "1\n00:00:00,250 --> 00:00:00,500\npopping\n\npop\n"
+        path = self.write("a.MANUAL.srt", text)
+        recordings.relabel_segment_files([path], "pop", "click")
+        self.assertEqual(self.read(path), text)
+
+    def test_thresholds(self):
+        path = self.write("a_thresholds.txt", "pop_duration_type=discrete\npop_min_dbfs=-30.5\n")
+        recordings.relabel_segment_files([path], "Pop", "Click")
+        self.assertEqual(self.read(path), "click_duration_type=discrete\nclick_min_dbfs=-30.5\n")
+
+    def test_other_files_untouched(self):
+        wav = self.write("a.wav", "pop")
+        comparison = self.write("a_comparison.wav", "pop")
+        recordings.relabel_segment_files([wav, comparison], "pop", "click")
+        self.assertEqual(self.read(wav), "pop")
+        self.assertEqual(self.read(comparison), "pop")
 
 
 if __name__ == "__main__":
