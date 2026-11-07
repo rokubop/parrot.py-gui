@@ -1,9 +1,9 @@
-"""Small monochrome icons, painted in the theme's own colours.
+"""Icons
 
-Emoji are drawn by the system emoji font in colours of its own choosing, out
-of reach of any stylesheet and blind to the theme (the 👤 silhouette measured
-1.28:1 on this toolbar). Painted paths take one colour from `theme.colors()`
-at whatever size and device pixel ratio the button asks for.
+Prefer painted paths over text glyphs (▶ ⏸) or emoji, because of:
+a) same height in every font, so swapping play/pause doesn't shift the button
+b) theme colours, including focus and disabled
+c) sharp at any size or screen scale
 
 A toolbar button has three backgrounds, so one colour is not enough: resting
 `text_dim` measures 1.24:1 on the checked accent fill. Each icon carries a
@@ -14,9 +14,6 @@ checked and `Mode.Active` on hover, so no signal wiring is needed.
     resting        toolbar        text_dim         5.4
     hover          button_hover   text_bright      5.9
     checked        accent         accent_text      9.4
-
-Geometry is in fractions of the icon box, so an icon is one drawing at any
-size rather than a bitmap that softens when the interface is scaled up.
 """
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
@@ -67,8 +64,6 @@ def _draw_person(painter, colour):
     painter.drawPath(shoulders)
 
 
-
-
 def _button_icon(draw, size=14, dpr=None):
     """Push-button icon: resting on `button`, hover on `button_hover`, and a
     greyed pixmap so a disabled control does not keep a full-strength glyph."""
@@ -96,7 +91,6 @@ def _icon(draw, size, dpr, colour):
 # ---- transport ----------------------------------------------------------
 
 def _draw_play(painter, colour):
-    """Filled triangle, nudged right: centred on the box it reads left-heavy."""
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(colour)
     path = QPainterPath()

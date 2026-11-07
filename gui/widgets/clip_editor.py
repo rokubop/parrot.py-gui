@@ -75,11 +75,11 @@ class ClipEditorWidget(QWidget):
         self._playing = False
         self._play_from = 0.0
         self._stop_at = None
-        self._latency = 0.0       # output buffer delay of the current play
-        self._timer = QTimer(self)
-        self._timer.setInterval(16)
-        self._timer.timeout.connect(self._tick)
-        self._clock = QElapsedTimer()
+        self._output_latency = 0.0     # of the current play
+        self._playhead_timer = QTimer(self)
+        self._playhead_timer.setInterval(16)
+        self._playhead_timer.timeout.connect(self._tick)
+        self._play_clock = QElapsedTimer()
 
         # the visible window when a cut started, and what the cut removed
         self._view_before_cut = None
@@ -96,7 +96,7 @@ class ClipEditorWidget(QWidget):
         root.setSpacing(8)
 
         self.audio_graph = AudioGraph()
-        self.audio_graph.seeked.connect(self.on_seek)
+        self.audio_graph.seek_requested.connect(self.on_seek)
 
         if self._show_levels:
             self.lane = LevelLane(flexible=True)
@@ -400,7 +400,8 @@ class ClipEditorWidget(QWidget):
         self._duration = self.audio_graph.duration()
 
     def on_seek(self, seconds):
-        """Clicking the waveform moves the playhead; play starts from there."""
+        """Clicking the waveform moves the playhead, and playing carries on
+        from there."""
         self._ensure_audio()
         self._play_from = max(0.0, min(seconds, self._duration))
         self.audio_graph.set_playhead(self._play_from)
@@ -428,7 +429,7 @@ class ClipEditorWidget(QWidget):
         start = int(self._play_from * self._sr)
         end = int(self._stop_at * self._sr) if self._stop_at else len(self._audio)
         try:
-            self._latency = playback.play(self._audio[start:end], self._sr)
+            self._output_latency = playback.play(self._audio[start:end], self._sr)
         except playback.PlaybackError:
             self.status.emit("That playback device would not open. "
                              "Pick another one above.")
@@ -437,14 +438,17 @@ class ClipEditorWidget(QWidget):
         self.play_btn.setText(self._play_labels[1])
         self.play_btn.setIcon(icons.stop())
         self.audio_graph.set_playhead(self._play_from)
-        self._clock.restart()
-        self._timer.start()
+        self._play_clock.restart()
+        self._playhead_timer.start()
 
     def stop_playback(self):
         if self._playing:
             playback.stop()
+        self._show_stopped()
+
+    def _show_stopped(self):
         self._playing = False
-        self._timer.stop()
+        self._playhead_timer.stop()
         self.play_btn.setText(self._play_labels[0])
         self.play_btn.setIcon(icons.play())
 
@@ -452,16 +456,19 @@ class ClipEditorWidget(QWidget):
         """Where playback has actually reached, in seconds. Audio leaves the
         device a buffer after play(), so subtract that latency or the playhead
         runs ahead of what you're hearing."""
-        return self._play_from + max(0.0, self._clock.elapsed() / 1000.0 - self._latency)
+        return self._play_from + max(0.0, self._play_clock.elapsed() / 1000.0 - self._output_latency)
 
     def _tick(self):
         pos = self._heard_position()
         limit = self._stop_at if self._stop_at is not None else self._duration
         if pos >= limit:
+            # The playback thread finishes the stream itself. Aborting here would race it
             self.audio_graph.set_playhead(limit)
-            self.stop_playback()
+            self._show_stopped()
             return
         self.audio_graph.set_playhead(pos)
+        if playback.failed_mid_play():
+            self._show_stopped()
 
     def refresh_theme(self):
         """Icons take their colour from the theme, and a new font changes the

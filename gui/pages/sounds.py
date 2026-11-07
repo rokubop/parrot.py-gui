@@ -24,6 +24,11 @@ from gui import content
 SOUND_COLUMN, DATA_COLUMN, DETECTED_COLUMN = 0, 1, 2
 
 
+def _is_space(event):
+    return (event.key() == Qt.Key.Key_Space
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier)
+
+
 class SoundsPage(QWidget):
     """
     ┌ sound_list ─────────┐┌ sound_header ────────────────────────────────────────────┐
@@ -35,7 +40,7 @@ class SoundsPage(QWidget):
     │                     │├ cards_scroll ────────────────────────────────────────────┤
     │                     ││ ┌ cards_container ─────────────────────────────────────┐ │
     │                     ││ │ ┌ RecordingCard ───────────────────────────────────┐ │ │
-    │                     ││ │ │ play_btn  Aug 08, 2026, 10:55 AM  32.4s          │ │ │
+    │                     ││ │ │ header                                           │ │ │
     │                     ││ │ │ .:|:..:||:..:|:.. audio_graph ..:|:..:||:..:|:.. │ │ │
     │                     ││ │ └──────────────────────────────────────────────────┘ │ │
     │                     ││ └──────────────────────────────────────────────────────┘ │
@@ -88,6 +93,7 @@ class SoundsPage(QWidget):
         left_layout.addLayout(title_row)
         self.sound_list = QTreeWidget()
         self.sound_list.setAccessibleName("Sounds")
+        self.sound_list.setAccessibleDescription("Space plays or pauses a recording")
         self.sound_list.setColumnCount(3)
         self.sound_list.setHeaderLabels(["Sound", "Data", "Detected"])
         self.sound_list.setRootIsDecorated(False)
@@ -382,9 +388,9 @@ class SoundsPage(QWidget):
                     card = RecordingCard(base, rec["wav_path"], rec["srt_path"], thresholds_path)
                     card.set_graph_display(self._graph_display)
                     card.set_normalized(self._normalized)
-                    card.started.connect(self._on_card_started)
-                    card.failed.connect(self._on_card_failed)
-                    card.selected.connect(self._select_card)
+                    card.playback_started.connect(self._on_card_playback_started)
+                    card.picked.connect(self._select_card)
+                    card.playback_failed.connect(self._on_card_playback_failed)
                     card.action.connect(self._on_card_action)
                     self._cards.append(card)
                     layout.insertWidget(layout.count() - 1, card)
@@ -507,12 +513,13 @@ class SoundsPage(QWidget):
         for card in self._cards:
             card.set_normalized(normalized)
 
-    def _on_card_started(self, card):
-        if self._active_card is not None and self._active_card is not card:
-            self._active_card.stop()
+    def _on_card_playback_started(self, card):
+        for other in self._cards:
+            if other is not card:
+                other.stop()
         self._active_card = card
 
-    def _on_card_failed(self, message):
+    def _on_card_playback_failed(self, message):
         QMessageBox.warning(self, "Playback", message)
 
     def _mark_selected(self, card):
@@ -551,7 +558,7 @@ class SoundsPage(QWidget):
         if event.type() == QEvent.Type.KeyPress and (
                 (obj is self.cards_scroll
                  and event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab))
-                or (obj is self.sound_list and event.key() == Qt.Key.Key_Space)):
+                or (obj is self.sound_list and _is_space(event))):
             event.accept()
             self.keyPressEvent(event)
             return event.isAccepted()
@@ -563,8 +570,9 @@ class SoundsPage(QWidget):
             return
         key = event.key()
         target = self._selected_card or self._cards[0]
-        if key == Qt.Key.Key_Space:
-            target.toggle_play()
+        if _is_space(event):
+            if not event.isAutoRepeat():
+                self._toggle_play()
         elif key == Qt.Key.Key_Left and self._selected_card:
             self._selected_card.seek_relative(-self.SEEK_STEP)
         elif key == Qt.Key.Key_Right and self._selected_card:
@@ -590,6 +598,15 @@ class SoundsPage(QWidget):
             super().keyPressEvent(event)
         # Note: no X/Delete here - deleting a whole recording is deliberate and
         # only via the button/menu, not a single keypress on a read-only view.
+
+    def _toggle_play(self):
+        """The selected card, or the first that can play: an unreadable card
+        has nothing to play."""
+        card = self._selected_card
+        if card is None or not card.playable():
+            card = next((c for c in self._cards if c.playable()), None)
+        if card is not None:
+            card.toggle_play()
 
     def keybinding_hint(self):
         return ("Space play  ·  F fit  ·  A normalize  ·  S spectrogram  ·  "

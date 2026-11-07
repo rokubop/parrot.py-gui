@@ -1,118 +1,100 @@
-"""Preview playback that survives a busy UI thread.
-
-`sd.play()` runs its callback in Python, so every buffer needs the GIL, and
-playhead repaints hold the main thread long enough for the callback to miss
-its deadline - playback crackles. PortAudio's blocking `write()` buffers in C,
-so writing happens on a worker thread; nothing Python sits in the audio path.
-
-One stream at a time, matching the old `sd.play()` / `sd.stop()` behaviour:
-starting a clip replaces whatever was playing. The output device follows
-`sd.default`, which the device toolbar sets (see audio_devices.py).
-
-Buffering stays as small as CoreAudio allows (~133 ms at 16 kHz): auditioning
-a few frames before deciding where to cut is a core interaction, and larger
-blocks are audible lag. `play()` returns the stream's real latency so callers
-can hold their playhead back by it.
-"""
 import threading
+import time
 
 import numpy as np
 import sounddevice as sd
 
-_CHUNK = 256   # frames per write - small enough that stop() responds promptly
+_SAMPLES_PER_CHUNK = 256
 
 
 class PlaybackError(Exception):
-    """The output device could not be opened.
-
-    Raised, not swallowed: a caller with no stream still starts a playhead, so
-    a device that has gone away looked exactly like a successful play. A merely
-    inaudible device raises nothing, which is why the picker is visible.
-    """
+    pass
 
 
 class _Player:
     def __init__(self):
         self._lock = threading.Lock()
-        self._stream = None
-        self._token = None   # identity of the current play() request
-        self._thread = None  # the writer, so shutdown() can wait for it
+        self._current_play_id = None
+        self._playback_thread = None
+        self._failed_mid_play = False
 
     def play(self, samples, sample_rate):
-        """Start playing mono float32 `samples`; returns immediately.
-
-        Returns the output latency in seconds - audio reaches the speakers that
-        long after this call, so a playhead clocked from now must lag by it.
-        The stream is opened here rather than on the worker (~5 ms) so the
-        figure is exact by the time the caller starts its clock.
-        """
         self.stop()
+        self._wait_for_playback_thread()
         if samples is None or not sample_rate or len(samples) == 0:
             return 0.0
         try:
             stream = sd.OutputStream(samplerate=sample_rate, channels=1,
                                      dtype="float32", blocksize=0,
                                      latency="low")
-            stream.start()
         except Exception as exc:
             raise PlaybackError(str(exc)) from exc
-        token = object()
-        worker = threading.Thread(target=self._run, args=(samples, stream, token),
-                                  daemon=True)
+        try:
+            stream.start()
+        except Exception as exc:
+            stream.close(ignore_errors=True)
+            raise PlaybackError(str(exc)) from exc
+        play_id = object()
+        playback_thread = threading.Thread(
+            target=self._playback_loop, args=(samples, stream, play_id), daemon=True)
         with self._lock:
-            self._token = token
-            self._stream = stream
-            self._thread = worker
-        worker.start()
+            self._current_play_id = play_id
+            self._playback_thread = playback_thread
+            self._failed_mid_play = False
+        playback_thread.start()
         return float(stream.latency)
 
     def stop(self):
-        """Cut playback now, without draining what PortAudio has buffered."""
         with self._lock:
-            self._token = None
-            stream = self._stream
-        # Abort rather than stop/close: aborting is safe from another thread and
-        # unblocks the writer, which then owns closing the stream. Closing it
-        # here could pull it out from under a write() already in flight.
-        if stream is not None:
-            stream.abort(ignore_errors=True)
+            self._current_play_id = None
+
+    def is_playing(self):
+        return self._current_play_id is not None
+
+    def failed_mid_play(self):
+        return self._failed_mid_play
 
     def shutdown(self):
-        """Stop, and wait for the writer to leave PortAudio. Call before quitting.
-
-        The writer is a daemon thread, so quitting mid-playback tore the
-        interpreter down while it was inside stream.write() - a segfault on
-        roughly one quit in three. stop() only asks; this waits.
-        """
         self.stop()
-        with self._lock:
-            worker = self._thread
-        if worker is not None:
-            worker.join(timeout=2.0)
+        self._wait_for_playback_thread()
 
-    def _run(self, samples, stream, token):
+    def _wait_for_playback_thread(self):
+        with self._lock:
+            playback_thread = self._playback_thread
+        if playback_thread is not None:
+            playback_thread.join(timeout=2.0)
+
+    def _playback_loop(self, samples, stream, play_id):
         try:
-            for i in range(0, len(samples), _CHUNK):
-                if self._token is not token:
+            for i in range(0, len(samples), _SAMPLES_PER_CHUNK):
+                if self._current_play_id is not play_id:
                     break
-                block = np.ascontiguousarray(samples[i:i + _CHUNK],
+                chunk = np.ascontiguousarray(samples[i:i + _SAMPLES_PER_CHUNK],
                                              dtype=np.float32)
-                stream.write(block.reshape(-1, 1))
-            else:
-                stream.stop()       # ran to the end - let the tail drain
-        except Exception:
-            pass                    # aborted by stop(), device vanished, etc.
+                stream.write(chunk.reshape(-1, 1))
+            else:  # for loop finished without break - played to end
+                self._wait_for_last_chunk_to_play(stream, play_id)
+        except sd.PortAudioError:
+            with self._lock:
+                if self._current_play_id is play_id:
+                    self._failed_mid_play = True     # e.g. headset unplugged
         finally:
             with self._lock:
-                if self._token is token:
-                    self._token = None
-                if self._stream is stream:
-                    self._stream = None
+                if self._current_play_id is play_id:
+                    self._current_play_id = None
+            stream.abort(ignore_errors=True)
             stream.close(ignore_errors=True)
+
+    def _wait_for_last_chunk_to_play(self, stream, play_id):
+        heard_by = time.monotonic() + stream.latency + 0.02
+        while self._current_play_id is play_id and time.monotonic() < heard_by:
+            time.sleep(0.01)
 
 
 _player = _Player()
 
 play = _player.play
 stop = _player.stop
+is_playing = _player.is_playing
+failed_mid_play = _player.failed_mid_play
 shutdown = _player.shutdown
