@@ -113,8 +113,6 @@ class AudioGraph(QWidget):
         self._add_hover_cursor_and_readout()
         self._connect_view_and_mouse()
 
-    # ---- building ------------------------------------------------------
-
     def _add_plot(self, layout):
         self.plot = pg.PlotWidget(background=self._colors["plot_bg"])
         self.plot.setLabel("bottom", "Time", units="s")
