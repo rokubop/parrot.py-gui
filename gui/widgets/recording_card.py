@@ -242,6 +242,8 @@ class RecordingCard(QFrame):
             return
         self._playhead_position = heard_position
         self.audio_graph.set_playhead(heard_position)
+        if playback.failed():
+            self._show_stopped()
 
     def cleanup(self):
         """Stop, and release plot items before deletion."""

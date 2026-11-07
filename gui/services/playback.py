@@ -16,6 +16,7 @@ class _Player:
         self._lock = threading.Lock()
         self._current_play_id = None
         self._playback_thread = None
+        self._failed = False
 
     def play(self, samples, sample_rate):
         self.stop()
@@ -39,6 +40,7 @@ class _Player:
         with self._lock:
             self._current_play_id = play_id
             self._playback_thread = playback_thread
+            self._failed = False
         playback_thread.start()
         return float(stream.latency)
 
@@ -48,6 +50,9 @@ class _Player:
 
     def is_playing(self):
         return self._current_play_id is not None
+
+    def failed(self):
+        return self._failed
 
     def shutdown(self):
         self.stop()
@@ -69,8 +74,8 @@ class _Player:
                 stream.write(chunk.reshape(-1, 1))
             else:  # for loop finished without break - played to end
                 self._wait_for_last_chunk_to_play(stream, play_id)
-        except Exception:
-            pass
+        except sd.PortAudioError:
+            self._failed = True     # e.g. headset unplugged mid-play
         finally:
             with self._lock:
                 if self._current_play_id is play_id:
@@ -89,4 +94,5 @@ _player = _Player()
 play = _player.play
 stop = _player.stop
 is_playing = _player.is_playing
+failed = _player.failed
 shutdown = _player.shutdown
