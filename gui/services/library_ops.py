@@ -20,44 +20,36 @@ A model:
 """
 import json
 import os
-import re
 import sys
 import shutil
 import subprocess
 
 from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER
-from lib.recordings import get_label_dir, relabel_segment_files
+from lib import recordings
+from lib.recordings import get_label_dir, relabel_segment_files, InvalidLabel
 
 
 class LibraryOpError(Exception):
     """A user-facing problem performing a library operation."""
 
 
-# Characters that are illegal in a sound/model name on common filesystems, plus
-# path separators (a name must never escape its parent directory).
-_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_INVALID_NAME_TEXT = {
+    InvalidLabel.EMPTY: "Please enter a {kind}.",
+    InvalidLabel.ILLEGAL_CHARACTER: "A {kind} can't contain any of: < > : \" / \\ | ? *",
+    InvalidLabel.STARTS_WITH_DOT: "A {kind} can't start with a dot.",
+}
 
 
 def sanitize_name(name, *, kind="name"):
-    """Validate and normalize a user-entered sound/model name.
+    """Validate and normalize a user-entered sound/model/recording name.
 
-    Returns the trimmed name, or raises ``LibraryOpError``. Rejects empty
-    names, path separators, reserved dot-names, and illegal characters so a
-    name can only ever refer to a direct child of its folder.
+    Returns the trimmed name, or raises ``LibraryOpError``. One rule for all
+    three: lib's ``clean_label``, worded here.
     """
-    if name is None:
-        raise LibraryOpError(f"Please enter a {kind}.")
-    cleaned = name.strip()
-    if not cleaned:
-        raise LibraryOpError(f"Please enter a {kind}.")
-    if cleaned in (".", ".."):
-        raise LibraryOpError(f"'{cleaned}' is not a valid {kind}.")
-    if _ILLEGAL.search(cleaned):
-        raise LibraryOpError(
-            f"A {kind} can't contain any of: < > : \" / \\ | ? *")
-    if cleaned.startswith("."):
-        raise LibraryOpError(f"A {kind} can't start with a dot.")
-    return cleaned
+    try:
+        return recordings.clean_label(name)
+    except InvalidLabel as exc:
+        raise LibraryOpError(_INVALID_NAME_TEXT[exc.reason].format(kind=kind)) from None
 
 
 # ---- path helpers ------------------------------------------------------
@@ -98,11 +90,10 @@ def recording_label(wav_path):
 def create_sound(name):
     """Create an empty sound label (source/ + segments/). Returns the label."""
     label = sanitize_name(name, kind="sound name")
-    if sound_exists(label):
-        raise LibraryOpError(f"A sound called '{label}' already exists.")
-    os.makedirs(source_dir(label), exist_ok=True)
-    os.makedirs(segments_dir(label), exist_ok=True)
-    return label
+    try:
+        return recordings.create_label(label)
+    except InvalidLabel:
+        raise LibraryOpError(f"A sound called '{label}' already exists.") from None
 
 
 def rename_sound(old, new):
@@ -153,24 +144,8 @@ def sound_recording_count(label):
 
 # ---- recording operations ---------------------------------------------
 
-def recording_sibling_files(wav_path):
-    """Every file that belongs to one recording: the source .wav plus all
-    segment-side artifacts sharing its base (srt / manual srt / thresholds /
-    comparison). Used by delete and rename so nothing is orphaned."""
-    files = []
-    if os.path.isfile(wav_path):
-        files.append(wav_path)
-    base = recording_base(wav_path)
-    label = recording_label(wav_path)
-    seg = segments_dir(label)
-    if os.path.isdir(seg):
-        for f in os.listdir(seg):
-            # Belongs to this recording only if the remainder starts with a
-            # separator ('.' or '_'); guards against base being a prefix of a
-            # different, longer timestamp.
-            if f.startswith(base) and f[len(base):len(base) + 1] in (".", "_"):
-                files.append(os.path.join(seg, f))
-    return files
+# Every file of one recording, so delete and rename orphan nothing
+recording_sibling_files = recordings.get_recording_files
 
 
 def take_group(wav_path):
@@ -274,14 +249,8 @@ def describe_mics(summary):
 
 def delete_recording(wav_path):
     """Delete a recording's wav and all its segment artifacts. Destructive."""
-    files = recording_sibling_files(wav_path)
-    if not files:
+    if not recordings.delete_recording(wav_path):
         raise LibraryOpError("This recording no longer exists.")
-    for f in files:
-        try:
-            os.remove(f)
-        except FileNotFoundError:
-            pass
 
 
 def rename_recording(wav_path, new_base):

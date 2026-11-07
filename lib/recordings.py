@@ -1,8 +1,10 @@
 """Recorded sounds: their labels, recordings and detected time."""
 import os
+import re
 from datetime import datetime
+from typing import List, Tuple
 from config.config import RECORDINGS_FOLDER, MS_PER_FRAME
-from lib.srt import get_srt_paths, get_srt_path_for_wav, count_label_ms_in_srt
+from lib.srt import get_srt_paths, get_srt_path_for_wav, count_label_ms_in_srt, current_v_ending
 
 def get_label_dir(label):
     return os.path.join(RECORDINGS_FOLDER, label)
@@ -47,6 +49,72 @@ def get_recorded_at(filename):
         return datetime.fromtimestamp(int(tail))
     except (ValueError, OSError, OverflowError):
         return None
+
+class InvalidLabel(Exception):
+    EMPTY = "empty"
+    ILLEGAL_CHARACTER = "illegal_character"
+    STARTS_WITH_DOT = "starts_with_dot"
+    EXISTS = "exists"
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+# Path separators and what Windows forbids, so a label is always one folder
+_ILLEGAL_LABEL_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+# Example: "  pop " -> "pop"
+# Raises InvalidLabel. A dot folder would be skipped by get_labels.
+def clean_label(name: str) -> str:
+    label = (name or "").strip()
+    if not label:
+        raise InvalidLabel(InvalidLabel.EMPTY)
+    if _ILLEGAL_LABEL_CHARACTERS.search(label):
+        raise InvalidLabel(InvalidLabel.ILLEGAL_CHARACTER)
+    if label.startswith("."):
+        raise InvalidLabel(InvalidLabel.STARTS_WITH_DOT)
+    return label
+
+# Makes an empty label with its source and segments folders.
+# Raises InvalidLabel, EXISTS if it is already there.
+def create_label(name: str) -> str:
+    label = clean_label(name)
+    if os.path.isdir(get_label_dir(label)):
+        raise InvalidLabel(InvalidLabel.EXISTS)
+    os.makedirs(os.path.join(get_label_dir(label), "source"))
+    os.makedirs(os.path.join(get_label_dir(label), "segments"))
+    return label
+
+# Example: ("pop", 1, "1786747776") -> ("data/recordings/pop/source/mici_1__1786747776.wav",
+#                                       "data/recordings/pop/segments/mici_1__1786747776.v3.srt")
+# Makes the folders if missing. Mics recording together share a time_string.
+def create_recording_paths(label: str, mic_index: int, time_string: str) -> Tuple[str, str]:
+    base = f"mici_{mic_index}__{time_string}"
+    source_dir = os.path.join(get_label_dir(label), "source")
+    segments_dir = os.path.join(get_label_dir(label), "segments")
+    os.makedirs(source_dir, exist_ok=True)
+    os.makedirs(segments_dir, exist_ok=True)
+    return os.path.join(source_dir, base + ".wav"), os.path.join(segments_dir, base + current_v_ending)
+
+# Example: ".../pop/source/mici_1__17.wav" -> [".../pop/source/mici_1__17.wav",
+#                                             ".../pop/segments/mici_1__17.v3.srt",
+#                                             ".../pop/segments/mici_1__17_thresholds.txt"]
+# Only files that exist. mici_1__170.v3.srt is another recording's.
+def get_recording_files(wav_path: str) -> List[str]:
+    base = os.path.splitext(os.path.basename(wav_path))[0]
+    segments_dir = os.path.join(os.path.dirname(os.path.dirname(wav_path)), "segments")
+    files = [wav_path] if os.path.isfile(wav_path) else []
+    if os.path.isdir(segments_dir):
+        files += [os.path.join(segments_dir, filename) for filename in sorted(os.listdir(segments_dir))
+                  if filename.startswith(base) and filename[len(base):len(base) + 1] in (".", "_")]
+    return files
+
+# Deletes a recording's wav and segment files. Returns what it deleted, [] if already gone.
+def delete_recording(wav_path: str) -> List[str]:
+    files = get_recording_files(wav_path)
+    for path in files:
+        os.remove(path)
+    return files
 
 # A sound's name is also written inside its srts (the event text) and
 # thresholds files (the keys, e.g. pop_min_dbfs). Detected time, the overlay

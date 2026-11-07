@@ -7,10 +7,11 @@ from queue import Queue
 from PyQt6.QtCore import QThread, pyqtSignal
 from config.config import (
     RATE, CHANNELS, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT, MS_PER_FRAME,
-    RECORDINGS_FOLDER, INPUT_DEVICE_INDEX
+    INPUT_DEVICE_INDEX
 )
-from lib.stream_processing import CURRENT_VERSION, CURRENT_DETECTION_STRATEGY
+from lib.stream_processing import CURRENT_DETECTION_STRATEGY
 from lib.audio_input import open_input_stream
+from lib.recordings import create_recording_paths
 from lib.typing import DetectionLabel, DetectionState
 from lib.stream_recorder import StreamRecorder
 from lib.stream_warmup import StreamWarmup
@@ -56,15 +57,8 @@ class AudioWorker(QThread):
         self.srt_path = ""
 
     def run(self):
-        label_dir = os.path.join(RECORDINGS_FOLDER, self.label)
-        source_dir = os.path.join(label_dir, "source")
-        segments_dir = os.path.join(label_dir, "segments")
-        for d in [label_dir, source_dir, segments_dir]:
-            os.makedirs(d, exist_ok=True)
-
-        time_string = self.time_string
-        self.wav_path = os.path.join(source_dir, f"mici_{self.mic_index}__{time_string}.wav")
-        self.srt_path = os.path.join(segments_dir, f"mici_{self.mic_index}__{time_string}.v{CURRENT_VERSION}.srt")
+        self.wav_path, self.srt_path = create_recording_paths(
+            self.label, self.mic_index, self.time_string)
 
         ms_per_frame = MS_PER_FRAME
         detection_labels = [DetectionLabel(self.label, 0, 0, "", 0, 0, 0, 0, 0)]
