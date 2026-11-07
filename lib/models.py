@@ -15,8 +15,7 @@ def get_model_names() -> List[str]:
     return sorted(f[:-len(".pkl")] for f in os.listdir(CLASSIFIER_FOLDER)
                   if f.endswith(".pkl") and not f.startswith("."))
 
-# The pkl, then every checkpoint training wrote for it. Matched whole, since
-# "model_a.pkl_2" is a valid name for another model.
+# Matched whole: "model_a.pkl_2" is another model's valid name.
 # Example: "model_a" -> ["data/models/model_a.pkl",
 #                        "data/models/model_a.pkl_1-BEST-weights.pth.tar",
 #                        "data/models/model_a.pkl_1-weights.pth.tar"]
@@ -30,27 +29,23 @@ def get_model_files(name: str) -> List[str]:
                   if checkpoint.fullmatch(f)]
     return files
 
-# One per net, holding its best epoch. Only torch training writes them, so a
-# combined, random forest or MLP model has none.
+# One per net. Combined, random forest and MLP models have none.
 def get_best_checkpoint_paths(name: str) -> List[str]:
     return [path for path in get_model_files(name) if path.endswith("-BEST-weights.pth.tar")]
 
-# What training saved with the net, without the weights themselves.
-# Example: -> {"labels": ["pop", "silence"], "accuracy": 0.97, "epoch": 41,
-#              "trained_at": 1786747776, ...}
 def read_checkpoint(path: str) -> Optional[Checkpoint]:
     import torch
     try:
         checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     except Exception:
-        # A checkpoint is a pickle, so a damaged one can raise anything
+        # A pickle: a damaged one can raise anything
         return None
     if not isinstance(checkpoint, dict):
         return None
     checkpoint.pop("state_dict", None)
     return checkpoint
 
-# Unpickles the whole model: slow, and the only source for a model without checkpoints.
+# Slow, unpickles the whole model. For models without checkpoints.
 def read_model_labels(name: str) -> List[str]:
     import joblib
     try:
@@ -59,7 +54,7 @@ def read_model_labels(name: str) -> List[str]:
         return []
     return list(getattr(model, "classes_", []))
 
-# Newest training run per model, from the replay csv names.
+# Newest run per model.
 # Example: "model_training_model_a.pkl1786747776.csv" -> {"model_a": 1786747776}
 def get_training_run_times() -> Dict[str, int]:
     times = {}
@@ -73,9 +68,8 @@ def get_training_run_times() -> Dict[str, int]:
             times[name] = max(times.get(name, 0), int(stamp))
     return times
 
-# (unix time, source), most trustworthy source first: a checkpoint survives a
-# copy and a rename, a training run's replay csv survives a copy, the pkl's
-# mtime survives neither. Pass read_checkpoint() of a best checkpoint to use it.
+# Most trustworthy first: checkpoint survives copy and rename, replay csv
+# survives copy, mtime neither. Pass a best checkpoint to use the first.
 # Example: "model_a" -> (1786747776, "checkpoint")
 def get_trained_at(name: str, checkpoint: Optional[Checkpoint] = None,
                    run_times: Optional[Dict[str, int]] = None) -> TrainedAt:
@@ -89,8 +83,8 @@ def get_trained_at(name: str, checkpoint: Optional[Checkpoint] = None,
         return os.path.getmtime(get_model_path(name)), "mtime"
     return None, None
 
-# Sorts newest first. Copying a data folder gives every pkl the same mtime to
-# the second, so an mtime counts only to the (UTC) day, or the order is copy order.
+# mtime counts only to the (UTC) day: copying a data folder stamps every pkl
+# at once, and order would be copy order.
 def get_newest_first_key(name: str, trained_at: TrainedAt) -> Tuple[float, str]:
     when, source = trained_at
     when = when or 0

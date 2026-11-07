@@ -49,7 +49,7 @@ class ModelsFolder(unittest.TestCase):
         joblib.dump(AudioModel(AUDIO_SETTINGS, classifier), path)
         return path
 
-    # The fields lib/audio_net.py saves after each epoch
+    # As lib/audio_net.py saves them
     def save_checkpoint(self, filename, **fields):
         checkpoint = {"state_dict": {"fc1.weight": torch.zeros(2, 2)}, "input_size": 120,
                       "labels": ["pop", "silence"], "accuracy": 0.9,

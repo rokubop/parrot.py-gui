@@ -73,8 +73,7 @@ class RunSettings(TypedDict):
     silence: Literal["all", "balanced", "none"]
     balance_sounds: bool
 
-# What lib/audio_net.py saves with each net, minus the weights. Older models
-# lack the later fields.
+# Saved per net by lib/audio_net.py, minus weights. Older models lack later fields.
 class Checkpoint(TypedDict, total=False):
     input_size: int
     labels: List[str]
