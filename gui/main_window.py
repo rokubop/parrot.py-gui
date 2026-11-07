@@ -29,13 +29,18 @@ class MainWindow(QMainWindow):
 
         self.home_page = HomePage(self.app_state, self)
         self.home_page.navigate.connect(self._go_to_page)
+        self.sounds_page = SoundsPage(self.app_state, self)
+        self.sounds_page.record_requested.connect(self._open_recording)
         self.pages = {
             "Home": self.home_page,
-            "Sounds": SoundsPage(self.app_state, self),
+            "Sounds": self.sounds_page,
             "Models": QWidget(),
         }
         for page in self.pages.values():
             self.page_stack.addWidget(page)
+        # Built on first use
+        self.recording_view = None
+        self.page_stack.currentChanged.connect(self._on_page_changed)
 
         toolbar = QToolBar("Navigation")
         toolbar.setMovable(False)
@@ -75,3 +80,30 @@ class MainWindow(QMainWindow):
         self.page_stack.setCurrentWidget(page)
         if focus_page and page.focusProxy():
             page.setFocus(Qt.FocusReason.TabFocusReason)
+
+    def _open_recording(self, label):
+        """Recording is a sub-view of Sounds: the Sounds tab stays checked."""
+        # Or the mic records it
+        self.sounds_page.stop_playback()
+        view = self._recording_view_get()
+        if label:
+            view.start_for(label)
+        else:
+            view.start_new()
+        self.page_stack.setCurrentWidget(view)
+
+    def _recording_view_get(self):
+        if self.recording_view is None:
+            from gui.pages.recording_view import RecordingView
+            self.recording_view = RecordingView(self.app_state, self)
+            self.recording_view.done.connect(
+                lambda: self.page_stack.setCurrentWidget(self.sounds_page))
+            self.recording_view.sound_changed.connect(self.sounds_page.show_sound)
+            self.page_stack.addWidget(self.recording_view)
+            QApplication.instance().aboutToQuit.connect(self.recording_view.finish_recording)
+        return self.recording_view
+
+    def _on_page_changed(self, _index):
+        """A take keeps recording only while it is on screen."""
+        if self.recording_view is not None and self.page_stack.currentWidget() is not self.recording_view:
+            self.recording_view.stop_recording()

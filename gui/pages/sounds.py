@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QRadioButton,
     QMessageBox
 )
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent, pyqtSignal
 from PyQt6.QtGui import QColor
 from gui.widgets.recording_card import RecordingCard
 from gui.widgets.audio_graph import GRAPH_DISPLAY_WAVEFORM, GRAPH_DISPLAY_SPECTROGRAM
@@ -30,7 +30,7 @@ class SoundsPage(QWidget):
     │ Sound  Data  Detect.││ sound_title                                              │
     │ pop    Good  1m 04s ││ sound_stats                                              │
     │ ss     Good   51.0s ││ sound_quantity                                           │
-    │                     ││ open_folder_btn   _graph_display_buttons   normalize_btn │
+    │                     ││ add_recording_btn open_folder_btn _graph_display_buttons │
     │                     │├ cards_scroll ────────────────────────────────────────────┤
     │                     ││ ┌ cards_container ─────────────────────────────────────┐ │
     │                     ││ │ ┌ RecordingCard ───────────────────────────────────┐ │ │
@@ -41,9 +41,11 @@ class SoundsPage(QWidget):
     │                     ││ │ │ header                                           │ │ │
     │                     ││ │ │ .:|:..:||:..:|:.. audio_graph ..:|:..:||:..:|:.. │ │ │
     │                     ││ │ └──────────────────────────────────────────────────┘ │ │
-    │                     ││ └──────────────────────────────────────────────────────┘ │
+    │ new_sound_btn       ││ └──────────────────────────────────────────────────────┘ │
     └─────────────────────┘└──────────────────────────────────────────────────────────┘
     """
+
+    record_requested = pyqtSignal(str)   # the sound to record, "" for a new one
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -90,6 +92,10 @@ class SoundsPage(QWidget):
             debounced(self._cards_show_selected, wait_ms=15, owner=self))
         self.sound_list.installEventFilter(self)
         left_layout.addWidget(self.sound_list)
+        new_sound_btn = QPushButton("+ New sound")
+        new_sound_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        new_sound_btn.clicked.connect(lambda: self.record_requested.emit(""))
+        left_layout.addWidget(new_sound_btn)
         # Where keyboard navigation to this page lands
         self.setFocusProxy(self.sound_list)
 
@@ -126,6 +132,7 @@ class SoundsPage(QWidget):
         self.sound_header.setStyleSheet(
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
+        self.add_recording_btn.setStyleSheet(components.primary_button_style())
         self.open_folder_btn.setStyleSheet(components.ghost_button_style())
         setting_toggle_style = (
             # t['text'], not t['text_dim'], for color contrast
@@ -166,6 +173,12 @@ class SoundsPage(QWidget):
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 10, 0, 0)
+        self.add_recording_btn = QPushButton("+ Add recording")
+        self.add_recording_btn.setObjectName("primaryAction")
+        self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.add_recording_btn.clicked.connect(
+            lambda: self.record_requested.emit(self._current_label()))
+        actions.addWidget(self.add_recording_btn)
         self.open_folder_btn = QPushButton("Open folder")
         self.open_folder_btn.setObjectName("secondaryAction")
         self.open_folder_btn.setFlat(True)
@@ -273,7 +286,8 @@ class SoundsPage(QWidget):
         """A placeholder card per recording, no audio graphs. Or the empty state."""
         cards_container, layout = self._cards_container_new()
         if label is None:
-            components.center_in(layout, components.EmptyState("No sounds yet"))
+            components.center_in(layout, components.EmptyState(
+                "No sounds yet", "New sound records your first one."))
         elif not recordings:
             components.center_in(layout, components.EmptyState(
                 f"“{label}” has no recordings yet"))
@@ -404,11 +418,27 @@ class SoundsPage(QWidget):
         if card is not None:
             card.toggle_play()
 
-    def _on_open_sound_folder(self):
+    def stop_playback(self):
+        for card in self._cards:
+            card.stop()
+
+    def show_sound(self, label):
+        """Re-read the sounds, e.g. after recording, and select `label`."""
+        self._sound_list_populate()
+        for i in range(self.sound_list.topLevelItemCount()):
+            item = self.sound_list.topLevelItem(i)
+            if item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) == label:
+                self.sound_list.setCurrentItem(item)
+                return
+
+    def _current_label(self):
         item = self.sound_list.currentItem()
-        if item is None:
+        return item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) if item else ""
+
+    def _on_open_sound_folder(self):
+        label = self._current_label()
+        if not label:
             return
-        label = item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole)
         try:
             library_ops.open_in_file_manager(get_label_dir(label))
         except library_ops.LibraryOpError as exc:

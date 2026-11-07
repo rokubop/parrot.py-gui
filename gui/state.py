@@ -5,8 +5,7 @@ from lib import recordings
 
 class AppState:
     """What the pages show, read off data/. Never writes. Detected time is
-    cached per label, so a recording made while the app is open counts toward
-    it after a restart."""
+    cached per label, until a recording changes it."""
 
     def __init__(self):
         self._duration_cache = {}
@@ -22,6 +21,9 @@ class AppState:
         if label not in self._duration_cache:
             self._duration_cache[label] = recordings.get_detected_ms(label)
         return self._duration_cache[label]
+
+    def forget_label_duration(self, label):
+        self._duration_cache.pop(label, None)
 
     def get_model_names(self):
         """Model names in data/models/, without the .pkl extension."""
