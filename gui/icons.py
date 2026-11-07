@@ -15,7 +15,7 @@ checked and `Mode.Active` on hover, so no signal wiring is needed.
     hover          button_hover   text_bright      5.9
     checked        accent         accent_text      9.4
 """
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import QApplication
 

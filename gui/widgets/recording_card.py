@@ -72,7 +72,7 @@ class RecordingCard(QFrame):
         self.session_name = session_name
         self.label = library_ops.recording_label(wav_path)
         self._expanded = False
-        self._edit_enabled = True  # set False to hide the Edit menu entry
+        self._edit_enabled = True  # set False to hide the Edit button
 
         self._samples = None
         self._sample_rate = None
@@ -187,7 +187,8 @@ class RecordingCard(QFrame):
         name.setStyleSheet(f"color: {t['text']}; font-weight: bold; border: none; background: transparent;")
         row.addWidget(name)
 
-        meta_text = self._build_meta_text(session_name)
+        length = wav_duration(self.wav_path)
+        meta_text = self._build_meta_text(length)
         if meta_text:
             meta = QLabel(meta_text)
             meta.setStyleSheet(f"color: {t['text_dim']}; border: none; background: transparent;")
@@ -216,7 +217,6 @@ class RecordingCard(QFrame):
         self.menu_btn.clicked.connect(self._show_menu)
         row.addWidget(self.menu_btn)
 
-        length = wav_duration(self.wav_path)
         self.play_btn.setAccessibleName(
             f"{title_text}, {duration_text(length)}" if length else title_text)
         return row
@@ -238,9 +238,8 @@ class RecordingCard(QFrame):
         delete_act.triggered.connect(lambda: self.action.emit(self, "delete"))
         menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
 
-    def _build_meta_text(self, session_name):
+    def _build_meta_text(self, length):
         parts = []
-        length = wav_duration(self.wav_path)
         if length:
             parts.append(duration_text(length))
         info = library_ops.read_mic_info(self.wav_path) or {}
@@ -455,7 +454,8 @@ class RecordingCard(QFrame):
             # The playback thread finishes the stream itself. Aborting here would race it
             self._show_stopped()
             # Park at the selection start, to loop it, or the clip start
-            self._playhead_position = self._sel_start if self._stop_at is not None else 0.0
+            looping = self._stop_at is not None and self._sel_start is not None
+            self._playhead_position = self._sel_start if looping else 0.0
             self.audio_graph.set_playhead(self._playhead_position)
             return
         self._playhead_position = heard_position

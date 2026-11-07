@@ -57,7 +57,7 @@ class SoundsPage(QWidget):
         super().__init__(parent)
         self.app_state = app_state
         self._cards = []
-        self._active_card = None     # currently playing
+        self._active_card = None     # last started
         self._selected_card = None   # keyboard target
         self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._normalized = True
@@ -600,11 +600,15 @@ class SoundsPage(QWidget):
         # only via the button/menu, not a single keypress on a read-only view.
 
     def _toggle_play(self):
-        """The selected card, or the first that can play: an unreadable card
-        has nothing to play."""
+        """The selected card. If it's unreadable, the one playing, else the
+        first that can play."""
         card = self._selected_card
         if card is None or not card.playable():
-            card = next((c for c in self._cards if c.playable()), None)
+            playing = self._active_card if self._active_card in self._cards else None
+            if playing is not None and playing._playing:
+                card = playing
+            else:
+                card = next((c for c in self._cards if c.playable()), None)
         if card is not None:
             card.toggle_play()
 

@@ -300,6 +300,7 @@ class MainWindow(QMainWindow):
         current = self.page_stack.currentWidget()
         if self.recording_view is not None and current is not self.recording_view:
             self.recording_view.stop_worker()
+            self.recording_view.editor.stop_playback()
         if self.edit_view is not None and current is not self.edit_view:
             self.edit_view.stop_playback()
         # Focus moves with the page, so a ring from the last page doesn't

@@ -69,11 +69,11 @@ class ClipEditorWidget(QWidget):
         self._graph_display = GRAPH_DISPLAY_WAVEFORM
 
         # playback
-        self._audio = None
-        self._sr = None
+        self._samples = None
+        self._sample_rate = None
         self._duration = 0.0
         self._playing = False
-        self._play_from = 0.0
+        self._playhead_position = 0.0
         self._stop_at = None
         self._output_latency = 0.0     # of the current play
         self._playhead_timer = QTimer(self)
@@ -170,8 +170,8 @@ class ClipEditorWidget(QWidget):
         self.label = label
         self._cut_note = ""
         self._view_before_cut = None
-        self._audio = None
-        self._play_from = 0.0
+        self._samples = None
+        self._playhead_position = 0.0
         self._stop_at = None
         view = None if reset_view else self.audio_graph.view_range()
         self.audio_graph.load(wav_path, srt_path, label, view=view)
@@ -198,7 +198,7 @@ class ClipEditorWidget(QWidget):
     def clear(self):
         self.stop_playback()
         self.wav_path = None
-        self._audio = None
+        self._samples = None
         self._cut_note = ""
         self._locked = False
         self.audio_graph.set_busy(False)
@@ -320,8 +320,8 @@ class ClipEditorWidget(QWidget):
         self.audio_graph.clear_selection()
         self.audio_graph.flash_seam(cut_start)
         self.audio_graph.set_playhead(cut_start)
-        self._audio = None          # the samples changed under us
-        self._play_from = cut_start
+        self._samples = None          # the samples changed under us
+        self._playhead_position = cut_start
         self._stop_at = None
         self._cut_applied = True
         self._cut_note = (f"Removed {removed:.2f} s at {cut_start:.2f} s. "
@@ -383,7 +383,7 @@ class ClipEditorWidget(QWidget):
         self.audio_graph.load(self.wav_path, self.srt_provider(), self.label,
                               view=self.audio_graph.view_range())
         self.refresh_levels()
-        self._audio = None
+        self._samples = None
         self.edited.emit()
         self.refresh_history_buttons()
         self.history_changed.emit()
@@ -392,19 +392,19 @@ class ClipEditorWidget(QWidget):
     # ---- playback -------------------------------------------------------
 
     def _ensure_audio(self):
-        if self._audio is not None:
+        if self._samples is not None:
             return
         samples, sr = self.audio_graph.playback_audio()
-        self._audio = samples
-        self._sr = sr
+        self._samples = samples
+        self._sample_rate = sr
         self._duration = self.audio_graph.duration()
 
     def on_seek(self, seconds):
         """Clicking the waveform moves the playhead, and playing carries on
         from there."""
         self._ensure_audio()
-        self._play_from = max(0.0, min(seconds, self._duration))
-        self.audio_graph.set_playhead(self._play_from)
+        self._playhead_position = max(0.0, min(seconds, self._duration))
+        self.audio_graph.set_playhead(self._playhead_position)
         if self._playing:
             self.play()
 
@@ -418,18 +418,18 @@ class ClipEditorWidget(QWidget):
 
     def play(self):
         self._ensure_audio()
-        if self._audio is None or not self._sr:
+        if self._samples is None or not self._sample_rate:
             return
         sel = self.audio_graph.current_selection()
         if sel and sel[1] - sel[0] > 0:
-            self._play_from, self._stop_at = sel
+            self._playhead_position, self._stop_at = sel
         else:
             self._stop_at = None
-            self._play_from = max(0.0, min(self._play_from, self._duration))
-        start = int(self._play_from * self._sr)
-        end = int(self._stop_at * self._sr) if self._stop_at else len(self._audio)
+            self._playhead_position = max(0.0, min(self._playhead_position, self._duration))
+        start = int(self._playhead_position * self._sample_rate)
+        end = int(self._stop_at * self._sample_rate) if self._stop_at else len(self._samples)
         try:
-            self._output_latency = playback.play(self._audio[start:end], self._sr)
+            self._output_latency = playback.play(self._samples[start:end], self._sample_rate)
         except playback.PlaybackError:
             self.status.emit("That playback device would not open. "
                              "Pick another one above.")
@@ -437,7 +437,7 @@ class ClipEditorWidget(QWidget):
         self._playing = True
         self.play_btn.setText(self._play_labels[1])
         self.play_btn.setIcon(icons.stop())
-        self.audio_graph.set_playhead(self._play_from)
+        self.audio_graph.set_playhead(self._playhead_position)
         self._play_clock.restart()
         self._playhead_timer.start()
 
@@ -456,7 +456,7 @@ class ClipEditorWidget(QWidget):
         """Where playback has actually reached, in seconds. Audio leaves the
         device a buffer after play(), so subtract that latency or the playhead
         runs ahead of what you're hearing."""
-        return self._play_from + max(0.0, self._play_clock.elapsed() / 1000.0 - self._output_latency)
+        return self._playhead_position + max(0.0, self._play_clock.elapsed() / 1000.0 - self._output_latency)
 
     def _tick(self):
         pos = self._heard_position()
