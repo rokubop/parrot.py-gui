@@ -1,50 +1,51 @@
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, ROOT)
+os.chdir(ROOT)
+
+from config.config import CURRENT_VERSION, TYPE_FEATURE_ENGINEERING_NORM_MFSC
+from lib.load_data import generate_data_balance_strategy_map, sample_data_from_label
+
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 
 
 class TestSampleDataFromLabel(unittest.TestCase):
     """AudioDataset reads augmented[i] as the augmented copy of data[i]."""
 
-    def setUp(self):
-        self.dir = tempfile.mkdtemp()
-        label_dir = os.path.join(self.dir, "pop")
+    @classmethod
+    def setUpClass(cls):
+        folder = tempfile.mkdtemp()
+        label_dir = os.path.join(folder, "pop")
         os.makedirs(os.path.join(label_dir, "source"))
         os.makedirs(os.path.join(label_dir, "segments"))
         shutil.copy(os.path.join(FIXTURES, "recordings", "pop", "source", "pop.wav"),
                     os.path.join(label_dir, "source", "pop.wav"))
-        from config.config import CURRENT_VERSION
         shutil.copy(os.path.join(FIXTURES, "segmentation", "pop.srt"),
                     os.path.join(label_dir, "segments", f"pop.v{CURRENT_VERSION}.srt"))
-        self.grouped = {"pop": [label_dir]}
-
-    def tearDown(self):
-        shutil.rmtree(self.dir)
-
-    def sample(self):
-        from config.config import TYPE_FEATURE_ENGINEERING_NORM_MFSC
-        from lib.load_data import generate_data_balance_strategy_map, sample_data_from_label
-        strategies = generate_data_balance_strategy_map(self.grouped, "all", True)
-        return sample_data_from_label("pop", self.grouped, strategies,
-                                      TYPE_FEATURE_ENGINEERING_NORM_MFSC, "all")
+        grouped = {"pop": [label_dir]}
+        try:
+            strategies = generate_data_balance_strategy_map(grouped, "all", True)
+            cls.data = sample_data_from_label("pop", grouped, strategies,
+                                              TYPE_FEATURE_ENGINEERING_NORM_MFSC, "all")
+        finally:
+            shutil.rmtree(folder)
 
     def test_every_sample_has_an_augmented_copy(self):
-        data = self.sample()
-        self.assertTrue(data["label"])
-        self.assertTrue(data["background"])
-        self.assertEqual(len(data["augmented"]), len(data["label"]))
-        self.assertEqual(len(data["background_augmented"]), len(data["background"]))
+        self.assertTrue(self.data["label"])
+        self.assertTrue(self.data["background"])
+        self.assertEqual(len(self.data["augmented"]), len(self.data["label"]))
+        self.assertEqual(len(self.data["background_augmented"]), len(self.data["background"]))
 
     def test_background_copies_are_augmented(self):
-        data = self.sample()
-        plain = np.array([x[1] for x in data["background"]])
-        augmented = np.array([x[1] for x in data["background_augmented"]])
+        plain = np.array([x[1] for x in self.data["background"]])
+        augmented = np.array([x[1] for x in self.data["background_augmented"]])
         self.assertEqual(augmented.shape, plain.shape)
         self.assertFalse(np.allclose(plain, augmented))
 
