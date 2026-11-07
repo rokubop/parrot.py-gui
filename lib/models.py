@@ -15,7 +15,6 @@ def get_model_names() -> List[str]:
     return sorted(f[:-len(".pkl")] for f in os.listdir(CLASSIFIER_FOLDER)
                   if f.endswith(".pkl") and not f.startswith("."))
 
-# Matched whole: "model_a.pkl_2" is another model's valid name.
 # Example: "model_a" -> ["data/models/model_a.pkl",
 #                        "data/models/model_a.pkl_1-BEST-weights.pth.tar",
 #                        "data/models/model_a.pkl_1-weights.pth.tar"]
@@ -29,7 +28,6 @@ def get_model_files(name: str) -> List[str]:
                   if checkpoint.fullmatch(f)]
     return files
 
-# One per net. Combined, random forest and MLP models have none.
 def get_best_checkpoint_paths(name: str) -> List[str]:
     return [path for path in get_model_files(name) if path.endswith("-BEST-weights.pth.tar")]
 
@@ -46,6 +44,7 @@ def read_checkpoint(path: str) -> Optional[Checkpoint]:
     return checkpoint
 
 # Slow, unpickles the whole model. For models without checkpoints.
+# Example: "model_a" -> ["pop", "silence"]
 def read_model_labels(name: str) -> List[str]:
     import joblib
     try:
@@ -68,8 +67,7 @@ def get_training_run_times() -> Dict[str, int]:
             times[name] = max(times.get(name, 0), int(stamp))
     return times
 
-# Most trustworthy first: checkpoint survives copy and rename, replay csv
-# survives copy, mtime neither. Pass a best checkpoint to use the first.
+# Most trustworthy first: checkpoint, replay csv, pkl mtime.
 # Example: "model_a" -> (1786747776, "checkpoint")
 def get_trained_at(name: str, checkpoint: Optional[Checkpoint] = None,
                    run_times: Optional[Dict[str, int]] = None) -> TrainedAt:
