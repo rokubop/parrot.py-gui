@@ -92,5 +92,48 @@ class TestRecordedAt(unittest.TestCase):
                 self.assertIsNone(recordings.get_recorded_at(name))
 
 
+
+class TestRelabelSegmentFiles(unittest.TestCase):
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+
+    def write(self, name, text):
+        path = os.path.join(self.dir, name)
+        with open(path, "w", newline="") as f:
+            f.write(text)
+        return path
+
+    def read(self, path):
+        with open(path, newline="") as f:
+            return f.read()
+
+    def test_srt(self):
+        path = self.write("a.v3.srt", "1\r\n00:00:00,250 --> 00:00:00,500\r\nPop\r\n\r\n"
+                                      "2\r\n00:00:01,000 --> 00:00:01,250\r\npop\r\n\r\n")
+        recordings.relabel_segment_files([path], "pop", "click")
+        self.assertEqual(self.read(path), "1\r\n00:00:00,250 --> 00:00:00,500\r\nclick\r\n\r\n"
+                                          "2\r\n00:00:01,000 --> 00:00:01,250\r\nclick\r\n\r\n")
+
+    def test_srt_other_text_kept(self):
+        text = "1\n00:00:00,250 --> 00:00:00,500\npopping\n\npop\n"
+        path = self.write("a.MANUAL.srt", text)
+        recordings.relabel_segment_files([path], "pop", "click")
+        self.assertEqual(self.read(path), text)
+
+    def test_thresholds(self):
+        path = self.write("a_thresholds.txt", "pop_duration_type=discrete\npop_min_dbfs=-30.5\n")
+        recordings.relabel_segment_files([path], "Pop", "Click")
+        self.assertEqual(self.read(path), "click_duration_type=discrete\nclick_min_dbfs=-30.5\n")
+
+    def test_other_files_untouched(self):
+        wav = self.write("a.wav", "pop")
+        comparison = self.write("a_comparison.wav", "pop")
+        recordings.relabel_segment_files([wav, comparison], "pop", "click")
+        self.assertEqual(self.read(wav), "pop")
+        self.assertEqual(self.read(comparison), "pop")
+
+
 if __name__ == "__main__":
     unittest.main()
