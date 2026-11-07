@@ -4,6 +4,7 @@ from PyQt6.QtCore import Qt
 from gui.state import AppState
 from gui.pages.home import HomePage
 from gui.pages.sounds import SoundsPage
+from gui.pages.about import AboutPage
 
 
 class MainWindow(QMainWindow):
@@ -33,6 +34,7 @@ class MainWindow(QMainWindow):
             "Home": self.home_page,
             "Sounds": SoundsPage(self.app_state, self),
             "Models": QWidget(),
+            "About": AboutPage(self.app_state, self),
         }
         for page in self.pages.values():
             self.page_stack.addWidget(page)
