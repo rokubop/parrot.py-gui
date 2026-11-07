@@ -82,7 +82,7 @@ class RecordingCard(QFrame):
         self.play_btn.setIconSize(QSize(14, 14))
         self.play_btn.setFixedWidth(90)
         self.play_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.play_btn.setToolTip("Space plays the last recording played, clicked or focused")
+        self.play_btn.setToolTip("Play or pause (Space)")
         self.play_btn.clicked.connect(self.toggle_play)
         self.play_btn.installEventFilter(self)
         row.addWidget(self.play_btn)
