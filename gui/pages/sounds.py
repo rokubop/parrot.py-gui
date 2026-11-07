@@ -30,6 +30,21 @@ INVALID_LABEL_TEXT = {
 }
 
 
+def _new_sound_name_check(name, taken):
+    """(ok, why not) for a new sound's name. Empty gives no reason: the
+    disabled Ok already says it. `taken` is lowercase, since Windows and macOS
+    folders ignore case."""
+    try:
+        label = recordings.clean_label(name)
+    except recordings.InvalidLabel as exc:
+        if exc.reason == recordings.InvalidLabel.EMPTY:
+            return False, ""
+        return False, INVALID_LABEL_TEXT[exc.reason]
+    if label.lower() in taken:
+        return False, f"There's already a sound called “{label}”."
+    return True, ""
+
+
 def _is_space(event):
     return (event.key() == Qt.Key.Key_Space
             and event.modifiers() == Qt.KeyboardModifier.NoModifier)
@@ -553,6 +568,9 @@ class SoundsPage(QWidget):
         edit.setPlaceholderText("e.g. pop, cluck, hiss")
         edit.setMinimumWidth(300)
         v.addWidget(edit)
+        problem = QLabel("")
+        problem.setStyleSheet("color: #e05a5a;")
+        v.addWidget(problem)
 
         tips_title = QLabel("Choosing a sound")
         tips_title.setStyleSheet(
@@ -578,9 +596,13 @@ class SoundsPage(QWidget):
         row.addWidget(buttons)
         v.addLayout(row)
 
+        taken = {label.lower() for label in self.app_state.get_sound_labels()}
+
         def sync_ok():
-            """Ok (and Enter) only work once the field holds a name."""
-            ready = bool(edit.text().strip())
+            """Ok (and Enter) only work once the field holds a name that can
+            be a new sound. Why not, under the field, while there's time to fix it."""
+            ready, text = _new_sound_name_check(edit.text(), taken)
+            problem.setText(text)
             ok.setEnabled(ready)
             ok.setStyleSheet(components.primary_button_style() if ready else "")
 
