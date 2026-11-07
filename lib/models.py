@@ -1,5 +1,6 @@
 """Trained models: their files, checkpoints and when they were trained."""
 import os
+import re
 from config.config import CLASSIFIER_FOLDER, REPLAYS_FOLDER
 
 def get_model_path(name):
@@ -10,9 +11,10 @@ def get_model_names():
     if not os.path.isdir(CLASSIFIER_FOLDER):
         return []
     return sorted(f[:-len(".pkl")] for f in os.listdir(CLASSIFIER_FOLDER)
-                  if f.endswith(".pkl"))
+                  if f.endswith(".pkl") and not f.startswith("."))
 
-# The pkl, then every file training wrote for it.
+# The pkl, then every checkpoint training wrote for it. Matched whole, since
+# "pop.pkl_2" is a valid name for another model.
 # Example: "pop" -> ["data/models/pop.pkl",
 #                    "data/models/pop.pkl_1-BEST-weights.pth.tar",
 #                    "data/models/pop.pkl_1-weights.pth.tar"]
@@ -21,12 +23,13 @@ def get_model_files(name):
     if os.path.isfile(get_model_path(name)):
         files.append(get_model_path(name))
     if os.path.isdir(CLASSIFIER_FOLDER):
-        prefix = name + ".pkl_"
+        checkpoint = re.compile(re.escape(name) + r"\.pkl_\d+(-BEST)?-weights\.pth\.tar")
         files += [os.path.join(CLASSIFIER_FOLDER, f) for f in sorted(os.listdir(CLASSIFIER_FOLDER))
-                  if f.startswith(prefix)]
+                  if checkpoint.fullmatch(f)]
     return files
 
-# One per net, holding its best epoch. A combined model has none.
+# One per net, holding its best epoch. Only torch training writes them, so a
+# combined, random forest or MLP model has none.
 def get_best_checkpoint_paths(name):
     return [path for path in get_model_files(name) if path.endswith("-BEST-weights.pth.tar")]
 
@@ -45,7 +48,7 @@ def read_checkpoint(path):
     checkpoint.pop("state_dict", None)
     return checkpoint
 
-# Unpickles the whole model: slow, and the only source for a combined model.
+# Unpickles the whole model: slow, and the only source for a model without checkpoints.
 def read_model_labels(name):
     import joblib
     try:

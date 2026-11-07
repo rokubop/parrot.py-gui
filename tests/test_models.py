@@ -13,8 +13,8 @@ import joblib
 import numpy as np
 import torch
 from lib import models
+from sklearn.ensemble import RandomForestClassifier
 from lib.audio_model import AudioModel
-from lib.dummy_classifier import DummyClassifier
 
 AUDIO_SETTINGS = {"version": 1, "RATE": 16000, "CHANNELS": 1, "RECORD_SECONDS": 1,
                   "SLIDING_WINDOW_AMOUNT": 2, "FEATURE_ENGINEERING_TYPE": 1}
@@ -42,9 +42,11 @@ class ModelsFolder(unittest.TestCase):
         open(path, "w").close()
         return path
 
+    # As lib/learn_data.py fit_sklearn_classifier saves one
     def save_model(self, name):
+        classifier = RandomForestClassifier(n_estimators=2).fit([[0, 0], [1, 1]], ["pop", "silence"])
         path = os.path.join(self.models_dir, name + ".pkl")
-        joblib.dump(AudioModel(AUDIO_SETTINGS, DummyClassifier()), path)
+        joblib.dump(AudioModel(AUDIO_SETTINGS, classifier), path)
         return path
 
     # The fields lib/audio_net.py saves after each epoch
@@ -71,6 +73,7 @@ class TestGetModelNames(ModelsFolder):
         self.touch(self.models_dir, "click.pkl")
         self.touch(self.models_dir, "pop.pkl_1-BEST-weights.pth.tar")
         self.touch(self.models_dir, "notes.txt")
+        self.touch(self.models_dir, "._pop.pkl")
         self.assertEqual(models.get_model_names(), ["click", "pop"])
 
     def test_no_models_folder(self):
@@ -86,6 +89,8 @@ class TestGetModelFiles(ModelsFolder):
         last = self.touch(self.models_dir, "pop.pkl_1-weights.pth.tar")
         self.touch(self.models_dir, "pop2.pkl")
         self.touch(self.models_dir, "pop2.pkl_1-BEST-weights.pth.tar")
+        self.touch(self.models_dir, "pop.pkl_2.pkl")
+        self.touch(self.models_dir, "pop.pkl_2.pkl_1-BEST-weights.pth.tar")
         self.assertEqual(models.get_model_files("pop"), [pkl, best, last])
 
     def test_no_files(self):
@@ -126,7 +131,7 @@ class TestReadModelLabels(ModelsFolder):
 
     def test_labels_from_pkl(self):
         self.save_model("pop")
-        self.assertEqual(models.read_model_labels("pop"), ["silence", "noise"])
+        self.assertEqual(models.read_model_labels("pop"), ["pop", "silence"])
 
     def test_missing(self):
         self.assertEqual(models.read_model_labels("pop"), [])
