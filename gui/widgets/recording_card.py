@@ -175,7 +175,7 @@ class RecordingCard(QFrame):
         if self._playhead_position >= self._duration:
             self._playhead_position = 0.0
         self._playhead_position = max(0.0, self._playhead_position)
-        # Before playback.play(): the other card's stop() would end this stream too
+        # Emit before playback.play(), so the other card stops first and can't stop this stream
         self.playback_started.emit(self)
 
         self._play_start_position = self._playhead_position
