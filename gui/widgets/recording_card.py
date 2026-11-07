@@ -221,7 +221,7 @@ class RecordingCard(QFrame):
         self.picked.emit(self)
         self._playhead_position = position
         self.audio_graph.set_playhead(position)
-        if self._playing:
+        if self._playing or playback.is_playing():
             self.play(from_position=position)
 
     def _heard_position(self):

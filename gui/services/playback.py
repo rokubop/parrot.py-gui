@@ -46,6 +46,9 @@ class _Player:
         with self._lock:
             self._current_play_id = None
 
+    def is_playing(self):
+        return self._current_play_id is not None
+
     def shutdown(self):
         self.stop()
         self._wait_for_playback_thread()
@@ -85,4 +88,5 @@ _player = _Player()
 
 play = _player.play
 stop = _player.stop
+is_playing = _player.is_playing
 shutdown = _player.shutdown
