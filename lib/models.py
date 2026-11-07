@@ -6,7 +6,7 @@ from config.config import CLASSIFIER_FOLDER, REPLAYS_FOLDER
 def get_model_path(name):
     return os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
 
-# Example: -> ["bronze", "pops_and_clicks"]
+# Example: -> ["model_a", "model_b"]
 def get_model_names():
     if not os.path.isdir(CLASSIFIER_FOLDER):
         return []
@@ -14,10 +14,10 @@ def get_model_names():
                   if f.endswith(".pkl") and not f.startswith("."))
 
 # The pkl, then every checkpoint training wrote for it. Matched whole, since
-# "pop.pkl_2" is a valid name for another model.
-# Example: "pop" -> ["data/models/pop.pkl",
-#                    "data/models/pop.pkl_1-BEST-weights.pth.tar",
-#                    "data/models/pop.pkl_1-weights.pth.tar"]
+# "model_a.pkl_2" is a valid name for another model.
+# Example: "model_a" -> ["data/models/model_a.pkl",
+#                        "data/models/model_a.pkl_1-BEST-weights.pth.tar",
+#                        "data/models/model_a.pkl_1-weights.pth.tar"]
 def get_model_files(name):
     files = []
     if os.path.isfile(get_model_path(name)):
@@ -58,7 +58,7 @@ def read_model_labels(name):
     return list(getattr(model, "classes_", []))
 
 # Newest training run per model, from the replay csv names.
-# Example: "model_training_pop.pkl1786747776.csv" -> {"pop": 1786747776}
+# Example: "model_training_model_a.pkl1786747776.csv" -> {"model_a": 1786747776}
 def get_training_run_times():
     times = {}
     if not os.path.isdir(REPLAYS_FOLDER):
@@ -74,7 +74,7 @@ def get_training_run_times():
 # (unix time, source), most trustworthy source first: a checkpoint survives a
 # copy and a rename, a training run's replay csv survives a copy, the pkl's
 # mtime survives neither. Pass read_checkpoint() of a best checkpoint to use it.
-# Example: "pop" -> (1786747776, "checkpoint")
+# Example: "model_a" -> (1786747776, "checkpoint")
 def get_trained_at(name, checkpoint=None, run_times=None):
     if checkpoint and checkpoint.get("trained_at"):
         return checkpoint["trained_at"], "checkpoint"

@@ -69,12 +69,12 @@ class ModelsFolder(unittest.TestCase):
 class TestGetModelNames(ModelsFolder):
 
     def test_pkls_in_order(self):
-        self.touch(self.models_dir, "pop.pkl")
-        self.touch(self.models_dir, "click.pkl")
-        self.touch(self.models_dir, "pop.pkl_1-BEST-weights.pth.tar")
+        self.touch(self.models_dir, "model_a.pkl")
+        self.touch(self.models_dir, "model_b.pkl")
+        self.touch(self.models_dir, "model_a.pkl_1-BEST-weights.pth.tar")
         self.touch(self.models_dir, "notes.txt")
-        self.touch(self.models_dir, "._pop.pkl")
-        self.assertEqual(models.get_model_names(), ["click", "pop"])
+        self.touch(self.models_dir, "._model_a.pkl")
+        self.assertEqual(models.get_model_names(), ["model_a", "model_b"])
 
     def test_no_models_folder(self):
         shutil.rmtree(self.models_dir)
@@ -84,44 +84,44 @@ class TestGetModelNames(ModelsFolder):
 class TestGetModelFiles(ModelsFolder):
 
     def test_pkl_then_its_checkpoints(self):
-        pkl = self.touch(self.models_dir, "pop.pkl")
-        best = self.touch(self.models_dir, "pop.pkl_1-BEST-weights.pth.tar")
-        last = self.touch(self.models_dir, "pop.pkl_1-weights.pth.tar")
-        self.touch(self.models_dir, "pop2.pkl")
-        self.touch(self.models_dir, "pop2.pkl_1-BEST-weights.pth.tar")
-        self.touch(self.models_dir, "pop.pkl_2.pkl")
-        self.touch(self.models_dir, "pop.pkl_2.pkl_1-BEST-weights.pth.tar")
-        self.assertEqual(models.get_model_files("pop"), [pkl, best, last])
+        pkl = self.touch(self.models_dir, "model_a.pkl")
+        best = self.touch(self.models_dir, "model_a.pkl_1-BEST-weights.pth.tar")
+        last = self.touch(self.models_dir, "model_a.pkl_1-weights.pth.tar")
+        self.touch(self.models_dir, "model_a2.pkl")
+        self.touch(self.models_dir, "model_a2.pkl_1-BEST-weights.pth.tar")
+        self.touch(self.models_dir, "model_a.pkl_2.pkl")
+        self.touch(self.models_dir, "model_a.pkl_2.pkl_1-BEST-weights.pth.tar")
+        self.assertEqual(models.get_model_files("model_a"), [pkl, best, last])
 
     def test_no_files(self):
-        self.assertEqual(models.get_model_files("pop"), [])
+        self.assertEqual(models.get_model_files("model_a"), [])
 
 
 class TestGetBestCheckpointPaths(ModelsFolder):
 
     def test_one_per_net(self):
-        self.touch(self.models_dir, "pop.pkl")
-        best_1 = self.touch(self.models_dir, "pop.pkl_1-BEST-weights.pth.tar")
-        best_2 = self.touch(self.models_dir, "pop.pkl_2-BEST-weights.pth.tar")
-        self.touch(self.models_dir, "pop.pkl_1-weights.pth.tar")
-        self.assertEqual(models.get_best_checkpoint_paths("pop"), [best_1, best_2])
+        self.touch(self.models_dir, "model_a.pkl")
+        best_1 = self.touch(self.models_dir, "model_a.pkl_1-BEST-weights.pth.tar")
+        best_2 = self.touch(self.models_dir, "model_a.pkl_2-BEST-weights.pth.tar")
+        self.touch(self.models_dir, "model_a.pkl_1-weights.pth.tar")
+        self.assertEqual(models.get_best_checkpoint_paths("model_a"), [best_1, best_2])
 
     def test_combined_model_has_none(self):
-        self.touch(self.models_dir, "pop.pkl")
-        self.assertEqual(models.get_best_checkpoint_paths("pop"), [])
+        self.touch(self.models_dir, "model_a.pkl")
+        self.assertEqual(models.get_best_checkpoint_paths("model_a"), [])
 
 
 class TestReadCheckpoint(ModelsFolder):
 
     def test_fields_without_weights(self):
-        checkpoint = models.read_checkpoint(self.save_checkpoint("pop.pkl_1-BEST-weights.pth.tar"))
+        checkpoint = models.read_checkpoint(self.save_checkpoint("model_a.pkl_1-BEST-weights.pth.tar"))
         self.assertEqual(checkpoint["labels"], ["pop", "silence"])
         self.assertEqual(checkpoint["epoch"], 3)
         self.assertEqual(checkpoint["trained_at"], 1786747776)
         self.assertNotIn("state_dict", checkpoint)
 
     def test_damaged(self):
-        path = os.path.join(self.models_dir, "pop.pkl_1-BEST-weights.pth.tar")
+        path = os.path.join(self.models_dir, "model_a.pkl_1-BEST-weights.pth.tar")
         with open(path, "wb") as f:
             f.write(b"not a checkpoint")
         self.assertIsNone(models.read_checkpoint(path))
@@ -130,23 +130,23 @@ class TestReadCheckpoint(ModelsFolder):
 class TestReadModelLabels(ModelsFolder):
 
     def test_labels_from_pkl(self):
-        self.save_model("pop")
-        self.assertEqual(models.read_model_labels("pop"), ["pop", "silence"])
+        self.save_model("model_a")
+        self.assertEqual(models.read_model_labels("model_a"), ["pop", "silence"])
 
     def test_missing(self):
-        self.assertEqual(models.read_model_labels("pop"), [])
+        self.assertEqual(models.read_model_labels("model_a"), [])
 
 
 class TestGetTrainingRunTimes(ModelsFolder):
 
     def test_newest_run_per_model(self):
         # Newest isn't last alphabetically
-        self.touch(self.replays_dir, "model_training_pop.pkl1000.csv")
-        self.touch(self.replays_dir, "model_training_pop.pkl900.csv")
-        self.touch(self.replays_dir, "model_training_click.pkl200.csv")
+        self.touch(self.replays_dir, "model_training_model_a.pkl1000.csv")
+        self.touch(self.replays_dir, "model_training_model_a.pkl900.csv")
+        self.touch(self.replays_dir, "model_training_model_b.pkl200.csv")
         self.touch(self.replays_dir, "replay_400.csv")
         self.touch(self.replays_dir, "run.csv")
-        self.assertEqual(models.get_training_run_times(), {"pop": 1000, "click": 200})
+        self.assertEqual(models.get_training_run_times(), {"model_a": 1000, "model_b": 200})
 
     def test_no_replays_folder(self):
         shutil.rmtree(self.replays_dir)
@@ -156,26 +156,26 @@ class TestGetTrainingRunTimes(ModelsFolder):
 class TestGetTrainedAt(ModelsFolder):
 
     def test_checkpoint_first(self):
-        self.touch(self.models_dir, "pop.pkl")
-        self.assertEqual(models.get_trained_at("pop", {"trained_at": 500}, {"pop": 300}),
+        self.touch(self.models_dir, "model_a.pkl")
+        self.assertEqual(models.get_trained_at("model_a", {"trained_at": 500}, {"model_a": 300}),
                          (500, "checkpoint"))
 
     def test_checkpoint_from_before_trained_at(self):
-        self.touch(self.models_dir, "pop.pkl")
-        self.touch(self.replays_dir, "model_training_pop.pkl300.csv")
-        self.assertEqual(models.get_trained_at("pop", {"epoch": 3}), (300, "replay"))
+        self.touch(self.models_dir, "model_a.pkl")
+        self.touch(self.replays_dir, "model_training_model_a.pkl300.csv")
+        self.assertEqual(models.get_trained_at("model_a", {"epoch": 3}), (300, "replay"))
 
     def test_then_training_run(self):
-        self.touch(self.models_dir, "pop.pkl")
-        self.touch(self.replays_dir, "model_training_pop.pkl300.csv")
-        self.assertEqual(models.get_trained_at("pop"), (300, "replay"))
+        self.touch(self.models_dir, "model_a.pkl")
+        self.touch(self.replays_dir, "model_training_model_a.pkl300.csv")
+        self.assertEqual(models.get_trained_at("model_a"), (300, "replay"))
 
     def test_then_pkl_mtime(self):
-        os.utime(self.touch(self.models_dir, "pop.pkl"), (200, 200))
-        self.assertEqual(models.get_trained_at("pop"), (200, "mtime"))
+        os.utime(self.touch(self.models_dir, "model_a.pkl"), (200, 200))
+        self.assertEqual(models.get_trained_at("model_a"), (200, "mtime"))
 
     def test_no_model(self):
-        self.assertEqual(models.get_trained_at("pop"), (None, None))
+        self.assertEqual(models.get_trained_at("model_a"), (None, None))
 
 
 class TestGetNewestFirstKey(ModelsFolder):
