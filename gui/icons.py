@@ -1,12 +1,9 @@
-"""Small monochrome icons, painted in the theme's own colours.
+"""Icons
 
-Text glyphs like ▶ and ⏸ differ in height from font to font and shift the
-layout when swapped, and emoji are drawn in colours of their own, blind to the
-theme. Painted paths take one colour from `theme.colors()` at whatever size
-and device pixel ratio the button asks for.
-
-Geometry is in fractions of the icon box, so an icon is one drawing at any
-size rather than a bitmap that softens when the interface is scaled up.
+- Prefer painted paths over text glyphs (▶ ⏸) or emoji
+- Same height in every font, so swapping play/pause doesn't shift the button
+- Theme colours, including hover and disabled. Emoji bring their own
+- Sharp at any size or screen scale
 """
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
@@ -31,8 +28,6 @@ def _render(draw, colour, size, dpr):
 
 
 def _button_icon(draw, size=14, dpr=None):
-    """Push-button icon: resting on `button`, hover on `button_hover`, and a
-    greyed pixmap so a disabled control does not keep a full-strength glyph."""
     t = theme.colors()
     icon = QIcon()
     for colour, mode in ((t["text"], QIcon.Mode.Normal),
@@ -43,7 +38,7 @@ def _button_icon(draw, size=14, dpr=None):
 
 
 def _draw_play(painter, colour):
-    """Filled triangle, nudged right: centred on the box it reads left-heavy."""
+    """Draw a filled triangle, nudged right: centred, it reads left-heavy."""
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(colour)
     path = QPainterPath()
