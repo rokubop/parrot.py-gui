@@ -100,7 +100,7 @@ class TestCleanLabel(unittest.TestCase):
     def test_rejected(self):
         InvalidLabel = recordings.InvalidLabel
         cases = [(None, InvalidLabel.EMPTY), ("  ", InvalidLabel.EMPTY),
-                 ("a/b", InvalidLabel.ILLEGAL_CHARACTER), ("a\b", InvalidLabel.ILLEGAL_CHARACTER),
+                 ("a/b", InvalidLabel.ILLEGAL_CHARACTER), ("a\\b", InvalidLabel.ILLEGAL_CHARACTER),
                  ("a:b", InvalidLabel.ILLEGAL_CHARACTER), ("..", InvalidLabel.STARTS_WITH_DOT),
                  (".pop", InvalidLabel.STARTS_WITH_DOT)]
         for name, reason in cases:
