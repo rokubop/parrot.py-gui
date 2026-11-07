@@ -63,9 +63,9 @@ class InvalidLabel(Exception):
 # Path separators and what Windows forbids, so a label is always one folder
 _ILLEGAL_LABEL_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
-# Example: "  pop " -> "pop"
-# Raises InvalidLabel. A dot folder would be skipped by get_labels.
 def clean_label(name: str) -> str:
+    """A new label, trimmed e.g. "  pop " -> "pop". Raises InvalidLabel. No leading
+    dot: get_labels skips those"""
     label = (name or "").strip()
     if not label:
         raise InvalidLabel(InvalidLabel.EMPTY)
@@ -75,9 +75,9 @@ def clean_label(name: str) -> str:
         raise InvalidLabel(InvalidLabel.STARTS_WITH_DOT)
     return label
 
-# Makes an empty label with its source and segments folders.
-# Raises InvalidLabel, EXISTS if it is already there.
 def create_label(name: str) -> str:
+    """An empty label with its source and segments folders. Raises InvalidLabel,
+    EXISTS if it is there already"""
     label = clean_label(name)
     if os.path.isdir(get_label_dir(label)):
         raise InvalidLabel(InvalidLabel.EXISTS)
@@ -85,10 +85,13 @@ def create_label(name: str) -> str:
     os.makedirs(os.path.join(get_label_dir(label), "segments"))
     return label
 
-# Example: ("pop", 1, "1786747776") -> ("data/recordings/pop/source/mici_1__1786747776.wav",
-#                                       "data/recordings/pop/segments/mici_1__1786747776.v3.srt")
-# Makes the folders if missing. Mics recording together share a time_string.
 def create_recording_paths(label: str, mic_index: int, time_string: str) -> Tuple[str, str]:
+    """Wav and srt paths for a new recording, folders made if missing. Mics
+    recording together share a time_string
+
+    e.g. ("pop", 1, "1786747776") -> ("data/recordings/pop/source/mici_1__1786747776.wav",
+                                      "data/recordings/pop/segments/mici_1__1786747776.v3.srt")
+    """
     base = f"mici_{mic_index}__{time_string}"
     source_dir = os.path.join(get_label_dir(label), "source")
     segments_dir = os.path.join(get_label_dir(label), "segments")
@@ -96,11 +99,14 @@ def create_recording_paths(label: str, mic_index: int, time_string: str) -> Tupl
     os.makedirs(segments_dir, exist_ok=True)
     return os.path.join(source_dir, base + ".wav"), os.path.join(segments_dir, base + current_v_ending)
 
-# Example: ".../pop/source/mici_1__17.wav" -> [".../pop/source/mici_1__17.wav",
-#                                             ".../pop/segments/mici_1__17.v3.srt",
-#                                             ".../pop/segments/mici_1__17_thresholds.txt"]
-# Only files that exist. mici_1__170.v3.srt is another recording's.
 def get_recording_files(wav_path: str) -> List[str]:
+    """A recording's wav and segment files, those that exist. mici_1__170.v3.srt
+    is not mici_1__17's
+
+    e.g. ".../pop/source/mici_1__17.wav" -> [".../pop/source/mici_1__17.wav",
+                                             ".../pop/segments/mici_1__17.v3.srt",
+                                             ".../pop/segments/mici_1__17_thresholds.txt"]
+    """
     base = os.path.splitext(os.path.basename(wav_path))[0]
     segments_dir = os.path.join(os.path.dirname(os.path.dirname(wav_path)), "segments")
     files = [wav_path] if os.path.isfile(wav_path) else []
@@ -109,8 +115,8 @@ def get_recording_files(wav_path: str) -> List[str]:
                   if filename.startswith(base) and filename[len(base):len(base) + 1] in (".", "_")]
     return files
 
-# Deletes a recording's wav and segment files. Returns what it deleted, [] if already gone.
 def delete_recording(wav_path: str) -> List[str]:
+    """Deletes a recording's wav and segment files. Returns them, [] if already gone"""
     files = get_recording_files(wav_path)
     for path in files:
         os.remove(path)

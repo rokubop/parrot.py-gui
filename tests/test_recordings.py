@@ -14,7 +14,7 @@ from lib import recordings
 from lib.srt import current_v_ending, manual_ending
 
 
-class TestRecordings(unittest.TestCase):
+class RecordingsFolder(unittest.TestCase):
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -30,6 +30,9 @@ class TestRecordings(unittest.TestCase):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "w").close()
         return path
+
+
+class TestRecordings(RecordingsFolder):
 
     def test_labels_are_folders_in_order(self):
         self.touch("pop", "source", "a.wav")
@@ -110,34 +113,24 @@ class TestCleanLabel(unittest.TestCase):
                 self.assertEqual(raised.exception.reason, reason)
 
 
-class TestRecordingFiles(unittest.TestCase):
+class TestCreateLabel(RecordingsFolder):
 
-    def setUp(self):
-        self.dir = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.dir)
-        patch = mock.patch.object(recordings, "RECORDINGS_FOLDER", self.dir)
-        patch.start()
-        self.addCleanup(patch.stop)
-
-    def touch(self, *parts):
-        path = os.path.join(self.dir, *parts)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        open(path, "w").close()
-        return path
-
-    def test_create_label(self):
+    def test_source_and_segments(self):
         self.assertEqual(recordings.create_label(" pop "), "pop")
         self.assertTrue(os.path.isdir(os.path.join(self.dir, "pop", "source")))
         self.assertTrue(os.path.isdir(os.path.join(self.dir, "pop", "segments")))
         self.assertEqual(recordings.get_labels(), ["pop"])
 
-    def test_create_label_that_exists(self):
+    def test_exists(self):
         os.makedirs(os.path.join(self.dir, "pop"))
         with self.assertRaises(recordings.InvalidLabel) as raised:
             recordings.create_label("pop")
         self.assertEqual(raised.exception.reason, recordings.InvalidLabel.EXISTS)
 
-    def test_recording_paths_are_read_back(self):
+
+class TestCreateRecordingPaths(RecordingsFolder):
+
+    def test_read_back_by_get_recordings(self):
         wav, srt = recordings.create_recording_paths("pop", 1, "1786747776")
         self.assertEqual(wav, os.path.join(self.dir, "pop", "source", "mici_1__1786747776.wav"))
         self.assertEqual(srt, os.path.join(self.dir, "pop", "segments", "mici_1__1786747776" + current_v_ending))
@@ -146,7 +139,10 @@ class TestRecordingFiles(unittest.TestCase):
         self.assertEqual(recordings.get_recordings("pop"),
                          [{"filename": "mici_1__1786747776.wav", "wav_path": wav, "srt_path": srt}])
 
-    def test_files_of_one_recording(self):
+
+class TestGetRecordingFiles(RecordingsFolder):
+
+    def test_wav_then_segment_files(self):
         wav = self.touch("pop", "source", "mici_1__17.wav")
         srt = self.touch("pop", "segments", "mici_1__17" + current_v_ending)
         manual = self.touch("pop", "segments", "mici_1__17" + manual_ending)
@@ -155,18 +151,24 @@ class TestRecordingFiles(unittest.TestCase):
         self.touch("pop", "segments", "mici_1__170" + current_v_ending)
         self.assertEqual(recordings.get_recording_files(wav), [wav, manual, srt, thresholds])
 
-    def test_files_once_the_wav_is_gone(self):
+    def test_wav_gone(self):
         srt = self.touch("pop", "segments", "mici_1__17" + current_v_ending)
         wav = os.path.join(self.dir, "pop", "source", "mici_1__17.wav")
         self.assertEqual(recordings.get_recording_files(wav), [srt])
 
-    def test_delete_recording(self):
+
+class TestDeleteRecording(RecordingsFolder):
+
+    def test_only_its_files(self):
         wav = self.touch("pop", "source", "mici_1__17.wav")
         srt = self.touch("pop", "segments", "mici_1__17" + current_v_ending)
         other = self.touch("pop", "segments", "mici_1__170" + current_v_ending)
         self.assertEqual(recordings.delete_recording(wav), [wav, srt])
         self.assertFalse(os.path.exists(wav) or os.path.exists(srt))
         self.assertTrue(os.path.exists(other))
+
+    def test_already_gone(self):
+        wav = os.path.join(self.dir, "pop", "source", "mici_1__17.wav")
         self.assertEqual(recordings.delete_recording(wav), [])
 
 
