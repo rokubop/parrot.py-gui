@@ -8,17 +8,20 @@ from lib.typing import Checkpoint, TrainedAt
 def get_model_path(name: str) -> str:
     return os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
 
-# Example: -> ["model_a", "model_b"]
 def get_model_names() -> List[str]:
+    """Model names in data/models, without .pkl e.g. ["model_a", "model_b"]"""
     if not os.path.isdir(CLASSIFIER_FOLDER):
         return []
     return sorted(f[:-len(".pkl")] for f in os.listdir(CLASSIFIER_FOLDER)
                   if f.endswith(".pkl") and not f.startswith("."))
 
-# Example: "model_a" -> ["data/models/model_a.pkl",
-#                        "data/models/model_a.pkl_1-BEST-weights.pth.tar",
-#                        "data/models/model_a.pkl_1-weights.pth.tar"]
 def get_model_files(name: str) -> List[str]:
+    """The pkl, then every checkpoint training wrote for it
+
+    e.g. "model_a" -> ["data/models/model_a.pkl",
+                       "data/models/model_a.pkl_1-BEST-weights.pth.tar",
+                       "data/models/model_a.pkl_1-weights.pth.tar"]
+    """
     files = []
     if os.path.isfile(get_model_path(name)):
         files.append(get_model_path(name))
@@ -32,6 +35,7 @@ def get_best_checkpoint_paths(name: str) -> List[str]:
     return [path for path in get_model_files(name) if path.endswith("-BEST-weights.pth.tar")]
 
 def read_checkpoint(path: str) -> Optional[Checkpoint]:
+    """What training saved with one net, without its weights. None if unreadable"""
     import torch
     try:
         checkpoint = torch.load(path, map_location="cpu", weights_only=False)
@@ -43,9 +47,9 @@ def read_checkpoint(path: str) -> Optional[Checkpoint]:
     checkpoint.pop("state_dict", None)
     return checkpoint
 
-# Slow, unpickles the whole model. For models without checkpoints.
-# Example: "model_a" -> ["pop", "silence"]
 def read_model_labels(name: str) -> List[str]:
+    """Labels from the pkl, for a model without checkpoints. Slow: unpickles the
+    whole model. [] if unreadable e.g. ["pop", "silence"]"""
     import joblib
     try:
         model = joblib.load(get_model_path(name))
@@ -53,9 +57,11 @@ def read_model_labels(name: str) -> List[str]:
         return []
     return list(getattr(model, "classes_", []))
 
-# Newest run per model.
-# Example: "model_training_model_a.pkl1786747776.csv" -> {"model_a": 1786747776}
 def get_training_run_times() -> Dict[str, int]:
+    """Newest training run per model, from replay csv names
+
+    e.g. "model_training_model_a.pkl1786747776.csv" -> {"model_a": 1786747776}
+    """
     times = {}
     if not os.path.isdir(REPLAYS_FOLDER):
         return times
@@ -67,10 +73,12 @@ def get_training_run_times() -> Dict[str, int]:
             times[name] = max(times.get(name, 0), int(stamp))
     return times
 
-# Most trustworthy first: checkpoint, replay csv, pkl mtime.
-# Example: "model_a" -> (1786747776, "checkpoint")
 def get_trained_at(name: str, checkpoint: Optional[Checkpoint] = None,
                    run_times: Optional[Dict[str, int]] = None) -> TrainedAt:
+    """When a model was trained. Most trustworthy first: checkpoint, replay csv, pkl mtime
+
+    Returns (when, source) e.g. (1786747776, "checkpoint"). (None, None) if no model
+    """
     if checkpoint and checkpoint.get("trained_at"):
         return checkpoint["trained_at"], "checkpoint"
     if run_times is None:
@@ -81,9 +89,9 @@ def get_trained_at(name: str, checkpoint: Optional[Checkpoint] = None,
         return os.path.getmtime(get_model_path(name)), "mtime"
     return None, None
 
-# mtime counts only to the (UTC) day: copying a data folder stamps every pkl
-# at once, and order would be copy order.
 def get_newest_first_key(name: str, trained_at: TrainedAt) -> Tuple[float, str]:
+    """Sort key, newest first. An mtime counts only to the (UTC) day: copying a
+    data folder stamps every pkl at once"""
     when, source = trained_at
     when = when or 0
     if source == "mtime":
