@@ -38,7 +38,6 @@ def _button_icon(draw, size=14, dpr=None):
 
 
 def _draw_play(painter, colour):
-    """Draw a filled triangle, nudged right: centred, it reads left-heavy."""
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(colour)
     path = QPainterPath()
