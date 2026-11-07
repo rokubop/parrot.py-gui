@@ -2,7 +2,7 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QRadioButton,
-    QMessageBox
+    QMessageBox, QApplication
 )
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QColor
@@ -380,6 +380,9 @@ class SoundsPage(QWidget):
 
     def _on_card_picked(self, card):
         self._active_card = card
+        # Space on a focused button presses that button, so focus follows the click
+        if QApplication.focusWidget() in [c.play_btn for c in self._cards]:
+            card.play_btn.setFocus()
 
     def _on_card_playback_failed(self, message):
         QMessageBox.warning(self, "Playback", message)
