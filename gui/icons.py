@@ -2,7 +2,7 @@
 
 Prefer painted paths over text glyphs (▶ ⏸) or emoji, because of:
 a) same height in every font, so swapping play/pause doesn't shift the button
-b) theme colours, including focus and disabled. Emoji bring their own
+b) theme colours, including focus and disabled
 c) sharp at any size or screen scale
 """
 from PyQt6.QtCore import QRectF, Qt
