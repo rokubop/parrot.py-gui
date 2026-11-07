@@ -125,11 +125,11 @@ class AudioGraph(QWidget):
         layout.addWidget(self.plot)
 
         self._vb = self.plot.getViewBox()
-        self._turn_off_drag_to_pan()
+        self._drag_seeks_like_a_click()
         self._wheel_over_left_axis_zooms_time()
 
-    def _turn_off_drag_to_pan(self):
-        self._vb.mouseDragEvent = lambda event, axis=None: event.ignore()
+    def _drag_seeks_like_a_click(self):
+        self._vb.mouseDragEvent = self._on_drag
 
     def _wheel_over_left_axis_zooms_time(self):
         self.plot.getAxis("left").wheelEvent = self._vb.wheelEvent
@@ -451,3 +451,13 @@ class AudioGraph(QWidget):
             return
         position = self._position_at(event.scenePos())
         self.seek_requested.emit(self._clamp_to_clip(position))
+
+    def _on_drag(self, event, axis=None):
+        # pyqtgraph calls a slow or wobbly click a drag. Seek where it started
+        if event.button() != Qt.MouseButton.LeftButton:
+            event.ignore()
+            return
+        event.accept()
+        if event.isFinish():
+            position = self._position_at(event.buttonDownScenePos())
+            self.seek_requested.emit(self._clamp_to_clip(position))
