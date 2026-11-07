@@ -1,5 +1,7 @@
 """Recorded sounds: their labels, recordings and detected time."""
 import os
+import re
+import shutil
 from datetime import datetime
 from config.config import RECORDINGS_FOLDER, MS_PER_FRAME
 from lib.srt import get_srt_paths, get_srt_path_for_wav, count_label_ms_in_srt
@@ -47,3 +49,105 @@ def get_recorded_at(filename):
         return datetime.fromtimestamp(int(tail))
     except (ValueError, OSError, OverflowError):
         return None
+
+class InvalidLabel(Exception):
+    EMPTY = "empty"
+    ILLEGAL_CHARACTER = "illegal_character"
+    STARTS_WITH_DOT = "starts_with_dot"
+    EXISTS = "exists"
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+# Path separators and what Windows forbids, so a label is always one folder
+_ILLEGAL_LABEL_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+def clean_label(name: str) -> str:
+    """A new label, trimmed e.g. "  pop " -> "pop". Raises InvalidLabel. No leading
+    dot: get_labels skips those"""
+    label = (name or "").strip()
+    if not label:
+        raise InvalidLabel(InvalidLabel.EMPTY)
+    if _ILLEGAL_LABEL_CHARACTERS.search(label):
+        raise InvalidLabel(InvalidLabel.ILLEGAL_CHARACTER)
+    if label.startswith("."):
+        raise InvalidLabel(InvalidLabel.STARTS_WITH_DOT)
+    return label
+
+def create_label(name: str) -> str:
+    """An empty label with its source and segments folders. Raises InvalidLabel,
+    EXISTS if it is there already"""
+    label = clean_label(name)
+    if os.path.isdir(get_label_dir(label)):
+        raise InvalidLabel(InvalidLabel.EXISTS)
+    os.makedirs(os.path.join(get_label_dir(label), "source"))
+    os.makedirs(os.path.join(get_label_dir(label), "segments"))
+    return label
+
+def rename_label(label: str, new_name: str) -> str:
+    """Renames a label's folder, and the label inside its srts and thresholds.
+    Raises InvalidLabel, EXISTS if the new name is taken"""
+    new_label = clean_label(new_name)
+    if new_label == label:
+        return label
+    if os.path.isdir(get_label_dir(new_label)):
+        raise InvalidLabel(InvalidLabel.EXISTS)
+    os.rename(get_label_dir(label), get_label_dir(new_label))
+    _relabel_segments(label, new_label)
+    return new_label
+
+def clone_label(label: str, new_name: str) -> str:
+    """A copy of a label and all its recordings, under a new name. Raises
+    InvalidLabel, EXISTS if the new name is taken"""
+    new_label = clean_label(new_name)
+    if os.path.isdir(get_label_dir(new_label)):
+        raise InvalidLabel(InvalidLabel.EXISTS)
+    shutil.copytree(get_label_dir(label), get_label_dir(new_label))
+    _relabel_segments(label, new_label)
+    return new_label
+
+def delete_label(label: str):
+    """Deletes a label and every recording in it"""
+    shutil.rmtree(get_label_dir(label))
+
+def _relabel_segments(old_label, new_label):
+    segments_dir = os.path.join(get_label_dir(new_label), "segments")
+    if os.path.isdir(segments_dir):
+        relabel_segment_files([os.path.join(segments_dir, filename)
+                               for filename in os.listdir(segments_dir)], old_label, new_label)
+
+# A sound's name is also written inside its srts (the event text) and
+# thresholds files (the keys, e.g. pop_min_dbfs). Detected time, the overlay
+# and threshold overrides match on it, so a renamed or moved sound rewrites them.
+def relabel_segment_files(paths, old_label, new_label):
+    for path in paths:
+        if path.endswith(".srt"):
+            _rewrite_lines(path, lambda lines: _relabel_srt(lines, old_label, new_label))
+        elif path.endswith("_thresholds.txt"):
+            _rewrite_lines(path, lambda lines: _relabel_thresholds(lines, old_label, new_label))
+
+def _relabel_srt(lines, old_label, new_label):
+    out = []
+    for i, line in enumerate(lines):
+        is_event_text = i > 0 and "-->" in lines[i - 1]
+        if is_event_text and line.strip().lower() == old_label.lower():
+            line = new_label + line[len(line.rstrip("\r\n")):]
+        out.append(line)
+    return out
+
+def _relabel_thresholds(lines, old_label, new_label):
+    prefix = old_label.lower() + "_"
+    return [new_label.lower() + "_" + line[len(prefix):] if line.lower().startswith(prefix) else line
+            for line in lines]
+
+def _rewrite_lines(path, change):
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        lines = f.read().splitlines(keepends=True)
+    changed = change(lines)
+    if changed == lines:
+        return
+    temp = path + ".tmp"
+    with open(temp, "w", encoding="utf-8", newline="") as f:
+        f.writelines(changed)
+    os.replace(temp, path)

@@ -2,21 +2,47 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
     QHeaderView, QSplitter, QScrollArea, QFrame, QPushButton, QRadioButton,
-    QMessageBox
+    QMessageBox, QMenu, QDialog, QDialogButtonBox, QLineEdit, QInputDialog
 )
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent, pyqtSignal
 from PyQt6.QtGui import QColor
 from gui.widgets.recording_card import RecordingCard
 from gui.widgets.audio_graph import GRAPH_DISPLAY_WAVEFORM, GRAPH_DISPLAY_SPECTROGRAM
+from gui.widgets import help_dialog
+from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
 from gui import components, theme
 from gui.formatters import duration_text, spoken_duration
 from gui.timing import debounced, staggered, next_tick
+from lib import recordings
 from lib.recordings import get_label_dir
 from lib.print_status import get_quantity_rating, QUANTITIES
 from lib.wav import wav_duration
 
 SOUND_COLUMN, DATA_COLUMN, DETECTED_COLUMN = 0, 1, 2
+
+INVALID_LABEL_TEXT = {
+    recordings.InvalidLabel.EMPTY: "Please enter a sound name.",
+    recordings.InvalidLabel.ILLEGAL_CHARACTER:
+        "A sound name can't contain any of: < > : \" / \\ | ? *",
+    recordings.InvalidLabel.STARTS_WITH_DOT: "A sound name can't start with a dot.",
+    recordings.InvalidLabel.EXISTS: "There's already a sound with that name.",
+}
+
+
+def _new_sound_name_check(name, taken):
+    """(ok, why not) for a new sound's name. Empty gives no reason: the
+    disabled Ok already says it. `taken` is lowercase, since Windows and macOS
+    folders ignore case."""
+    try:
+        label = recordings.clean_label(name)
+    except recordings.InvalidLabel as exc:
+        if exc.reason == recordings.InvalidLabel.EMPTY:
+            return False, ""
+        return False, INVALID_LABEL_TEXT[exc.reason]
+    if label.lower() in taken:
+        return False, f"There's already a sound called “{label}”."
+    return True, ""
 
 
 def _is_space(event):
@@ -30,7 +56,7 @@ class SoundsPage(QWidget):
     │ Sound  Data  Detect.││ sound_title                                              │
     │ pop    Good  1m 04s ││ sound_stats                                              │
     │ ss     Good   51.0s ││ sound_quantity                                           │
-    │                     ││ open_folder_btn   _graph_display_buttons   normalize_btn │
+    │                     ││ add_recording_btn open_folder_btn _graph_display_buttons │
     │                     │├ cards_scroll ────────────────────────────────────────────┤
     │                     ││ ┌ cards_container ─────────────────────────────────────┐ │
     │                     ││ │ ┌ RecordingCard ───────────────────────────────────┐ │ │
@@ -41,9 +67,11 @@ class SoundsPage(QWidget):
     │                     ││ │ │ header                                           │ │ │
     │                     ││ │ │ .:|:..:||:..:|:.. audio_graph ..:|:..:||:..:|:.. │ │ │
     │                     ││ │ └──────────────────────────────────────────────────┘ │ │
-    │                     ││ └──────────────────────────────────────────────────────┘ │
+    │ new_sound_btn       ││ └──────────────────────────────────────────────────────┘ │
     └─────────────────────┘└──────────────────────────────────────────────────────────┘
     """
+
+    record_requested = pyqtSignal(str)   # the sound to record
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
@@ -72,8 +100,13 @@ class SoundsPage(QWidget):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
+        title_row = QHBoxLayout()
         self.left_title = QLabel("Sounds")
-        left_layout.addWidget(self.left_title)
+        title_row.addWidget(self.left_title)
+        title_row.addStretch()
+        title_row.addWidget(help_dialog.help_button(
+            self, "Sounds", ["frames", "choosing", "quantity"]))
+        left_layout.addLayout(title_row)
         self.sound_list = QTreeWidget()
         self.sound_list.setAccessibleName("Sounds")
         self.sound_list.setAccessibleDescription("Space plays or pauses a recording")
@@ -89,7 +122,14 @@ class SoundsPage(QWidget):
         self.sound_list.currentItemChanged.connect(
             debounced(self._cards_show_selected, wait_ms=15, owner=self))
         self.sound_list.installEventFilter(self)
+        self.sound_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.sound_list.customContextMenuRequested.connect(self._sound_menu_show)
         left_layout.addWidget(self.sound_list)
+        new_sound_btn = QPushButton("+ New sound")
+        new_sound_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        new_sound_btn.setToolTip("Name a new sound, then add recordings to it")
+        new_sound_btn.clicked.connect(self._on_new_sound)
+        left_layout.addWidget(new_sound_btn)
         # Where keyboard navigation to this page lands
         self.setFocusProxy(self.sound_list)
 
@@ -126,6 +166,7 @@ class SoundsPage(QWidget):
         self.sound_header.setStyleSheet(
             f"QFrame#soundHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
+        self.add_recording_btn.setStyleSheet(components.primary_button_style())
         self.open_folder_btn.setStyleSheet(components.ghost_button_style())
         setting_toggle_style = (
             # t['text'], not t['text_dim'], for color contrast
@@ -166,6 +207,11 @@ class SoundsPage(QWidget):
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 10, 0, 0)
+        self.add_recording_btn = QPushButton("+ Add recording")
+        self.add_recording_btn.setObjectName("primaryAction")
+        self.add_recording_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.add_recording_btn.clicked.connect(self._on_add_recording)
+        actions.addWidget(self.add_recording_btn)
         self.open_folder_btn = QPushButton("Open folder")
         self.open_folder_btn.setObjectName("secondaryAction")
         self.open_folder_btn.setFlat(True)
@@ -273,7 +319,8 @@ class SoundsPage(QWidget):
         """A placeholder card per recording, no audio graphs. Or the empty state."""
         cards_container, layout = self._cards_container_new()
         if label is None:
-            components.center_in(layout, components.EmptyState("No sounds yet"))
+            components.center_in(layout, components.EmptyState(
+                "No sounds yet", "Start with “+ New sound”."))
         elif not recordings:
             components.center_in(layout, components.EmptyState(
                 f"“{label}” has no recordings yet"))
@@ -405,11 +452,162 @@ class SoundsPage(QWidget):
             card.toggle_play()
 
     def _on_open_sound_folder(self):
-        item = self.sound_list.currentItem()
-        if item is None:
+        label = self._current_label()
+        if not label:
             return
-        label = item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole)
         try:
             library_ops.open_in_file_manager(get_label_dir(label))
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't open folder", str(exc))
+
+    # ---- sound management ------------------------------------------------
+
+    def _current_label(self):
+        item = self.sound_list.currentItem()
+        return item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) if item else None
+
+    def _sound_show(self, label):
+        """Re-read the sounds and select `label`, or the first if it's gone."""
+        self._sound_list_populate()
+        for i in range(self.sound_list.topLevelItemCount()):
+            item = self.sound_list.topLevelItem(i)
+            if item.data(SOUND_COLUMN, Qt.ItemDataRole.UserRole) == label:
+                self.sound_list.setCurrentItem(item)
+                return
+
+    def stop_playback(self):
+        for card in self._cards:
+            card.stop()
+
+    def _sound_menu_show(self, pos):
+        item = self.sound_list.itemAt(pos)
+        if item is None:
+            return
+        self.sound_list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("Add recording…", self._on_add_recording)
+        menu.addAction("Rename…", self._on_rename_sound)
+        menu.addAction("Clone…", self._on_clone_sound)
+        menu.addAction("Open folder", self._on_open_sound_folder)
+        menu.addSeparator()
+        menu.addAction("Delete sound", self._on_delete_sound)
+        menu.exec(self.sound_list.viewport().mapToGlobal(pos))
+
+    def _on_add_recording(self):
+        label = self._current_label()
+        if label:
+            self.record_requested.emit(label)
+
+    def _on_new_sound(self):
+        name = self._new_sound_prompt()
+        if name is None:
+            return
+        self._sound_change("Couldn't create sound", recordings.create_label, name)
+
+    def _on_rename_sound(self):
+        label = self._current_label()
+        if not label:
+            return
+        name, ok = QInputDialog.getText(self, "Rename sound", "New name:", text=label)
+        if ok:
+            self._sound_change("Rename failed", recordings.rename_label, label, name)
+
+    def _on_clone_sound(self):
+        label = self._current_label()
+        if not label:
+            return
+        name, ok = QInputDialog.getText(self, "Clone sound", "Name for the copy:",
+                                        text=f"{label}_copy")
+        if ok:
+            self._sound_change("Clone failed", recordings.clone_label, label, name)
+
+    def _on_delete_sound(self):
+        label = self._current_label()
+        if not label:
+            return
+        count = len(self.app_state.get_recordings_for_label(label))
+        noun = "recording" if count == 1 else "recordings"
+        if confirm_destructive(self, title=f"Delete sound '{label}'?",
+                               body=f"This permanently deletes the sound '{label}' "
+                                    f"and its {count} {noun}.",
+                               confirm_text=label, confirm_label="Delete sound"):
+            self._sound_change("Delete failed", recordings.delete_label, label)
+
+    def _sound_change(self, failed_title, change, *args):
+        """Runs a lib change to a sound, then shows the sound it returns.
+        Cards stop first: a playing sound may be the one renamed or deleted."""
+        self.stop_playback()
+        try:
+            label = change(*args)
+        except recordings.InvalidLabel as exc:
+            QMessageBox.warning(self, failed_title, INVALID_LABEL_TEXT[exc.reason])
+            return
+        except OSError as exc:
+            QMessageBox.warning(self, failed_title, str(exc))
+            return
+        self.app_state.forget_label_durations()
+        self._sound_show(label)
+
+    def _new_sound_prompt(self):
+        """Name prompt for a new sound. Not a bare QInputDialog: *which* noise
+        you choose decides how well the model can ever do, and this is the one
+        moment the app can say so."""
+        t = theme.colors()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("New sound")
+        # Wide enough that the diagram reads and the tips don't fight a scrollbar.
+        dlg.setMinimumWidth(760)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.setSpacing(8)
+
+        prompt = QLabel("Name for the new sound")
+        prompt.setStyleSheet(f"color: {t['text_bright']}; font-weight: bold;")
+        v.addWidget(prompt)
+
+        edit = QLineEdit()
+        edit.setPlaceholderText("e.g. pop, cluck, hiss")
+        edit.setMinimumWidth(300)
+        v.addWidget(edit)
+        problem = QLabel("")
+        problem.setStyleSheet("color: #e05a5a;")
+        v.addWidget(problem)
+
+        v.addSpacing(10)
+        v.addWidget(help_dialog.scrolled(
+            help_dialog.topics_content(["choosing", "frames"]), max_height=520))
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 6, 0, 0)
+        row.addStretch()
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                                   QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        ok.setObjectName("primaryAction")
+        # setDefault alone isn't enough: the box re-picks a default on show and
+        # Cancel wins, so Enter silently cancelled. Take Cancel out of the
+        # running and accept straight from the field.
+        ok.setDefault(True)
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setAutoDefault(False)
+        row.addWidget(buttons)
+        v.addLayout(row)
+
+        taken = {label.lower() for label in self.app_state.get_sound_labels()}
+
+        def sync_ok():
+            """Ok (and Enter) only work once the field holds a name that can
+            be a new sound. Why not, under the field, while there's time to fix it."""
+            ready, text = _new_sound_name_check(edit.text(), taken)
+            problem.setText(text)
+            ok.setEnabled(ready)
+            ok.setStyleSheet(components.primary_button_style() if ready else "")
+
+        edit.textChanged.connect(sync_ok)
+        edit.returnPressed.connect(lambda: dlg.accept() if ok.isEnabled() else None)
+        sync_ok()
+        edit.setFocus()
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return edit.text()
