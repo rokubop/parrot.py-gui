@@ -118,8 +118,8 @@ class AudioGraph(QWidget):
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setMenuEnabled(False)
         self.plot.hideButtons()
-        # Nothing to do with the keyboard, and no ring to show it had focus
-        self.plot.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Click takes focus off a button, so Space reaches the page. Not a Tab stop
+        self.plot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.plot.setMouseEnabled(x=True, y=False)
         self.plot.showGrid(x=True, y=False, alpha=self._colors["grid_alpha"])
         layout.addWidget(self.plot)
