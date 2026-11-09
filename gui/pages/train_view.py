@@ -29,6 +29,7 @@ from gui.widgets.balance_column import (BalanceBarDelegate, balance_legend,
 from gui.widgets.per_label_accuracy import PerLabelAccuracy
 from gui.widgets.training_plot import TrainingPlotWidget
 from gui.workers.training_worker import TrainingWorker
+from lib import models
 from lib.print_status import get_quantity_rating
 from gui import content
 from gui.content import models as models_content
@@ -1569,7 +1570,7 @@ class TrainView(QWidget):
     def _model_path(self):
         if not self._trained_name:
             return None
-        path = library_ops.model_pkl_path(self._trained_name)
+        path = models.get_model_path(self._trained_name)
         return path if os.path.isfile(path) else None
 
     def _on_test_live(self):

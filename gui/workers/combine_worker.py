@@ -12,7 +12,7 @@ from config.config import (
     CLASSIFIER_FOLDER, RATE, CHANNELS, RECORD_SECONDS, SLIDING_WINDOW_AMOUNT,
     FEATURE_ENGINEERING_TYPE,
 )
-from gui.services import library_ops
+from lib import models
 
 
 def _current_settings():
@@ -42,13 +42,13 @@ class CombineWorker(QThread):
 
             classifier_map = {}
             for i, name in enumerate(self.source_names):
-                pkl = library_ops.model_pkl_path(name)
+                pkl = models.get_model_path(name)
                 classifier_map[f"classifier_{i}"] = joblib.load(pkl)
 
             ensemble = EnsembleClassifier(classifier_map)
             model = AudioModel(_current_settings(), ensemble)
             os.makedirs(CLASSIFIER_FOLDER, exist_ok=True)
-            joblib.dump(model, library_ops.model_pkl_path(self.new_name))
+            joblib.dump(model, models.get_model_path(self.new_name))
             self.finished_ok.emit(self.new_name)
         except Exception as exc:
             self.failed.emit(str(exc))

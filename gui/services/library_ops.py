@@ -24,8 +24,8 @@ import sys
 import shutil
 import subprocess
 
-from config.config import RECORDINGS_FOLDER, CLASSIFIER_FOLDER
-from lib import recordings
+from config.config import RECORDINGS_FOLDER
+from lib import models, recordings
 from lib.recordings import get_label_dir, relabel_segment_files, InvalidLabel
 
 
@@ -66,12 +66,8 @@ def sound_exists(label):
     return os.path.isdir(get_label_dir(label))
 
 
-def model_pkl_path(name):
-    return os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
-
-
 def model_exists(name):
-    return os.path.isfile(model_pkl_path(name))
+    return os.path.isfile(models.get_model_path(name))
 
 
 def recording_base(wav_path):
@@ -324,23 +320,9 @@ def recordings_since(label, when):
 
 # ---- model operations -------------------------------------------------
 
-def model_files(name):
-    """Every file making up a model: the .pkl plus all weight checkpoints."""
-    files = []
-    pkl = model_pkl_path(name)
-    if os.path.isfile(pkl):
-        files.append(pkl)
-    if os.path.isdir(CLASSIFIER_FOLDER):
-        prefix = name + ".pkl_"
-        for f in sorted(os.listdir(CLASSIFIER_FOLDER)):
-            if f.startswith(prefix):
-                files.append(os.path.join(CLASSIFIER_FOLDER, f))
-    return files
-
-
 def delete_model(name):
     """Delete a model's pkl and all weight files. Destructive."""
-    files = model_files(name)
+    files = models.get_model_files(name)
     if not files:
         raise LibraryOpError(f"Model '{name}' no longer exists.")
     for f in files:
@@ -361,7 +343,7 @@ def rename_model(old, new):
         raise LibraryOpError(f"A model called '{new_name}' already exists.")
     old_prefix = old + ".pkl"
     new_prefix = new_name + ".pkl"
-    for f in model_files(old):
+    for f in models.get_model_files(old):
         directory = os.path.dirname(f)
         renamed = os.path.basename(f).replace(old_prefix, new_prefix, 1)
         os.rename(f, os.path.join(directory, renamed))
@@ -377,7 +359,7 @@ def clone_model(old, new):
         raise LibraryOpError(f"A model called '{new_name}' already exists.")
     old_prefix = old + ".pkl"
     new_prefix = new_name + ".pkl"
-    for f in model_files(old):
+    for f in models.get_model_files(old):
         directory = os.path.dirname(f)
         renamed = os.path.basename(f).replace(old_prefix, new_prefix, 1)
         shutil.copy2(f, os.path.join(directory, renamed))

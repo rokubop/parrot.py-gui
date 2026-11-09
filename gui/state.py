@@ -1,11 +1,7 @@
 import os
-import glob
-import filecmp
-from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
-from config.config import CLASSIFIER_FOLDER, REPLAYS_FOLDER
 from gui.services import library_ops
-from lib import recordings
+from lib import models, recordings
 
 
 class AppState(QObject):
@@ -16,7 +12,7 @@ class AppState(QObject):
         super().__init__(parent)
         self._model_cache = {}
         self._label_cache = {}
-        self._checkpoint_times = {}
+        self._checkpoints = {}
         self._replay_times = None
         self._duration_cache = {}
         self.models_changed.connect(self._invalidate_model_cache)
@@ -36,23 +32,8 @@ class AppState(QObject):
             self._duration_cache[label] = recordings.get_detected_ms(label)
         return self._duration_cache[label]
 
-    def get_models(self):
-        """Returns list of model files (.pkl and .pth.tar) in data/models/."""
-        models = []
-        if os.path.exists(CLASSIFIER_FOLDER):
-            for f in sorted(os.listdir(CLASSIFIER_FOLDER)):
-                if f.endswith(".pkl") or f.endswith(".pth.tar"):
-                    models.append({"filename": f, "path": os.path.join(CLASSIFIER_FOLDER, f)})
-        return models
-
     def get_model_names(self):
-        """Returns list of unique model base names (without .pkl extension)."""
-        names = set()
-        if os.path.exists(CLASSIFIER_FOLDER):
-            for f in os.listdir(CLASSIFIER_FOLDER):
-                if f.endswith(".pkl") and not f.endswith(".pth.tar"):
-                    names.add(f.replace(".pkl", ""))
-        return sorted(names)
+        return models.get_model_names()
 
     def get_model_metadata(self, model_name, load_weights=False):
         """Load model metadata. Fast by default (file sizes only).
@@ -67,7 +48,7 @@ class AppState(QObject):
                 self._trained_at(model_name)
             return meta
 
-        pkl_path = os.path.join(CLASSIFIER_FOLDER, model_name + ".pkl")
+        pkl_path = models.get_model_path(model_name)
         meta = {
             "name": model_name,
             "pkl_path": pkl_path,
@@ -83,60 +64,47 @@ class AppState(QObject):
         }
 
         if meta["pkl_exists"]:
-            meta["total_size_bytes"] += os.path.getsize(pkl_path)
             meta["trained_at"], meta["trained_at_source"] = \
                 self._trained_at(model_name)
 
-        best_files = sorted(glob.glob(pkl_path + "_*-BEST-weights.pth.tar"))
-        meta["net_count"] = len(best_files)
+        meta["total_size_bytes"] = sum(
+            os.path.getsize(f) for f in models.get_model_files(model_name))
 
+        best_files = models.get_best_checkpoint_paths(model_name)
+        meta["net_count"] = len(best_files)
         for bf in best_files:
-            meta["total_size_bytes"] += os.path.getsize(bf)
             meta["nets"].append({"path": bf, "accuracy": None, "loss": None,
                                  "epoch": None, "label_accuracy": None,
                                  "combined_accuracy": None, "label_frames": None})
 
-        all_weight_files = glob.glob(pkl_path + "_*-weights.pth.tar")
-        for wf in all_weight_files:
-            if wf not in best_files:
-                meta["total_size_bytes"] += os.path.getsize(wf)
-
         if load_weights:
             # A checkpoint is ~3.8 MB against the pkl's ~38 MB, so read labels
-            # here; joblib is the fallback for a model with no checkpoints
+            # here; the pkl is the fallback for a model with no checkpoints
             # (one combined from other pkls).
             for net_info in meta["nets"]:
-                try:
-                    import torch
-                    state = torch.load(net_info["path"], map_location="cpu", weights_only=False)
-                    net_info["accuracy"] = state.get("accuracy")
-                    net_info["loss"] = state.get("loss")
-                    net_info["epoch"] = state.get("epoch")
-                    # All None on anything trained before the fields existed.
-                    net_info["label_accuracy"] = state.get("label_accuracy")
-                    net_info["combined_accuracy"] = state.get("combined_accuracy")
-                    net_info["label_frames"] = state.get("label_frames")
-                    # One run made every net, so these describe the model
-                    # rather than the net. First one to carry them wins.
-                    if not meta.get("run_settings"):
-                        meta["run_settings"] = state.get("run_settings") or {}
-                    if not meta.get("audio_settings"):
-                        meta["audio_settings"] = state.get("audio_settings") or {}
-                    if not meta.get("source_mics"):
-                        meta["source_mics"] = state.get("source_mics") or {}
-                    if not meta["labels"] and "labels" in state:
-                        meta["labels"] = list(state["labels"])
-                except Exception:
-                    pass
+                checkpoint = models.read_checkpoint(net_info["path"])
+                if checkpoint is None:
+                    continue
+                net_info["accuracy"] = checkpoint.get("accuracy")
+                net_info["loss"] = checkpoint.get("loss")
+                net_info["epoch"] = checkpoint.get("epoch")
+                # All None on anything trained before the fields existed.
+                net_info["label_accuracy"] = checkpoint.get("label_accuracy")
+                net_info["combined_accuracy"] = checkpoint.get("combined_accuracy")
+                net_info["label_frames"] = checkpoint.get("label_frames")
+                # One run made every net, so these describe the model
+                # rather than the net. First one to carry them wins.
+                if not meta.get("run_settings"):
+                    meta["run_settings"] = checkpoint.get("run_settings") or {}
+                if not meta.get("audio_settings"):
+                    meta["audio_settings"] = checkpoint.get("audio_settings") or {}
+                if not meta.get("source_mics"):
+                    meta["source_mics"] = checkpoint.get("source_mics") or {}
+                if not meta["labels"] and "labels" in checkpoint:
+                    meta["labels"] = list(checkpoint["labels"])
 
             if not meta["labels"] and meta["pkl_exists"]:
-                try:
-                    import joblib
-                    model = joblib.load(pkl_path)
-                    if hasattr(model, "classes_"):
-                        meta["labels"] = list(model.classes_)
-                except Exception:
-                    pass
+                meta["labels"] = models.read_model_labels(model_name)
 
             if meta["labels"]:
                 self._label_cache[model_name] = meta["labels"]
@@ -149,42 +117,20 @@ class AppState(QObject):
         return meta
 
     def get_model_trained_at(self, model_name):
-        """When a model was trained. See _trained_at for where it comes from."""
+        """When a model was trained. See models.get_trained_at."""
         return self._trained_at(model_name)[0]
 
     def _trained_at(self, model_name):
-        """(unix time, source) - most trustworthy source first.
-
-        1. "checkpoint" - stamped inside the weights; survives copy and rename.
-        2. "replay" - the replay CSV's filename timestamp; survives a copy but
-           not a rename (the CSV is not renamed with the model).
-        3. "mtime" - the pkl's file date; a copy or restore resets it, so
-           callers must present it as uncertain.
-
-        Only 3 is available without reading a checkpoint, so the list shows it
-        first and improves it once the off-thread read lands.
-        """
-        stamped = self._checkpoint_times.get(model_name)
-        if stamped:
-            return stamped, "checkpoint"
-        from_replay = self._training_run_times().get(model_name)
-        if from_replay:
-            return from_replay, "replay"
-        pkl_path = os.path.join(CLASSIFIER_FOLDER, model_name + ".pkl")
-        if os.path.isfile(pkl_path):
-            return os.path.getmtime(pkl_path), "mtime"
-        return None, None
+        """models.get_trained_at from what is cached. Until a checkpoint is
+        read only replay or mtime are known, so the list shows those first
+        and improves once the off-thread read lands."""
+        return models.get_trained_at(model_name,
+                                     self._checkpoints.get(model_name),
+                                     self._training_run_times())
 
     def model_sort_key(self, model_name):
-        """Newest first, but mtime is only trusted to the day: a copied data
-        dir stamps every pkl within the same second, so full precision would
-        sort by copy order. Dates from a real training record keep theirs.
-        """
-        when, source = self._trained_at(model_name)
-        when = when or 0
-        if source == "mtime":
-            when -= when % 86400
-        return (-when, model_name)
+        return models.get_newest_first_key(model_name,
+                                           self._trained_at(model_name))
 
     def get_model_facts(self, model_name):
         """Labels and training time from one BEST checkpoint - much cheaper
@@ -196,20 +142,13 @@ class AppState(QObject):
             return {"labels": self._label_cache[model_name],
                     "trained_at": when, "trained_at_source": source}
 
-        pkl_path = os.path.join(CLASSIFIER_FOLDER, model_name + ".pkl")
         labels = []
-        best_files = sorted(glob.glob(pkl_path + "_*-BEST-weights.pth.tar"))
+        best_files = models.get_best_checkpoint_paths(model_name)
         if best_files:
-            try:
-                import torch
-                state = torch.load(best_files[0], map_location="cpu",
-                                   weights_only=False)
-                labels = list(state.get("labels") or [])
-                # Absent from every model trained before the field existed.
-                if state.get("trained_at"):
-                    self._checkpoint_times[model_name] = state["trained_at"]
-            except Exception:
-                labels = []
+            checkpoint = models.read_checkpoint(best_files[0])
+            if checkpoint is not None:
+                labels = list(checkpoint.get("labels") or [])
+                self._checkpoints[model_name] = checkpoint
         if not labels:
             # No checkpoints, or unreadable ones: a combined model keeps its
             # classes only inside the pkl.
@@ -234,7 +173,7 @@ class AppState(QObject):
         best_name = None
         best_mtime = 0
         for name in model_names:
-            pkl_path = os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
+            pkl_path = models.get_model_path(name)
             if os.path.isfile(pkl_path):
                 mtime = os.path.getmtime(pkl_path)
                 if mtime > best_mtime:
@@ -252,31 +191,14 @@ class AppState(QObject):
     def _invalidate_model_cache(self):
         self._model_cache.clear()
         self._label_cache.clear()
-        self._checkpoint_times.clear()
+        self._checkpoints.clear()
         self._replay_times = None
 
     def _training_run_times(self):
-        """model name -> unix time of its most recent training run, from the
-        replay CSV filenames. The filename timestamp is the one training-time
-        record that survives a copy or a restore, which reset the pkl's mtime.
-        """
-        if self._replay_times is not None:
-            return self._replay_times
-
-        times = {}
-        if os.path.isdir(REPLAYS_FOLDER):
-            for f in os.listdir(REPLAYS_FOLDER):
-                if not (f.startswith("model_training_") and f.endswith(".csv")):
-                    continue
-                stem = f[len("model_training_"):-len(".csv")]
-                name, sep, stamp = stem.rpartition(".pkl")
-                if not sep or not stamp.isdigit():
-                    continue
-                when = int(stamp)
-                if when > times.get(name, 0):
-                    times[name] = when
-        self._replay_times = times
-        return times
+        """Cached models.get_training_run_times."""
+        if self._replay_times is None:
+            self._replay_times = models.get_training_run_times()
+        return self._replay_times
 
     def refresh(self):
         """Emit signals to refresh all views."""

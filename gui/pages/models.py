@@ -17,12 +17,13 @@ from PyQt6.QtWidgets import (
     QLineEdit, QInputDialog, QMessageBox, QFrame, QDialog, QMenu
 )
 
-from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
+from config.config import BACKGROUND_LABEL
 from gui import components, theme
 from gui.services import balance, library_ops
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets import help_dialog
 from gui.workers.combine_worker import CombineWorker
+from lib import models
 from lib.print_status import get_quantity_rating
 from gui import content
 
@@ -829,7 +830,7 @@ class ModelsPage(QWidget):
     def _model_pkl_path(self):
         if not self._current:
             return None
-        path = os.path.join(CLASSIFIER_FOLDER, f"{self._current}.pkl")
+        path = models.get_model_path(self._current)
         return path if os.path.isfile(path) else None
 
     def _on_test_accuracy(self):
@@ -875,14 +876,14 @@ class ModelsPage(QWidget):
     def _on_open_folder(self):
         try:
             library_ops.open_in_file_manager(
-                library_ops.model_pkl_path(self._current))
+                models.get_model_path(self._current))
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't open folder", str(exc))
 
     def _on_delete(self):
         if not self._current:
             return
-        files = library_ops.model_files(self._current)
+        files = models.get_model_files(self._current)
         detail = "\n".join(os.path.basename(f) for f in files)
         if confirm_destructive(
                 self,
