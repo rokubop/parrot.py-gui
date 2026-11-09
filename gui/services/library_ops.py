@@ -66,10 +66,6 @@ def sound_exists(label):
     return os.path.isdir(get_label_dir(label))
 
 
-def model_exists(name):
-    return os.path.isfile(models.get_model_path(name))
-
-
 def recording_base(wav_path):
     """The shared filename stem for a recording (no .wav)."""
     return os.path.splitext(os.path.basename(wav_path))[0]
@@ -322,47 +318,31 @@ def recordings_since(label, when):
 
 def delete_model(name):
     """Delete a model's pkl and all weight files. Destructive."""
-    files = models.get_model_files(name)
-    if not files:
+    if not models.delete_model(name):
         raise LibraryOpError(f"Model '{name}' no longer exists.")
-    for f in files:
-        try:
-            os.remove(f)
-        except FileNotFoundError:
-            pass
 
 
 def rename_model(old, new):
     """Rename a model (pkl + all weight files). Returns the new name."""
     new_name = sanitize_name(new, kind="model name")
-    if not model_exists(old):
+    if not models.model_exists(old):
         raise LibraryOpError(f"Model '{old}' no longer exists.")
     if new_name == old:
         return old
-    if model_exists(new_name):
+    if models.model_exists(new_name):
         raise LibraryOpError(f"A model called '{new_name}' already exists.")
-    old_prefix = old + ".pkl"
-    new_prefix = new_name + ".pkl"
-    for f in models.get_model_files(old):
-        directory = os.path.dirname(f)
-        renamed = os.path.basename(f).replace(old_prefix, new_prefix, 1)
-        os.rename(f, os.path.join(directory, renamed))
+    models.rename_model(old, new_name)
     return new_name
 
 
 def clone_model(old, new):
     """Copy a model (pkl + all weight files) to a new name. Returns it."""
     new_name = sanitize_name(new, kind="model name")
-    if not model_exists(old):
+    if not models.model_exists(old):
         raise LibraryOpError(f"Model '{old}' no longer exists.")
-    if model_exists(new_name):
+    if models.model_exists(new_name):
         raise LibraryOpError(f"A model called '{new_name}' already exists.")
-    old_prefix = old + ".pkl"
-    new_prefix = new_name + ".pkl"
-    for f in models.get_model_files(old):
-        directory = os.path.dirname(f)
-        renamed = os.path.basename(f).replace(old_prefix, new_prefix, 1)
-        shutil.copy2(f, os.path.join(directory, renamed))
+    models.clone_model(old, new_name)
     return new_name
 
 

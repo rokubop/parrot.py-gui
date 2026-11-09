@@ -923,7 +923,7 @@ class ModelsPage(QWidget):
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Combine models", str(exc))
             return
-        if library_ops.model_exists(new_name):
+        if models.model_exists(new_name):
             QMessageBox.warning(self, "Combine models",
                                 f"A model called '{new_name}' already exists.")
             return

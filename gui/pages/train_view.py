@@ -6,7 +6,6 @@ swaps between them rather than showing both at once. Setup: the decisions
 estimate, the loss/accuracy curves, and per-sound accuracy.
 """
 import os
-import re
 import time
 from datetime import datetime, timedelta
 
@@ -149,27 +148,6 @@ class BalanceWorker(QThread):
 # is measured - see _update_eta.
 
 
-def _next_free_name(base="my_model"):
-    """`base`, or base_2, base_3... whichever is free.
-
-    Strips a trailing _<number> off first, so suggesting an alternative to
-    "totoro_2" offers "totoro_3" rather than "totoro_2_2".
-    """
-    stem = re.sub(r"_\d+$", "", base) or base
-    # Only hand back the bare stem when it was asked for: offering "totoro"
-    # for "totoro_2" reads like going backwards.
-    if base == stem and not library_ops.model_exists(base):
-        return stem
-    n = 2
-    while library_ops.model_exists(f"{stem}_{n}"):
-        n += 1
-    return f"{stem}_{n}"
-
-
-def _default_model_name():
-    return _next_free_name()
-
-
 def format_duration(seconds):
     """Coarse on purpose: nothing here is accurate to the minute, and a running
     "4 hr 09 min" invites watching a number that does not deserve it."""
@@ -263,7 +241,7 @@ class TrainView(QWidget):
             self.stack.setCurrentWidget(self.run_page)
             return
         self._reset_run_state()
-        self.name_input.setText(_default_model_name())
+        self.name_input.setText(models.get_free_name())
         self._populate_labels(check_all=True)
         self._set_status("")
         self.eta.setText("")
@@ -475,7 +453,7 @@ class TrainView(QWidget):
 
         # A second model like the first one wants a name like the first one's,
         # and the overwrite gate would block the bare name anyway.
-        self.name_input.setText(_next_free_name(model_name))
+        self.name_input.setText(models.get_free_name(model_name))
 
         noun = "sound" if len(matched) == 1 else "sounds"
         note = f"Using the {len(matched)} {noun} from “{model_name}”."
@@ -1217,10 +1195,10 @@ class TrainView(QWidget):
         # model you are running right now, and the trainer starts destroying it
         # long before it has anything to put back. There is no undo, so this is
         # a wall rather than a warning.
-        if library_ops.model_exists(name):
+        if models.model_exists(name):
             self._set_readiness(
                 f"“{name}” already exists. Models can't be overwritten - "
-                f"try “{_next_free_name(name)}”.", _bad())
+                f"try “{models.get_free_name(name)}”.", _bad())
             self.train_btn.setEnabled(False)
             return
 
@@ -1302,7 +1280,7 @@ class TrainView(QWidget):
         except library_ops.LibraryOpError as exc:
             self._set_readiness(str(exc), _bad())
             return
-        if library_ops.model_exists(name):
+        if models.model_exists(name):
             # The button is disabled for this, so reaching here means the
             # library changed under us - another window, or a run that finished
             # while this screen sat open. Re-running the gate is cheap; losing a
@@ -1515,7 +1493,7 @@ class TrainView(QWidget):
         # is being stopped any more.
         self._update_best_banner()
         self.app_state.models_changed.emit()
-        if self._stopped and not library_ops.model_exists(name):
+        if self._stopped and not models.model_exists(name):
             self.eta.setText("")
             self._set_status(
                 "Cancelled before training started. Nothing was saved."
