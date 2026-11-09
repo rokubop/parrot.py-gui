@@ -1,12 +1,16 @@
 """Trained models: their files, checkpoints and when they were trained."""
 import os
 import re
+import shutil
 from typing import Dict, List, Optional, Tuple
 from config.config import CLASSIFIER_FOLDER, REPLAYS_FOLDER
 from lib.typing import Checkpoint, TrainedAt
 
 def get_model_path(name: str) -> str:
     return os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
+
+def model_exists(name: str) -> bool:
+    return os.path.isfile(get_model_path(name))
 
 def get_model_names() -> List[str]:
     """Model names in data/models, without .pkl e.g. ["model_a", "model_b"]"""
@@ -99,3 +103,40 @@ def get_newest_first_key(name: str, trained_at: TrainedAt) -> Tuple[float, str]:
     if source == "mtime":
         when -= when % 86400
     return (-when, name)
+
+def get_free_name(base: str = "my_model") -> str:
+    """base, or base_2, base_3... whichever is free. A trailing _<n> is dropped
+    first e.g. "model_a_2" -> "model_a_3", not "model_a_2_2" or "model_a"
+    """
+    stem = re.sub(r"_\d+$", "", base) or base
+    if base == stem and not model_exists(base):
+        return stem
+    n = 2
+    while model_exists(f"{stem}_{n}"):
+        n += 1
+    return f"{stem}_{n}"
+
+def delete_model(name: str) -> List[str]:
+    """Deletes a model's pkl and checkpoints. Returns them, [] if already gone"""
+    files = get_model_files(name)
+    for path in files:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+    return files
+
+def rename_model(old: str, new: str) -> None:
+    """Renames a model's pkl and checkpoints. Raises FileExistsError if new is taken"""
+    _put_files_under_name(old, new, os.rename)
+
+def clone_model(old: str, new: str) -> None:
+    """Copies a model's pkl and checkpoints. Raises FileExistsError if new is taken"""
+    _put_files_under_name(old, new, shutil.copy2)
+
+def _put_files_under_name(old, new, file_op):
+    if model_exists(new):
+        raise FileExistsError(get_model_path(new))
+    for path in get_model_files(old):
+        suffix = os.path.basename(path)[len(old):]
+        file_op(path, os.path.join(CLASSIFIER_FOLDER, new + suffix))
