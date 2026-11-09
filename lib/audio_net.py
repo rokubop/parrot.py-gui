@@ -77,7 +77,7 @@ class AudioNetTrainer:
     dataset = False
     input_size = 120
     
-    def __init__(self, dataset, net_count = 1, audio_settings = None, run_settings: Optional[RunSettings] = None):
+    def __init__(self, dataset, net_count = 1, audio_settings = None, run_settings: Optional[RunSettings] = None, source_mics = None):
         self.nets = []
         self.optimizers = []
         self.random_seeds = []
@@ -93,6 +93,8 @@ class AudioNetTrainer:
         self.dataset_size = len(dataset)
         self.audio_settings = audio_settings
         self.run_settings = run_settings or {}
+        # Which mics the recordings came from, scanned by the caller.
+        self.source_mics = source_mics or {}
         self.dataset_size = len(dataset)
         
         split = int(np.floor(self.validation_split * self.dataset_size))
@@ -290,6 +292,8 @@ class AudioNetTrainer:
                         'label_frames': label_frames,
                         'trained_at': starttime,
                         'run_settings': self.run_settings,
+                        'audio_settings': self.audio_settings,
+                        'source_mics': self.source_mics,
                         }, os.path.join(CLASSIFIER_FOLDER, current_filename) + '-weights.pth.tar')
                 
                 # Persist a new combined model with the best weights if new best weights are given
