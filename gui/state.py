@@ -85,6 +85,7 @@ class AppState(QObject):
                 checkpoint = models.read_checkpoint(net_info["path"])
                 if checkpoint is None:
                     continue
+                self._checkpoints.setdefault(model_name, checkpoint)
                 net_info["accuracy"] = checkpoint.get("accuracy")
                 net_info["loss"] = checkpoint.get("loss")
                 net_info["epoch"] = checkpoint.get("epoch")
@@ -164,22 +165,9 @@ class AppState(QObject):
         """Returns list of metadata dicts for all models."""
         return [self.get_model_metadata(name) for name in self.get_model_names()]
 
-    def get_active_model_name(self):
-        """The most recently trained model, or None when there are none."""
-        model_names = self.get_model_names()
-        if not model_names:
-            return None
-
-        best_name = None
-        best_mtime = 0
-        for name in model_names:
-            pkl_path = models.get_model_path(name)
-            if os.path.isfile(pkl_path):
-                mtime = os.path.getmtime(pkl_path)
-                if mtime > best_mtime:
-                    best_mtime = mtime
-                    best_name = name
-        return best_name
+    def get_latest_model_name(self):
+        """Top of the Models list, None if there are no models."""
+        return min(self.get_model_names(), key=self.model_sort_key, default=None)
 
     def is_first_run(self):
         """True if no recordings AND no models exist."""

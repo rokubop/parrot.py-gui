@@ -94,7 +94,7 @@ class IntegrationsPage(QWidget):
 
     def _refresh(self):
         names = self.app_state.get_model_names()
-        active = self.app_state.get_active_model_name()
+        active = self.app_state.get_latest_model_name()
         if not names:
             self.model_label.setText(
                 "No models yet. Train one on the Models tab.")

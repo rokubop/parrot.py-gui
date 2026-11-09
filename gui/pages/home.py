@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import (
     QScrollArea, QSizePolicy, QMessageBox
 )
 
-from config.config import CLASSIFIER_FOLDER
 from gui import components, theme
 from gui.services import library_ops
 from gui.widgets import help_dialog
@@ -36,8 +35,7 @@ _recordings_since = library_ops.recordings_since
 
 
 class _ModelSoundsWorker(QThread):
-    """Reads model labels off-thread (unpickling stutters the UI).
-    get_model_metadata because labels live in the pkl or the weight files."""
+    """Reads model labels off-thread: the first checkpoint read imports torch."""
     loaded = pyqtSignal(str, object)   # model name, labels or None
 
     def __init__(self, app_state, name, parent=None):
@@ -47,8 +45,8 @@ class _ModelSoundsWorker(QThread):
 
     def run(self):
         try:
-            meta = self._app_state.get_model_metadata(self._name, load_weights=True)
-            self.loaded.emit(self._name, meta["labels"] or None)
+            facts = self._app_state.get_model_facts(self._name)
+            self.loaded.emit(self._name, facts["labels"] or None)
         except Exception:
             self.loaded.emit(self._name, None)
 
@@ -383,13 +381,15 @@ class HomePage(QWidget):
             s1 = f"{len(labels)} sounds recorded."
 
         step2_done = bool(model_names)
-        latest_name, latest_mtime = self._latest_model()
+        latest_name = self.app_state.get_latest_model_name()
+        latest_trained_at = (self.app_state.get_model_trained_at(latest_name) or 0
+                             if latest_name else 0)
         if not model_names:
             s2 = "No models yet."
         else:
             noun = "model" if len(model_names) == 1 else "models"
             s2 = (f"{len(model_names)} {noun} · latest “{latest_name}” "
-                  f"trained {_ago(latest_mtime)}.")
+                  f"trained {_ago(latest_trained_at)}.")
 
         # Nothing outside the app can be observed, so having a model to hand
         # over is as far as this step can honestly get.
@@ -412,22 +412,12 @@ class HomePage(QWidget):
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)
         if not first_run:
-            self._refresh_model_panel(labels, latest_name, latest_mtime, t)
+            self._refresh_model_panel(labels, latest_name, latest_trained_at, t)
 
     def _show_help(self, key):
         help_dialog.show_help(self, key)
 
-    def _latest_model(self):
-        best, best_mtime = None, 0
-        for name in self.app_state.get_model_names():
-            pkl = os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
-            if os.path.isfile(pkl):
-                mtime = os.path.getmtime(pkl)
-                if mtime > best_mtime:
-                    best, best_mtime = name, mtime
-        return best, best_mtime
-
-    def _refresh_model_panel(self, labels, latest_name, latest_mtime, t):
+    def _refresh_model_panel(self, labels, latest_name, trained_at, t):
         name = latest_name
         if name is None:
             self.model_panel_title.setText("Active model")
@@ -436,16 +426,14 @@ class HomePage(QWidget):
                 f"from your recorded sounds.</span>")
             return
 
-        pkl = os.path.join(CLASSIFIER_FOLDER, name + ".pkl")
-        mtime = os.path.getmtime(pkl) if os.path.isfile(pkl) else latest_mtime
         self.model_panel_title.setText("Latest model")
 
         lines = [f"<b style='color:{t['text_bright']}; "
                  f"font-size:{theme.TYPE_SCALE['card']}px;'>{name}</b>",
-                 f"<span style='color:{t['text_dim']};'>Trained {_ago(mtime)}</span>"]
+                 f"<span style='color:{t['text_dim']};'>Trained {_ago(trained_at)}</span>"]
 
         stale = [(l, n) for l in labels
-                 if (n := _recordings_since(l, mtime)[0])]
+                 if (n := _recordings_since(l, trained_at)[0])]
         if stale:
             takes = sum(n for _, n in stale)
             names = [l for l, _ in stale]
