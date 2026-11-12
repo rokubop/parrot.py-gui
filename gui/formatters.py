@@ -1,4 +1,5 @@
-"""How the GUI words times and durations. No Qt, so it tests like lib/."""
+"""How the GUI words times, durations and sizes. No Qt, so it tests like lib/."""
+from datetime import datetime
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -37,3 +38,38 @@ def recorded_at(stamp):
     half = "AM" if stamp.hour < 12 else "PM"
     return (f"{_MONTHS[stamp.month - 1]} {stamp.day:02d}, {stamp.year}, "
             f"{hour}:{stamp.minute:02d} {half}")
+
+
+def trained_when(when, source, now):
+    """'Today', '3 days ago', 'Oct 05, 2026'. Relative only within a week:
+    models are months apart. An mtime source is a file date, not a training
+    record, so it gets a ~ and no relative form: '~Oct 05, 2026'."""
+    stamp = datetime.fromtimestamp(when)
+    on_date = f"{_MONTHS[stamp.month - 1]} {stamp.day:02d}, {stamp.year}"
+    if source == "mtime":
+        return f"~{on_date}"
+    days = (now.date() - stamp.date()).days
+    if days <= 0:
+        return "Today"
+    if days == 1:
+        return "Yesterday"
+    if days < 7:
+        return f"{days} days ago"
+    return on_date
+
+
+def file_size_text(num_bytes):
+    """'512 B', '16.1 MB'."""
+    size = float(num_bytes)
+    for unit in ("B", "KB", "MB"):
+        if size < 1024:
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def percent_span(fractions, decimals):
+    """'97.8%', or lowest to highest: '96.1-97.2%'. Equal values are not a
+    range, so they show once."""
+    low, high = (f"{f * 100:.{decimals}f}" for f in (min(fractions), max(fractions)))
+    return f"{low}%" if low == high else f"{low}-{high}%"
