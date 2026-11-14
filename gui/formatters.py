@@ -59,7 +59,7 @@ def trained_when(when, source, now):
 
 
 def file_size_text(num_bytes):
-    """'512 B', '15.3 MB'. Binary units, as Windows Explorer shows them."""
+    """'512 B', '15.3 MB'. Binary units."""
     size = float(num_bytes)
     for unit in ("B", "KB", "MB"):
         if size < 1024:

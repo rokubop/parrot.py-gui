@@ -64,7 +64,7 @@ class AppState:
             try:
                 details = self._model_details_load(name)
             except Exception:
-                # Example: the pkl deleted mid-read. No labels shows as unreadable.
+                # Example: torch won't load. No labels shows as unreadable
                 details = ModelDetails(labels=[], checkpoints=[],
                                        net_count=self.get_net_count(name),
                                        trained_at=models.get_trained_at(name), pkl_bytes=0)

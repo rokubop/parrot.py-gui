@@ -279,7 +279,7 @@ class ModelsPage(QWidget):
         self._model_list_refresh()
 
     def _model_list_refresh(self):
-        """Repopulates only if the models or their order changed."""
+        """Only if the models or their order changed."""
         models_newest_first = self.app_state.get_models_newest_first()
         names = [name for name, _trained_at in models_newest_first]
         if names != list(self._items):
@@ -311,8 +311,8 @@ class ModelsPage(QWidget):
         self.model_list.setCurrentItem(self._items.get(current) or self.model_list.topLevelItem(0))
 
     def _model_row_update(self, name, now, trained_at=(None, None)):
-        """Until the checkpoints are read, Sounds reads "…" and Trained shows
-        trained_at, a replay csv or file date. "?" if they can't be read."""
+        """Sounds is "…" until the checkpoints are read, "?" if they can't be.
+        trained_at (replay csv or file date) shows until then."""
         item = self._items[name]
         details = self.app_state.get_model_details_if_read(name)
         when, source = details.trained_at if details else trained_at
