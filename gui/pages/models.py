@@ -155,8 +155,6 @@ class ModelsPage(QWidget):
         tree.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         tree.setSortingEnabled(True)
         tree.sortByColumn(SOUND_COLUMN, Qt.SortOrder.AscendingOrder)
-        tree.headerItem().setToolTip(
-            ACCURACY_COLUMN, "Each net's score on recordings it was not trained on")
         header = tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(SOUND_COLUMN, QHeaderView.ResizeMode.Stretch)
@@ -219,7 +217,6 @@ class ModelsPage(QWidget):
         item.setText(TRAINED_COLUMN, trained)
         item.setText(SOUNDS_COLUMN, sounds)
         item.setText(NETS_COLUMN, str(net_count) if net_count else "")
-        item.setToolTip(TRAINED_COLUMN, "File date, not a training record" if source == "mtime" else "")
         # A screen reader reads only the first column otherwise
         item.setData(MODEL_COLUMN, Qt.ItemDataRole.AccessibleTextRole,
                      f"{name}, trained {trained or 'unknown'}, {sounds} sounds, {net_count} nets")
