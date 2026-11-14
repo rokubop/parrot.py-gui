@@ -1,3 +1,4 @@
+import contextlib
 import os
 from dataclasses import dataclass
 from typing import List
@@ -65,9 +66,12 @@ class AppState:
                 details = self._model_details_load(name)
             except Exception:
                 # e.g. torch won't load. Empty labels show as unreadable
-                details = ModelDetails(labels=[], checkpoints=[],
-                                       net_count=self.get_net_count(name),
-                                       trained_at=models.get_trained_at(name), pkl_bytes=0)
+                details = ModelDetails(labels=[], checkpoints=[], net_count=0,
+                                       trained_at=(None, None), pkl_bytes=0)
+                # Runs on the reader thread, where an exception aborts the app
+                with contextlib.suppress(OSError):
+                    details.net_count = self.get_net_count(name)
+                    details.trained_at = models.get_trained_at(name)
             self._model_details_cache[name] = details
         return self._model_details_cache[name]
 
