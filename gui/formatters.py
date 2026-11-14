@@ -41,9 +41,8 @@ def recorded_at(stamp):
 
 
 def trained_when(when, source, now):
-    """'Today', '3 days ago', 'Oct 05, 2026'. Relative only within a week:
-    models are months apart. An mtime source is a file date, not a training
-    record, so it gets a ~ and no relative form: '~Oct 05, 2026'."""
+    """'Today', '3 days ago', then 'Oct 05, 2026' after a week. A file date
+    (source "mtime") gets a ~ and is never relative: '~Oct 05, 2026'."""
     stamp = datetime.fromtimestamp(when)
     on_date = f"{_MONTHS[stamp.month - 1]} {stamp.day:02d}, {stamp.year}"
     if source == "mtime":
@@ -69,7 +68,6 @@ def file_size_text(num_bytes):
 
 
 def percent_span(fractions, decimals):
-    """'97.8%', or lowest to highest: '96.1-97.2%'. Equal values are not a
-    range, so they show once."""
+    """'97.8%', or a range: '96.1-97.2%'. Equal values show once."""
     low, high = (f"{f * 100:.{decimals}f}" for f in (min(fractions), max(fractions)))
     return f"{low}%" if low == high else f"{low}-{high}%"

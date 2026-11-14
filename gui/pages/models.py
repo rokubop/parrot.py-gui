@@ -346,9 +346,8 @@ def _sound_count(labels):
 
 
 def _model_accuracy(checkpoints, net_count):
-    """The ensemble's own score, from the net whose best epoch came last. Not
-    the mean of the nets': the ensemble averages probabilities, and can beat
-    every net in it. A lone net's score is the model's. None if not recorded."""
+    """combined_accuracy from the net whose best epoch came last, else a lone
+    net's accuracy. None if not recorded."""
     scored = [c for c in checkpoints
               if c.get("combined_accuracy") is not None and c.get("epoch") is not None]
     if scored:
@@ -429,7 +428,7 @@ class ModelDetailsReader(QThread):
             return self._pending.pop(0) if self._pending else None
 
     def _on_finished(self):
-        # A read() after run()'s last pop saw isRunning() and didn't start
+        # read() can arrive after the last pop, while still running, and not restart
         with self._lock:
             more = bool(self._pending)
         if more:

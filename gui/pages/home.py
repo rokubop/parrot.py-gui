@@ -16,8 +16,8 @@ BUBBLE_SIZE = 36
 
 
 class _StepCard(QFrame):
-    """Title, status and one button. A numbered card is a step, with a bubble
-    that ticks when done. number None: no bubble, never done or current."""
+    """Title, status and one button. Numbered: a step, with a bubble that
+    ticks when done. number=None: a plain card."""
 
     def __init__(self, number, title, action_text, parent=None):
         super().__init__(parent)
