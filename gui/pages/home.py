@@ -13,7 +13,7 @@ from gui.services import library_ops
 
 
 class _StepCard(QFrame):
-    """One numbered bubble in the Record -> Train -> Use strip."""
+    """One numbered bubble in the Record -> Train -> Integrations strip."""
 
     def __init__(self, number, title, action_text, parent=None):
         super().__init__(parent)
@@ -45,9 +45,7 @@ class _StepCard(QFrame):
         v.addWidget(self.action)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-    def set_state(self, done, current, status_text, action_primary=False):
-        """action_primary keeps the bright styling on the button even when the
-        step is done - the ongoing main action."""
+    def set_state(self, done, current, status_text):
         t = theme.colors()
         self.bubble.setText("✓" if done else str(self.number))
         bubble_bg = t["accent"] if done else (t["button"] if not current else t["panel"])
@@ -69,11 +67,8 @@ class _StepCard(QFrame):
         self.status.setText(status_text)
         # Screen readers skip the label, so the button carries the status
         self.action.setAccessibleDescription(status_text)
-        self.action.setObjectName(
-            "primaryAction" if (current or action_primary) else "")
-        self.action.setStyleSheet(
-            components.primary_button_style()
-            if (current or action_primary) else "")
+        self.action.setObjectName("primaryAction" if current else "")
+        self.action.setStyleSheet(components.primary_button_style() if current else "")
 
 
 class HomePage(QWidget):
@@ -82,7 +77,7 @@ class HomePage(QWidget):
     │ hero_title                                               │
     │ hero_sub                                                 │
     │                                                          │
-    │ ┌ step_record ───┐ ┌ step_train ────┐ ┌ step_use ──────┐ │
+    │ ┌ step_record ───┐ ┌ step_train ────┐ ┌ step_connect ──┐ │
     │ │ _StepCard      │ │ _StepCard      │ │ _StepCard      │ │
     │ └────────────────┘ └────────────────┘ └────────────────┘ │
     └──────────────────────────────────────────────────────────┘
@@ -138,13 +133,13 @@ class HomePage(QWidget):
         steps_row.setSpacing(12)
         self.step_record = _StepCard(1, "Record sounds", "Open sounds")
         self.step_train = _StepCard(2, "Train a model", "Open models")
-        self.step_use = _StepCard(3, "Use your model", "Open models folder")
+        self.step_connect = _StepCard(3, "Integrations", "Open models folder")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
-        self.step_use.action.clicked.connect(self._on_open_models_folder)
-        self.step_use.action.setToolTip(
+        self.step_connect.action.clicked.connect(self._on_open_models_folder)
+        self.step_connect.action.setToolTip(
             "The folder holding your .pkl files, to copy one into an integration")
-        for card in (self.step_record, self.step_train, self.step_use):
+        for card in (self.step_record, self.step_train, self.step_connect):
             steps_row.addWidget(card, 1)
         v.addLayout(steps_row)
 
@@ -199,19 +194,18 @@ class HomePage(QWidget):
             noun = "model" if len(model_names) == 1 else "models"
             s2 = f"{len(model_names)} {noun} trained."
 
-        # Nothing outside the app can be observed, so having a model to hand
-        # over is as far as this step can honestly get.
-        step3_done = step2_done
         s3 = ("Copy a .pkl from the models folder into your integration."
-              if step3_done else "Train a model first.")
+              if model_names else "Train a model first.")
+        self.step_connect.action.setEnabled(bool(model_names))
 
-        current = next((i for i, done in enumerate(
-            (step1_done, step2_done, step3_done)) if not done), None)
+        if model_names:
+            # Guidance ends at the first model: after that the user could be
+            # doing any step, and an integration can't be seen from here.
+            self.step_record.set_state(False, False, s1)
+            self.step_train.set_state(False, False, s2)
+            self.step_connect.set_state(False, False, s3)
+            return
+        current = 1 if step1_done else 0
         self.step_record.set_state(step1_done, current == 0, s1)
-        self.step_train.set_state(step2_done, current == 1, s2)
-        # Bright once done, but only when no earlier step is unfinished:
-        # one accent button at a time.
-        self.step_use.set_state(
-            step3_done, current == 2, s3,
-            action_primary=step3_done and current is None)
-        self.step_use.action.setEnabled(step3_done)
+        self.step_train.set_state(False, current == 1, s2)
+        self.step_connect.set_state(False, False, s3)
