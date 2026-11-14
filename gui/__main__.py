@@ -5,7 +5,10 @@ def _preload_torch():
     """On Windows torch fails to load (WinError 1114) once Qt's DLLs are in,
     and the Models tab reads checkpoints with torch. About a second at launch."""
     if sys.platform == "win32":
-        import torch  # noqa: F401
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            pass
 
 
 def main():

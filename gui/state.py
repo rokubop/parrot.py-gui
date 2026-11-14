@@ -61,19 +61,25 @@ class AppState:
         """Slow: reads every net's checkpoint, ~4 MB each. Off the UI thread.
         Cached."""
         if name not in self._model_details_cache:
-            self._model_details_cache[name] = self._model_details_read(name)
+            try:
+                details = self._model_details_load(name)
+            except Exception:
+                # Example: the pkl deleted mid-read. No labels shows as unreadable.
+                details = ModelDetails(labels=[], checkpoints=[], net_count=0,
+                                       trained_at=(None, None), pkl_bytes=0)
+            self._model_details_cache[name] = details
         return self._model_details_cache[name]
 
     def get_model_details_if_read(self, name):
         """None until get_model_details has read it."""
         return self._model_details_cache.get(name)
 
-    def _model_details_read(self, name):
+    def _model_details_load(self, name):
         paths = models.get_best_checkpoint_paths(name)
         checkpoints = [c for c in map(models.read_checkpoint, paths) if c is not None]
         labels = next((list(c["labels"]) for c in checkpoints if c.get("labels")), None)
         if labels is None:
-            # No checkpoints: an sklearn model, or one combined from other pkls
+            # An sklearn model, one combined from other pkls, or damaged checkpoints
             labels = models.read_model_labels(name)
         pkl_path = models.get_model_path(name)
         return ModelDetails(

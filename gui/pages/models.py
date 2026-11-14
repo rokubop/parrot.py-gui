@@ -24,7 +24,7 @@ def _sound_count(labels):
 def _model_accuracy(checkpoints):
     """The ensemble's own score, from the net whose best epoch came last. Not
     the mean of the nets': the ensemble averages probabilities, and can beat
-    every net in it. A lone net's score is the model's. None if not recorded"""
+    every net in it. A lone net's score is the model's. None if not recorded."""
     scored = [c for c in checkpoints
               if c.get("combined_accuracy") is not None and c.get("epoch") is not None]
     if scored:
@@ -105,7 +105,7 @@ class ModelDetailsReader(QThread):
             return self._pending.pop(0) if self._pending else None
 
     def _on_finished(self):
-        # read() can land as run() returns, when start() does nothing
+        # A read() after run()'s last pop saw isRunning() and didn't start
         with self._lock:
             more = bool(self._pending)
         if more:
@@ -255,7 +255,7 @@ class ModelsPage(QWidget):
         tree.setRootIsDecorated(False)
         tree.setUniformRowHeights(True)
         tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
-        # No focus for the sound tree: nothing in it to act on
+        # Nothing in it to act on
         tree.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         tree.setSortingEnabled(True)
         tree.sortByColumn(SOUND_COLUMN, Qt.SortOrder.AscendingOrder)
@@ -274,17 +274,22 @@ class ModelsPage(QWidget):
         """A model trained from the command line while the app is open shows
         on the next visit."""
         super().showEvent(event)
-        names = [name for name, _trained_at in self.app_state.get_models_newest_first()]
-        if names != list(self._items):
-            self._model_list_populate()
+        self._model_list_refresh()
 
-    def _model_list_populate(self):
+    def _model_list_refresh(self):
+        """Repopulates only if the models or their order changed."""
+        models_newest_first = self.app_state.get_models_newest_first()
+        names = [name for name, _trained_at in models_newest_first]
+        if names != list(self._items):
+            self._model_list_populate(models_newest_first)
+
+    def _model_list_populate(self, models_newest_first):
         current = self._current_model_name()
         now = datetime.now()
         self.model_list.blockSignals(True)
         self.model_list.clear()
         self._items = {}
-        for name, (when, source) in self.app_state.get_models_newest_first():
+        for name, trained_at in models_newest_first:
             item = QTreeWidgetItem([name, "", "", ""])
             item.setData(MODEL_COLUMN, Qt.ItemDataRole.UserRole, name)
             # Long names are cut off in the column
@@ -292,19 +297,20 @@ class ModelsPage(QWidget):
             for column in (SOUNDS_COLUMN, NETS_COLUMN):
                 item.setTextAlignment(column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._items[name] = item
-            self._model_row_update(name, (when, source), now)
+            self._model_row_update(name, now, trained_at)
             self.model_list.addTopLevelItem(item)
         self.model_list.blockSignals(False)
 
         if not self._items:
             self._model_show(None)
             return
-        self._models_read(list(self._items))
+        self._reader_start(list(self._items))
         # Fires the selection handler, which shows the model
         self.model_list.setCurrentItem(self._items.get(current) or self.model_list.topLevelItem(0))
 
-    def _model_row_update(self, name, trained_at, now):
-        """Sounds reads "…" until the checkpoints are, and "?" if they can't be."""
+    def _model_row_update(self, name, now, trained_at=(None, None)):
+        """Until the checkpoints are read, Sounds reads "…" and Trained shows
+        trained_at, a replay csv or file date. "?" if they can't be read."""
         item = self._items[name]
         details = self.app_state.get_model_details_if_read(name)
         when, source = details.trained_at if details else trained_at
@@ -322,10 +328,13 @@ class ModelsPage(QWidget):
         item.setData(MODEL_COLUMN, Qt.ItemDataRole.AccessibleTextRole,
                      f"{name}, trained {trained or 'unknown'}, {sounds} sounds, {net_count} nets")
 
-    def _models_read(self, names):
+    def _reader_start(self, names):
         # Before the reader's first torch.load: torch imported off the main
         # thread has segfaulted alongside Qt. Already loaded on Windows.
-        import torch  # noqa: F401
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            pass  # Models with checkpoints then read as unreadable
         self.reader.read([name for name in names
                           if self.app_state.get_model_details_if_read(name) is None])
 
@@ -341,16 +350,14 @@ class ModelsPage(QWidget):
 
     def _on_model_read(self, name):
         if name in self._items:
-            self._model_row_update(name, (None, None), datetime.now())
+            self._model_row_update(name, datetime.now())
         if name == self._current_model_name():
             self._model_show(name)
 
     def _on_all_read(self):
         """Checkpoint dates can reorder the list. Once, at the end, so rows
         don't jump while being read."""
-        names = [name for name, _trained_at in self.app_state.get_models_newest_first()]
-        if names != list(self._items):
-            self._model_list_populate()
+        self._model_list_refresh()
 
     # ---- details -------------------------------------------------------
 
