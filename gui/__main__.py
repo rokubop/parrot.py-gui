@@ -7,7 +7,7 @@ def _preload_torch():
     if sys.platform == "win32":
         try:
             import torch  # noqa: F401
-        except ImportError:
+        except (ImportError, OSError):
             pass
 
 

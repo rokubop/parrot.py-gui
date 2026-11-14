@@ -1,3 +1,4 @@
+import html
 import os
 import threading
 from datetime import datetime
@@ -21,7 +22,7 @@ def _sound_count(labels):
     return len([label for label in labels if label != BACKGROUND_LABEL])
 
 
-def _model_accuracy(checkpoints):
+def _model_accuracy(checkpoints, net_count):
     """The ensemble's own score, from the net whose best epoch came last. Not
     the mean of the nets': the ensemble averages probabilities, and can beat
     every net in it. A lone net's score is the model's. None if not recorded."""
@@ -29,7 +30,7 @@ def _model_accuracy(checkpoints):
               if c.get("combined_accuracy") is not None and c.get("epoch") is not None]
     if scored:
         return max(scored, key=lambda c: c["epoch"])["combined_accuracy"]
-    if len(checkpoints) == 1:
+    if net_count == 1 and checkpoints:
         return checkpoints[0].get("accuracy")
     return None
 
@@ -215,6 +216,7 @@ class ModelsPage(QWidget):
         v.setSpacing(2)
 
         self.model_title = QLabel("")
+        self.model_title.setTextFormat(Qt.TextFormat.PlainText)
         v.addWidget(self.model_title)
         self.model_stats = QLabel("")
         v.addWidget(self.model_stats)
@@ -333,7 +335,7 @@ class ModelsPage(QWidget):
         # thread has segfaulted alongside Qt. Already loaded on Windows.
         try:
             import torch  # noqa: F401
-        except ImportError:
+        except (ImportError, OSError):
             pass  # Models with checkpoints then read as unreadable
         self.reader.read([name for name in names
                           if self.app_state.get_model_details_if_read(name) is None])
@@ -395,14 +397,14 @@ class ModelsPage(QWidget):
     def _facts_rows(self, name, details):
         """[(label, value)], only the ones the model's files record."""
         rows = []
-        accuracy = _model_accuracy(details.checkpoints)
+        accuracy = _model_accuracy(details.checkpoints, details.net_count)
         if accuracy is not None:
             rows.append(("Accuracy", percent_span([accuracy], 1)))
         when, source = details.trained_at
         if when:
             trained = trained_when(when, source, datetime.now())
             rows.append(("Trained", f"{trained} (file date)" if source == "mtime" else trained))
-        rows.append(("File", f"{name}.pkl"))
+        rows.append(("File", html.escape(f"{name}.pkl")))
         if details.pkl_bytes:
             rows.append(("Size", file_size_text(details.pkl_bytes)))
         net_accuracies = _net_accuracies(details.checkpoints)
