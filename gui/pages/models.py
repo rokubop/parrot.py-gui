@@ -335,7 +335,7 @@ class ModelsPage(QWidget):
         # thread has segfaulted alongside Qt. Already loaded on Windows.
         try:
             import torch  # noqa: F401
-        except (ImportError, OSError):
+        except Exception:
             pass  # Models with checkpoints then read as unreadable
         self.reader.read([name for name in names
                           if self.app_state.get_model_details_if_read(name) is None])
