@@ -81,8 +81,7 @@ class ModelsPage(QWidget):
         self.empty_state = QWidget()
         empty_layout = QVBoxLayout(self.empty_state)
         empty_layout.addStretch()
-        components.center_in(empty_layout, components.EmptyState(
-            "No models yet", "Models trained with settings.py show up here."))
+        components.center_in(empty_layout, components.EmptyState("No models yet"))
         right_layout.addWidget(self.empty_state, 1)
         splitter.addWidget(right)
 
