@@ -2,8 +2,12 @@ import sys
 
 
 def _preload_torch():
-    """On Windows torch fails to load (WinError 1114) once Qt's DLLs are in,
-    and the Models tab reads checkpoints with torch. About a second at launch."""
+    """Windows only. PyQt6 bundles its own msvcp140.dll. If Qt loads first,
+    torch gets that copy and fails (WinError 1114) whenever it was built
+    against a newer one. The Models tab reads checkpoints with torch.
+
+    About a second at launch. If torch won't load at all, models show as
+    unreadable."""
     if sys.platform == "win32":
         try:
             import torch  # noqa: F401
