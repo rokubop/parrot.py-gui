@@ -17,111 +17,6 @@ MODEL_COLUMN, TRAINED_COLUMN, SOUNDS_COLUMN, NETS_COLUMN = 0, 1, 2, 3
 SOUND_COLUMN, ACCURACY_COLUMN, NOTE_COLUMN = 0, 1, 2
 
 
-def _sound_count(labels):
-    """Silence is a class the trainer makes, not a sound anyone recorded."""
-    return len([label for label in labels if label != BACKGROUND_LABEL])
-
-
-def _model_accuracy(checkpoints, net_count):
-    """The ensemble's own score, from the net whose best epoch came last. Not
-    the mean of the nets': the ensemble averages probabilities, and can beat
-    every net in it. A lone net's score is the model's. None if not recorded."""
-    scored = [c for c in checkpoints
-              if c.get("combined_accuracy") is not None and c.get("epoch") is not None]
-    if scored:
-        return max(scored, key=lambda c: c["epoch"])["combined_accuracy"]
-    if net_count == 1 and checkpoints:
-        return checkpoints[0].get("accuracy")
-    return None
-
-
-def _net_accuracies(checkpoints):
-    return [c["accuracy"] for c in checkpoints if c.get("accuracy") is not None]
-
-
-def _best_epochs_text(checkpoints):
-    """'12' or '9-14'. +1: the trainer counts epochs from zero."""
-    epochs = [c["epoch"] + 1 for c in checkpoints if c.get("epoch") is not None]
-    if not epochs:
-        return ""
-    low, high = min(epochs), max(epochs)
-    return str(low) if low == high else f"{low}-{high}"
-
-
-def _sound_accuracies(checkpoints):
-    """{label: [each net's accuracy on it]}, on the samples the trainer held
-    back. Empty for models trained before label_accuracy was saved."""
-    scores = {}
-    for checkpoint in checkpoints:
-        for label, accuracy in (checkpoint.get("label_accuracy") or {}).items():
-            scores.setdefault(label, []).append(accuracy)
-    return scores
-
-
-class SoundItem(QTreeWidgetItem):
-    """Sorts the accuracy column by its lowest net. As text, 100% sorts below 97%."""
-
-    def __lt__(self, other):
-        column = self.treeWidget().sortColumn()
-        mine = self.data(column, Qt.ItemDataRole.UserRole)
-        theirs = other.data(column, Qt.ItemDataRole.UserRole)
-        if mine is None or theirs is None:
-            return super().__lt__(other)
-        return mine < theirs
-
-
-class ModelDetailsReader(QThread):
-    """Reads models' checkpoints off the UI thread, one model at a time so rows
-    fill in from the top. read() queues more, read_first() jumps the queue."""
-    model_read = pyqtSignal(str)
-    all_read = pyqtSignal()
-
-    def __init__(self, app_state, parent):
-        super().__init__(parent)
-        self.app_state = app_state
-        self._pending = []
-        self._lock = threading.Lock()
-        self.finished.connect(self._on_finished)
-        QApplication.instance().aboutToQuit.connect(self._stop)
-
-    def read(self, names):
-        with self._lock:
-            self._pending += [name for name in names if name not in self._pending]
-        if names and not self.isRunning():
-            self.start()
-
-    def read_first(self, name):
-        with self._lock:
-            if name in self._pending:
-                self._pending.remove(name)
-                self._pending.insert(0, name)
-
-    def run(self):
-        while (name := self._pending_pop()) is not None:
-            self.app_state.get_model_details(name)
-            self.model_read.emit(name)
-
-    def _pending_pop(self):
-        with self._lock:
-            return self._pending.pop(0) if self._pending else None
-
-    def _on_finished(self):
-        # A read() after run()'s last pop saw isRunning() and didn't start
-        with self._lock:
-            more = bool(self._pending)
-        if more:
-            self.start()
-        else:
-            self.all_read.emit()
-
-    def _stop(self):
-        """The read in progress finishes, the rest are dropped. A QThread
-        deleted while running aborts the app."""
-        with self._lock:
-            self._pending.clear()
-        self.wait()
-
-
 class ModelsPage(QWidget):
     """
     ┌ model_list ──────────────────────┐┌ model_header ───────────────────────────────────┐
@@ -444,3 +339,108 @@ class ModelsPage(QWidget):
             library_ops.open_in_file_manager(CLASSIFIER_FOLDER)
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't open folder", str(exc))
+
+
+def _sound_count(labels):
+    """Silence is a class the trainer makes, not a sound anyone recorded."""
+    return len([label for label in labels if label != BACKGROUND_LABEL])
+
+
+def _model_accuracy(checkpoints, net_count):
+    """The ensemble's own score, from the net whose best epoch came last. Not
+    the mean of the nets': the ensemble averages probabilities, and can beat
+    every net in it. A lone net's score is the model's. None if not recorded."""
+    scored = [c for c in checkpoints
+              if c.get("combined_accuracy") is not None and c.get("epoch") is not None]
+    if scored:
+        return max(scored, key=lambda c: c["epoch"])["combined_accuracy"]
+    if net_count == 1 and checkpoints:
+        return checkpoints[0].get("accuracy")
+    return None
+
+
+def _net_accuracies(checkpoints):
+    return [c["accuracy"] for c in checkpoints if c.get("accuracy") is not None]
+
+
+def _best_epochs_text(checkpoints):
+    """'12' or '9-14'. +1: the trainer counts epochs from zero."""
+    epochs = [c["epoch"] + 1 for c in checkpoints if c.get("epoch") is not None]
+    if not epochs:
+        return ""
+    low, high = min(epochs), max(epochs)
+    return str(low) if low == high else f"{low}-{high}"
+
+
+def _sound_accuracies(checkpoints):
+    """{label: [each net's accuracy on it]}, on the samples the trainer held
+    back. Empty for models trained before label_accuracy was saved."""
+    scores = {}
+    for checkpoint in checkpoints:
+        for label, accuracy in (checkpoint.get("label_accuracy") or {}).items():
+            scores.setdefault(label, []).append(accuracy)
+    return scores
+
+
+class SoundItem(QTreeWidgetItem):
+    """Sorts the accuracy column by its lowest net. As text, 100% sorts below 97%."""
+
+    def __lt__(self, other):
+        column = self.treeWidget().sortColumn()
+        mine = self.data(column, Qt.ItemDataRole.UserRole)
+        theirs = other.data(column, Qt.ItemDataRole.UserRole)
+        if mine is None or theirs is None:
+            return super().__lt__(other)
+        return mine < theirs
+
+
+class ModelDetailsReader(QThread):
+    """Reads models' checkpoints off the UI thread, one model at a time so rows
+    fill in from the top. read() queues more, read_first() jumps the queue."""
+    model_read = pyqtSignal(str)
+    all_read = pyqtSignal()
+
+    def __init__(self, app_state, parent):
+        super().__init__(parent)
+        self.app_state = app_state
+        self._pending = []
+        self._lock = threading.Lock()
+        self.finished.connect(self._on_finished)
+        QApplication.instance().aboutToQuit.connect(self._stop)
+
+    def read(self, names):
+        with self._lock:
+            self._pending += [name for name in names if name not in self._pending]
+        if names and not self.isRunning():
+            self.start()
+
+    def read_first(self, name):
+        with self._lock:
+            if name in self._pending:
+                self._pending.remove(name)
+                self._pending.insert(0, name)
+
+    def run(self):
+        while (name := self._pending_pop()) is not None:
+            self.app_state.get_model_details(name)
+            self.model_read.emit(name)
+
+    def _pending_pop(self):
+        with self._lock:
+            return self._pending.pop(0) if self._pending else None
+
+    def _on_finished(self):
+        # A read() after run()'s last pop saw isRunning() and didn't start
+        with self._lock:
+            more = bool(self._pending)
+        if more:
+            self.start()
+        else:
+            self.all_read.emit()
+
+    def _stop(self):
+        """The read in progress finishes, the rest are dropped. A QThread
+        deleted while running aborts the app."""
+        with self._lock:
+            self._pending.clear()
+        self.wait()
