@@ -20,13 +20,10 @@ SOUND_COLUMN, ACCURACY_COLUMN, NOTE_COLUMN = 0, 1, 2
 class ModelsPage(QWidget):
     """
     ┌ model_list ──────────────────────┐┌ model_header ───────────────────────────────────┐
-    │ Model    Trained      Sounds Nets││ model_title                                     │
-    │ model_a  Today             4    3││ model_stats                                     │
-    │ model_b  Nov 02, 2026      2    1││ open_folder_btn                                 │
+    │                                  ││ model_title                                     │
+    │                                  ││ model_stats                                     │
     │                                  │├ details ────────────────────────────────────────┤
-    │                                  ││ sound_tree                  facts               │
-    │                                  ││ Sound  Accuracy            Accuracy  97.8%      │
-    │                                  ││ pop    96-99%              Trained   Today      │
+    │                                  ││ sound_tree                    facts             │
     │                                  ││                                                 │
     │                                  ││                                                 │
     └──────────────────────────────────┘└─────────────────────────────────────────────────┘
