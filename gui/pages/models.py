@@ -324,7 +324,7 @@ class ModelsPage(QWidget):
         self.sound_tree.clear()
         for label in details.labels:
             scores = accuracies.get(label)
-            note = "from the quiet in your recordings" if label == BACKGROUND_LABEL else ""
+            note = "from all your recordings" if label == BACKGROUND_LABEL else ""
             item = SoundItem([label, percent_span(scores, 0) if scores else "", note])
             item.setTextAlignment(ACCURACY_COLUMN, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if scores:
