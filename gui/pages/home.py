@@ -13,7 +13,8 @@ from gui.services import library_ops
 
 
 class _StepCard(QFrame):
-    """One numbered bubble in the Record -> Train -> Integrations strip."""
+    """One numbered bubble in the Record -> Train strip. number None: a card
+    after the steps, no bubble."""
 
     def __init__(self, number, title, action_text, parent=None):
         super().__init__(parent)
@@ -34,6 +35,10 @@ class _StepCard(QFrame):
         self.title.setWordWrap(True)
         bubble_row.addWidget(self.title, 1,
                              Qt.AlignmentFlag.AlignVCenter)
+        if number is None:
+            self.bubble.hide()
+            # Status lines up with the steps' beside it
+            self.title.setMinimumHeight(self.bubble.height())
         v.addLayout(bubble_row)
         self.status = QLabel("")
         self.status.setWordWrap(True)
@@ -73,14 +78,14 @@ class _StepCard(QFrame):
 
 class HomePage(QWidget):
     """
-    ┌──────────────────────────────────────────────────────────┐
-    │ hero_title                                               │
-    │ hero_sub                                                 │
-    │                                                          │
-    │ ┌ step_record ───┐ ┌ step_train ────┐ ┌ step_connect ──┐ │
-    │ │ _StepCard      │ │ _StepCard      │ │ _StepCard      │ │
-    │ └────────────────┘ └────────────────┘ └────────────────┘ │
-    └──────────────────────────────────────────────────────────┘
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │ hero_title                                                           │
+    │ hero_sub                                                             │
+    │                                                                      │
+    │ ┌ step_record ───────┐ ┌ step_train ────────┐ ┌ integrations_card ─┐ │
+    │ │ _StepCard          │ │ _StepCard          │ │ _StepCard          │ │
+    │ └────────────────────┘ └────────────────────┘ └────────────────────┘ │
+    └──────────────────────────────────────────────────────────────────────┘
     """
     navigate = pyqtSignal(str)   # tab name, handled by MainWindow
 
@@ -133,13 +138,13 @@ class HomePage(QWidget):
         steps_row.setSpacing(12)
         self.step_record = _StepCard(1, "Record sounds", "Open sounds")
         self.step_train = _StepCard(2, "Train a model", "Open models")
-        self.step_connect = _StepCard(3, "Integrations", "Open models folder")
+        self.integrations_card = _StepCard(None, "Integrations", "Open models folder")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
-        self.step_connect.action.clicked.connect(self._on_open_models_folder)
-        self.step_connect.action.setToolTip(
+        self.integrations_card.action.clicked.connect(self._on_open_models_folder)
+        self.integrations_card.action.setToolTip(
             "The folder holding your .pkl files, to copy one into an integration")
-        for card in (self.step_record, self.step_train, self.step_connect):
+        for card in (self.step_record, self.step_train, self.integrations_card):
             steps_row.addWidget(card, 1)
         v.addLayout(steps_row)
 
@@ -196,16 +201,11 @@ class HomePage(QWidget):
 
         s3 = ("Copy a .pkl from the models folder into your integration."
               if model_names else "Train a model first.")
-        self.step_connect.action.setEnabled(bool(model_names))
 
-        if model_names:
-            # Guidance ends at the first model: after that the user could be
-            # doing any step, and an integration can't be seen from here.
-            self.step_record.set_state(False, False, s1)
-            self.step_train.set_state(False, False, s2)
-            self.step_connect.set_state(False, False, s3)
-            return
-        current = 1 if step1_done else 0
+        current = next((i for i, done in enumerate((step1_done, step2_done))
+                        if not done), None)
         self.step_record.set_state(step1_done, current == 0, s1)
-        self.step_train.set_state(False, current == 1, s2)
-        self.step_connect.set_state(False, False, s3)
+        self.step_train.set_state(step2_done, current == 1, s2)
+        # Never done or current: what happens in an integration can't be seen
+        self.integrations_card.set_state(False, False, s3)
+        self.integrations_card.action.setEnabled(bool(model_names))
