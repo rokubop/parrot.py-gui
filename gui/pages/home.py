@@ -12,9 +12,12 @@ from gui import components, theme
 from gui.services import library_ops
 
 
+BUBBLE_SIZE = 36
+
+
 class _StepCard(QFrame):
-    """One numbered bubble in the Record -> Train strip. number None: a card
-    after the steps, no bubble."""
+    """Title, status and one button. A numbered card is a step, with a bubble
+    that ticks when done. number None: no bubble, never done or current."""
 
     def __init__(self, number, title, action_text, parent=None):
         super().__init__(parent)
@@ -23,22 +26,22 @@ class _StepCard(QFrame):
         v.setContentsMargins(18, 18, 18, 16)
         v.setSpacing(6)
 
-        self.bubble = QLabel(str(number))
-        self.bubble.setObjectName("stepBubble")
-        self.bubble.setFixedSize(36, 36)
-        self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bubble_row = QHBoxLayout()
         bubble_row.setSpacing(10)
-        bubble_row.addWidget(self.bubble)
         self.number = number
+        self.bubble = None
+        if number is not None:
+            self.bubble = QLabel(str(number))
+            self.bubble.setObjectName("stepBubble")
+            self.bubble.setFixedSize(BUBBLE_SIZE, BUBBLE_SIZE)
+            self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            bubble_row.addWidget(self.bubble)
         self.title = QLabel(title)
         self.title.setWordWrap(True)
+        # Status lines up across cards, bubble or not
+        self.title.setMinimumHeight(BUBBLE_SIZE)
         bubble_row.addWidget(self.title, 1,
                              Qt.AlignmentFlag.AlignVCenter)
-        if number is None:
-            self.bubble.hide()
-            # Status lines up with the steps' beside it
-            self.title.setMinimumHeight(self.bubble.height())
         v.addLayout(bubble_row)
         self.status = QLabel("")
         self.status.setWordWrap(True)
@@ -52,14 +55,8 @@ class _StepCard(QFrame):
 
     def set_state(self, done, current, status_text):
         t = theme.colors()
-        self.bubble.setText("✓" if done else str(self.number))
-        bubble_bg = t["accent"] if done else (t["button"] if not current else t["panel"])
-        bubble_fg = t["accent_text"] if done else t["text_bright"]
-        bubble_border = t["accent"] if (done or current) else t["border"]
-        self.bubble.setStyleSheet(
-            f"QLabel#stepBubble {{ background-color: {bubble_bg}; color: {bubble_fg}; "
-            f"border: 2px solid {bubble_border}; border-radius: 18px; "
-            f"font-size: {theme.TYPE_SCALE['card']}px; font-weight: bold; }}")
+        if self.bubble is not None:
+            self._bubble_update(done, current)
         border = t["accent"] if current else t["border"]
         self.setStyleSheet(
             f"QFrame#stepCard {{ background-color: {t['card']}; "
@@ -75,17 +72,28 @@ class _StepCard(QFrame):
         self.action.setObjectName("primaryAction" if current else "")
         self.action.setStyleSheet(components.primary_button_style() if current else "")
 
+    def _bubble_update(self, done, current):
+        t = theme.colors()
+        self.bubble.setText("✓" if done else str(self.number))
+        bubble_bg = t["accent"] if done else (t["button"] if not current else t["panel"])
+        bubble_fg = t["accent_text"] if done else t["text_bright"]
+        bubble_border = t["accent"] if (done or current) else t["border"]
+        self.bubble.setStyleSheet(
+            f"QLabel#stepBubble {{ background-color: {bubble_bg}; color: {bubble_fg}; "
+            f"border: 2px solid {bubble_border}; border-radius: {BUBBLE_SIZE // 2}px; "
+            f"font-size: {theme.TYPE_SCALE['card']}px; font-weight: bold; }}")
+
 
 class HomePage(QWidget):
     """
-    ┌──────────────────────────────────────────────────────────────────────┐
-    │ hero_title                                                           │
-    │ hero_sub                                                             │
-    │                                                                      │
-    │ ┌ step_record ───────┐ ┌ step_train ────────┐ ┌ integrations_card ─┐ │
-    │ │ _StepCard          │ │ _StepCard          │ │ _StepCard          │ │
-    │ └────────────────────┘ └────────────────────┘ └────────────────────┘ │
-    └──────────────────────────────────────────────────────────────────────┘
+    ┌────────────────────────────────────────────────────────────────┐
+    │ hero_title                                                     │
+    │ hero_sub                                                       │
+    │                                                                │
+    │ ┌ step_record ─────┐ ┌ step_train ──────┐ ┌ use_model_card ──┐ │
+    │ │ _StepCard        │ │ _StepCard        │ │ _StepCard        │ │
+    │ └──────────────────┘ └──────────────────┘ └──────────────────┘ │
+    └────────────────────────────────────────────────────────────────┘
     """
     navigate = pyqtSignal(str)   # tab name, handled by MainWindow
 
@@ -138,13 +146,13 @@ class HomePage(QWidget):
         steps_row.setSpacing(12)
         self.step_record = _StepCard(1, "Record sounds", "Open sounds")
         self.step_train = _StepCard(2, "Train a model", "Open models")
-        self.integrations_card = _StepCard(None, "Integrations", "Open models folder")
+        self.use_model_card = _StepCard(None, "Use a model", "Open models folder")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
-        self.integrations_card.action.clicked.connect(self._on_open_models_folder)
-        self.integrations_card.action.setToolTip(
-            "The folder holding your .pkl files, to copy one into an integration")
-        for card in (self.step_record, self.step_train, self.integrations_card):
+        self.use_model_card.action.clicked.connect(self._on_open_models_folder)
+        self.use_model_card.action.setToolTip(
+            "The folder holding your .pkl files")
+        for card in (self.step_record, self.step_train, self.use_model_card):
             steps_row.addWidget(card, 1)
         v.addLayout(steps_row)
 
@@ -199,13 +207,11 @@ class HomePage(QWidget):
             noun = "model" if len(model_names) == 1 else "models"
             s2 = f"{len(model_names)} {noun} trained."
 
-        s3 = ("Copy a .pkl from the models folder into your integration."
-              if model_names else "Train a model first.")
+        use_model_status = ("Your model is a .pkl file. Copy it into the program "
+                            "that uses it." if model_names else "Train a model first.")
 
-        current = next((i for i, done in enumerate((step1_done, step2_done))
-                        if not done), None)
-        self.step_record.set_state(step1_done, current == 0, s1)
-        self.step_train.set_state(step2_done, current == 1, s2)
-        # Never done or current: what happens in an integration can't be seen
-        self.integrations_card.set_state(False, False, s3)
-        self.integrations_card.action.setEnabled(bool(model_names))
+        self.step_record.set_state(step1_done, not step1_done, s1)
+        self.step_train.set_state(step2_done, step1_done and not step2_done, s2)
+        # No tick: the app can't see where a model goes
+        self.use_model_card.set_state(False, False, use_model_status)
+        self.use_model_card.action.setEnabled(bool(model_names))
