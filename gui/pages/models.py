@@ -23,9 +23,11 @@ class ModelsPage(QWidget):
     │                                  ││ model_title                                     │
     │                                  ││ model_stats                                     │
     │                                  │├ details ────────────────────────────────────────┤
-    │                                  ││ sound_tree                    facts             │
-    │                                  ││                                                 │
-    │                                  ││                                                 │
+    │                                  ││ ┌ sound_tree ────────────────┐┌ facts ─────────┐│
+    │                                  ││ │                            ││                ││
+    │                                  ││ │                            ││                ││
+    │                                  ││ │                            ││                ││
+    │                                  ││ └────────────────────────────┘└────────────────┘│
     └──────────────────────────────────┘└─────────────────────────────────────────────────┘
 
     Nothing is read until the tab is first shown: checkpoints need torch.
