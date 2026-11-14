@@ -65,7 +65,8 @@ class AppState:
                 details = self._model_details_load(name)
             except Exception:
                 # Example: the pkl deleted mid-read. No labels shows as unreadable.
-                details = ModelDetails(labels=[], checkpoints=[], net_count=0,
+                details = ModelDetails(labels=[], checkpoints=[],
+                                       net_count=self.get_net_count(name),
                                        trained_at=models.get_trained_at(name), pkl_bytes=0)
             self._model_details_cache[name] = details
         return self._model_details_cache[name]
