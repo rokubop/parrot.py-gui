@@ -29,8 +29,6 @@ class ModelsPage(QWidget):
     │                                  ││ │                            ││                ││
     │                                  ││ └────────────────────────────┘└────────────────┘│
     └──────────────────────────────────┘└─────────────────────────────────────────────────┘
-
-    Nothing is read until the tab is first shown: checkpoints need torch.
     """
 
     def __init__(self, app_state, parent=None):
