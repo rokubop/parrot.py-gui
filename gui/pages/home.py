@@ -144,14 +144,14 @@ class HomePage(QWidget):
 
         steps_row = QHBoxLayout()
         steps_row.setSpacing(12)
-        self.step_record = _StepCard(1, "Record sounds", "Open sounds")
-        self.step_train = _StepCard(2, "Train a model", "Open models")
+        self.step_record = _StepCard(1, "Record sounds", "Go to Sounds")
+        self.step_train = _StepCard(2, "Train a model", "Go to Models")
         self.use_model_card = _StepCard(None, "Use a model", "Open models folder")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
         self.use_model_card.action.clicked.connect(self._on_open_models_folder)
         self.use_model_card.action.setToolTip(
-            "The folder holding your .pkl files")
+            "The folder holding your .pkl files, to copy one into an integration")
         for card in (self.step_record, self.step_train, self.use_model_card):
             steps_row.addWidget(card, 1)
         v.addLayout(steps_row)
@@ -207,8 +207,8 @@ class HomePage(QWidget):
             noun = "model" if len(model_names) == 1 else "models"
             s2 = f"{len(model_names)} {noun} trained."
 
-        use_model_status = ("Your model is a .pkl file. Copy it into the program "
-                            "that uses it." if model_names else "Train a model first.")
+        use_model_status = ("Copy a .pkl from the models folder into your integration."
+                            if model_names else "Train a model first.")
 
         self.step_record.set_state(step1_done, not step1_done, s1)
         self.step_train.set_state(step2_done, step1_done and not step2_done, s2)
