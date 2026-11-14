@@ -60,8 +60,6 @@ class ModelsPage(QWidget):
         self.model_list.setHeaderLabels(["Model", "Trained", "Sounds", "Nets"])
         self.model_list.setRootIsDecorated(False)
         self.model_list.setUniformRowHeights(True)
-        self.model_list.headerItem().setToolTip(
-            NETS_COLUMN, "Every net hears every sound, and their answers are averaged")
         header = self.model_list.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(MODEL_COLUMN, QHeaderView.ResizeMode.Stretch)
