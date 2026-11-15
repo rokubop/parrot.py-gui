@@ -425,9 +425,10 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
                     if is_rejected(detection_state.strategy, current_occurrence, detection_state.ms_per_frame, is_continuous):
                         total_rejected_frames = len(current_occurrence)
                         current_label.ms_detected -= total_rejected_frames * detection_state.ms_per_frame
-                        current_label = None
                         for frame_index in range(-total_rejected_frames - 1, 0, 1):
                             rejected_frame_index = index + frame_index
+                            if rejected_frame_index < 0:
+                                continue
                             frames[rejected_frame_index].label = BACKGROUND_LABEL
                             frames[rejected_frame_index].positive = False
                     current_occurrence = []
