@@ -374,7 +374,7 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
             # Do a secondary pass if the previous label was negative
             # As we can use its thresholds for correcting late starts
             mending_offset = 0
-            if detected and not frames[index - 1].positive:
+            if detected and index > 0 and not frames[index - 1].positive:
                  for label in detection_state.labels:
                      if current_label.label == label.label and is_detected_secondary(detection_state, frame, label):
                         label.ms_detected += detection_state.ms_per_frame
@@ -385,7 +385,7 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
                             false_occurrence.pop()
                          
                          # Only do three frames of late start fixing as longer late starts statistically do not seem to occur
-                        if not frames[index - 2].positive and is_detected_secondary(detection_state, frames[index - 1], label):
+                        if index > 1 and not frames[index - 2].positive and is_detected_secondary(detection_state, frames[index - 1], label):
                             label.ms_detected += detection_state.ms_per_frame
                             frames[index - 2].label = current_label.label
                             frames[index - 2].positive = True
