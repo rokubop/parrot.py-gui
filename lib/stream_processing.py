@@ -191,7 +191,7 @@ def process_audio_frame(index, audioFrames, detection_state, detection_frames, c
     if detected == False and len(current_occurrence) > 0:
         is_continuous = False
         for label in detection_state.labels:
-            if label == current_occurrence[0].label:
+            if label.label == current_occurrence[0].label:
                 is_continuous = label.duration_type == "continuous"
                 break
 
@@ -418,7 +418,7 @@ def post_processing(frames: List[DetectionFrame], detection_state: DetectionStat
                 if len(current_occurrence) > 0:
                     is_continuous = False
                     for label in detection_state.labels:
-                        if label == current_occurrence[0].label:
+                        if label.label == current_occurrence[0].label:
                             is_continuous = label.duration_type == "continuous"
                             break
 
