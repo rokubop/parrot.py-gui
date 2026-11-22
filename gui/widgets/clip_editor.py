@@ -177,7 +177,7 @@ class ClipEditorWidget(QWidget):
         self.audio_graph.load(wav_path, srt_path, label, view=view)
         self.refresh_levels()
         if reset_view:
-            self.audio_graph.fit_full()
+            self.audio_graph.zoom_to_full()
         self.audio_graph.set_busy(False)
         self.refresh_history_buttons()
 
@@ -231,11 +231,11 @@ class ClipEditorWidget(QWidget):
     # ---- view toggles ---------------------------------------------------
 
     def fit(self):
-        self.audio_graph.toggle_fit()
+        self.audio_graph.toggle_zoom()
 
     def deselect_or_start(self):
         """D/Esc: drop the selection if there is one, else jump to the start."""
-        if self.audio_graph.current_selection() is not None:
+        if self.audio_graph.selection() is not None:
             self.audio_graph.clear_selection()
         else:
             self.on_seek(0.0)
@@ -270,7 +270,7 @@ class ClipEditorWidget(QWidget):
     def delete_selection(self):
         if self.is_busy() or not self.wav_path:
             return
-        sel = self.audio_graph.current_selection()
+        sel = self.audio_graph.selection()
         if not sel or sel[1] - sel[0] <= 0:
             self.status.emit(f"Select part of the {self.noun} first, then Delete.")
             return
@@ -420,7 +420,7 @@ class ClipEditorWidget(QWidget):
         self._ensure_audio()
         if self._samples is None or not self._sample_rate:
             return
-        sel = self.audio_graph.current_selection()
+        sel = self.audio_graph.selection()
         if sel and sel[1] - sel[0] > 0:
             self._playhead_position, self._stop_at = sel
         else:

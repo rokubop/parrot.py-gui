@@ -7,19 +7,24 @@ ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 
 def _preload():
-    """Everything slow, in the order Windows needs it.
-
-    On Windows, torch's DLLs fail to initialize if Qt's are loaded first
-    (WinError 1114), and torch is imported lazily everywhere else, so it
-    must be resident before the first PyQt6 import.
-    """
-    if os.name == "nt":
-        try:
-            import torch  # noqa: F401
-        except ImportError:
-            pass
+    """Everything slow, in the order Windows needs it."""
+    _preload_torch()
     _claim_dpi_awareness()
     import gui.app  # noqa: F401
+
+
+def _preload_torch():
+    """Windows only. PyQt6 bundles its own msvcp140.dll. If Qt loads first,
+    torch gets that copy and fails (WinError 1114) whenever it was built
+    against a newer one. The Models tab reads checkpoints with torch.
+
+    About a second at launch. If torch won't load at all, models show as
+    unreadable."""
+    if sys.platform == "win32":
+        try:
+            import torch  # noqa: F401
+        except Exception:
+            pass
 
 
 def _claim_dpi_awareness():

@@ -21,6 +21,11 @@ class MainWindow(QMainWindow):
     ├ page_stack ──────────────────────────────────────────────┤
     │ individual page shown by _show_page()                    │
     │                                                          │
+    │                                                          │
+    │                                                          │
+    │                                                          │
+    ├ status_bar ──────────────────────────────────────────────┤
+    │ keyboard shortcuts if applicable                         │
     └──────────────────────────────────────────────────────────┘
     """
 
@@ -123,7 +128,7 @@ class MainWindow(QMainWindow):
         self.keys_label.setStyleSheet(f"color: {theme.colors()['text_dim']}; padding-right: 8px;")
         self.status_bar.addPermanentWidget(self.keys_label)
         self._wire_keybindings(self.sounds_page)
-        self._refresh_keybindings()
+        self._refresh_keys_label()
         self._build_zoom_shortcuts()
         # Otherwise Qt focuses the first Tab stop on launch, and the Home tab
         # keeps a ring no click clears
@@ -306,7 +311,7 @@ class MainWindow(QMainWindow):
         # Focus moves with the page, so a ring from the last page doesn't
         # linger. A page draws none, and Tab starts from it
         current.setFocus()
-        self._refresh_keybindings()
+        self._refresh_keys_label()
 
     # ---- profile chip ---------------------------------------------------
 
@@ -477,10 +482,10 @@ class MainWindow(QMainWindow):
         into the status bar, but only while it's the visible page."""
         sig = getattr(page, "keybindings_changed", None)
         if sig is not None:
-            sig.connect(lambda p=page: self._refresh_keybindings()
+            sig.connect(lambda p=page: self._refresh_keys_label()
                         if self.page_stack.currentWidget() is p else None)
 
-    def _refresh_keybindings(self):
-        page = self.page_stack.currentWidget()
-        getter = getattr(page, "keybinding_hint", None)
-        self.keys_label.setText(getter() if callable(getter) else "")
+    def _refresh_keys_label(self):
+        """The shown page's keys, from its keybinding_hint(), if it has one."""
+        hint = getattr(self.page_stack.currentWidget(), "keybinding_hint", None)
+        self.keys_label.setText(hint() if callable(hint) else "")

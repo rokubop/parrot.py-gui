@@ -44,15 +44,16 @@ class _ModelSoundsWorker(QThread):
         self._name = name
 
     def run(self):
-        try:
-            facts = self._app_state.get_model_facts(self._name)
-            self.loaded.emit(self._name, facts["labels"] or None)
-        except Exception:
-            self.loaded.emit(self._name, None)
+        labels = self._app_state.get_model_details(self._name).labels
+        self.loaded.emit(self._name, labels or None)
+
+
+BUBBLE_SIZE = 36
 
 
 class _StepCard(QFrame):
-    """One numbered bubble in the Record -> Train -> Connect strip."""
+    """Title, status and one button. Numbered: a step, with a bubble that
+    ticks when done. number=None: a plain card."""
 
     def __init__(self, number, title, action_text, parent=None):
         super().__init__(parent)
@@ -61,18 +62,20 @@ class _StepCard(QFrame):
         v.setContentsMargins(18, 18, 18, 16)
         v.setSpacing(6)
 
-        # Number and title share a row; a bubble row of its own pushed the
-        # status line down a step.
-        self.bubble = QLabel(str(number))
-        self.bubble.setObjectName("stepBubble")
-        self.bubble.setFixedSize(36, 36)
-        self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bubble_row = QHBoxLayout()
         bubble_row.setSpacing(10)
-        bubble_row.addWidget(self.bubble)
         self.number = number
+        self.bubble = None
+        if number is not None:
+            self.bubble = QLabel(str(number))
+            self.bubble.setObjectName("stepBubble")
+            self.bubble.setFixedSize(BUBBLE_SIZE, BUBBLE_SIZE)
+            self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            bubble_row.addWidget(self.bubble)
         self.title = QLabel(title)
         self.title.setWordWrap(True)
+        # Status lines up across cards, bubble or not
+        self.title.setMinimumHeight(BUBBLE_SIZE)
         bubble_row.addWidget(self.title, 1,
                              Qt.AlignmentFlag.AlignVCenter)
         self.help_btn = QPushButton("?  Help")
@@ -91,20 +94,10 @@ class _StepCard(QFrame):
         v.addWidget(self.action)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-    def set_state(self, done, current, status_text,
-                  action_text=None, action_primary=False):
-        """action_text swaps the button's job as the user progresses;
-        action_primary keeps the bright styling on it even when the step is
-        done - the ongoing main action."""
+    def set_state(self, done, current, status_text):
         t = theme.colors()
-        self.bubble.setText("✓" if done else str(self.number))
-        bubble_bg = t["accent"] if done else (t["button"] if not current else t["panel"])
-        bubble_fg = t["accent_text"] if done else t["text_bright"]
-        bubble_border = t["accent"] if (done or current) else t["border"]
-        self.bubble.setStyleSheet(
-            f"QLabel#stepBubble {{ background-color: {bubble_bg}; color: {bubble_fg}; "
-            f"border: 2px solid {bubble_border}; border-radius: 18px; "
-            f"font-size: {theme.TYPE_SCALE['card']}px; font-weight: bold; }}")
+        if self.bubble is not None:
+            self._bubble_update(done, current)
         border = t["accent"] if current else t["border"]
         self.setStyleSheet(
             f"QFrame#stepCard {{ background-color: {t['card']}; "
@@ -123,25 +116,31 @@ class _StepCard(QFrame):
         self.status.setText(status_text)
         # Screen readers skip the label, so the button carries the status
         self.action.setAccessibleDescription(status_text)
-        if action_text is not None:
-            self.action.setText(action_text)
-        self.action.setObjectName(
-            "primaryAction" if (current or action_primary) else "")
-        self.action.setStyleSheet(
-            components.primary_button_style()
-            if (current or action_primary) else "")
+        self.action.setObjectName("primaryAction" if current else "")
+        self.action.setStyleSheet(components.primary_button_style() if current else "")
+
+    def _bubble_update(self, done, current):
+        t = theme.colors()
+        self.bubble.setText("✓" if done else str(self.number))
+        bubble_bg = t["accent"] if done else (t["button"] if not current else t["panel"])
+        bubble_fg = t["accent_text"] if done else t["text_bright"]
+        bubble_border = t["accent"] if (done or current) else t["border"]
+        self.bubble.setStyleSheet(
+            f"QLabel#stepBubble {{ background-color: {bubble_bg}; color: {bubble_fg}; "
+            f"border: 2px solid {bubble_border}; border-radius: {BUBBLE_SIZE // 2}px; "
+            f"font-size: {theme.TYPE_SCALE['card']}px; font-weight: bold; }}")
 
 
 class HomePage(QWidget):
     """
-    ┌──────────────────────────────────────────────────────────┐
-    │ hero_title                                               │
-    │ hero_sub                                                 │
-    │                                                          │
-    │ ┌ step_record ───┐ ┌ step_train ────┐ ┌ step_use ──────┐ │
-    │ │ _StepCard      │ │ _StepCard      │ │ _StepCard      │ │
-    │ └────────────────┘ └────────────────┘ └────────────────┘ │
-    └──────────────────────────────────────────────────────────┘
+    ┌────────────────────────────────────────────────────────────────┐
+    │ hero_title                                                     │
+    │ hero_sub                                                       │
+    │                                                                │
+    │ ┌ step_record ─────┐ ┌ step_train ──────┐ ┌ use_model_card ──┐ │
+    │ │ _StepCard        │ │ _StepCard        │ │ _StepCard        │ │
+    │ └──────────────────┘ └──────────────────┘ └──────────────────┘ │
+    └────────────────────────────────────────────────────────────────┘
     """
     navigate = pyqtSignal(str)   # tab name, handled by MainWindow
 
@@ -204,16 +203,18 @@ class HomePage(QWidget):
         steps_row.setContentsMargins(0, 0, 0, 0)
         steps_row.setSpacing(12)
         # Title says the step, button says where it happens.
-        self.step_record = _StepCard(1, "Record sounds", "Open sounds")
-        self.step_train = _StepCard(2, "Train a model", "Open models")
-        self.step_connect = _StepCard(3, "Integrations", "Open integrations")
+        self.step_record = _StepCard(1, "Record sounds", "Go to Sounds")
+        self.step_train = _StepCard(2, "Train a model", "Go to Models")
+        self.use_model_card = _StepCard(None, "Use a model", "Go to Integrations")
         self.step_record.action.clicked.connect(lambda: self.navigate.emit("Sounds"))
         self.step_train.action.clicked.connect(lambda: self.navigate.emit("Models"))
-        self.step_connect.action.clicked.connect(self._on_connect_action)
+        self.use_model_card.action.clicked.connect(lambda: self.navigate.emit("Integrations"))
+        self.use_model_card.action.setToolTip(
+            "Where your model file is, and how to take it elsewhere")
         self.step_record.help_btn.clicked.connect(lambda: self._show_help("record"))
         self.step_train.help_btn.clicked.connect(lambda: self._show_help("train"))
-        self.step_connect.help_btn.clicked.connect(lambda: self._show_help("model_file"))
-        for card in (self.step_record, self.step_train, self.step_connect):
+        self.use_model_card.help_btn.clicked.connect(lambda: self._show_help("model_file"))
+        for card in (self.step_record, self.step_train, self.use_model_card):
             steps_row.addWidget(card, 1)
         v.addWidget(self.steps_widget)
 
@@ -304,10 +305,6 @@ class HomePage(QWidget):
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't open folder", str(exc))
 
-    def _on_connect_action(self):
-        """Step 3's button. The tab says where the model file is."""
-        self.navigate.emit("Integrations")
-
     def _on_dismiss_import(self):
         from gui.services import profiles as profiles_service
         profiles_service.dismiss_import_card()
@@ -381,9 +378,9 @@ class HomePage(QWidget):
             s1 = f"{len(labels)} sounds recorded."
 
         step2_done = bool(model_names)
-        latest_name = self.app_state.get_latest_model_name()
-        latest_trained_at = (self.app_state.get_model_trained_at(latest_name) or 0
-                             if latest_name else 0)
+        latest_name, (latest_trained_at, _source) = (
+            self.app_state.get_latest_model() or (None, (None, None)))
+        latest_trained_at = latest_trained_at or 0
         if not model_names:
             s2 = "No models yet."
         else:
@@ -391,23 +388,14 @@ class HomePage(QWidget):
             s2 = (f"{len(model_names)} {noun} · latest “{latest_name}” "
                   f"trained {_ago(latest_trained_at)}.")
 
-        # Nothing outside the app can be observed, so having a model to hand
-        # over is as far as this step can honestly get.
-        step3_done = step2_done
-        s3 = (f"“{latest_name}.pkl” is ready to use."
-              if latest_name else "Train a model first.")
+        use_model_status = ("Copy a .pkl from the models folder into your integration."
+                            if model_names else "Train a model first.")
 
-        current = next((i for i, done in enumerate(
-            (step1_done, step2_done, step3_done)) if not done), None)
-        self.step_record.set_state(step1_done, current == 0, s1)
-        self.step_train.set_state(step2_done, current == 1, s2)
-        # Bright once done, but only when no earlier step is unfinished:
-        # one accent button at a time.
-        self.step_connect.set_state(
-            step3_done, current == 2, s3,
-            action_primary=step3_done and current is None)
-        self.step_connect.action.setToolTip(
-            "Where your model file is, and how to take it elsewhere")
+        self.step_record.set_state(step1_done, not step1_done, s1)
+        self.step_train.set_state(step2_done, step1_done and not step2_done, s2)
+        # No tick: the app can't see where a model goes
+        self.use_model_card.set_state(False, False, use_model_status)
+        self.use_model_card.action.setEnabled(bool(model_names))
 
         self.status_title.setVisible(not first_run)
         self.status_row_widget.setVisible(not first_run)

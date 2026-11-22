@@ -7,335 +7,93 @@ Net count is listed alongside date and sounds because every net runs on every
 frame and the scores are averaged (TinyAudioNetEnsemble.forward), so it is
 part of what the model costs to run, not a spent training decision.
 """
+import html
 import os
-import time
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor
+import threading
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
-    QHeaderView, QListWidget, QListWidgetItem, QPushButton, QSplitter,
-    QLineEdit, QInputDialog, QMessageBox, QFrame, QDialog, QMenu
+    QHeaderView, QSplitter, QFrame, QPushButton, QMessageBox, QApplication,
+    QListWidget, QListWidgetItem, QLineEdit, QInputDialog, QDialog, QMenu
 )
-
-from config.config import BACKGROUND_LABEL
-from gui import components, theme
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor
+from config.config import BACKGROUND_LABEL, CLASSIFIER_FOLDER
 from gui.services import balance, library_ops
+from gui import components, theme
+from gui.formatters import trained_when, file_size_text, percent_span
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.widgets import help_dialog
 from gui.workers.combine_worker import CombineWorker
 from lib import models
-from lib.print_status import get_quantity_rating
-from gui import content
 
-
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-
-
-UNSURE_DATE_TIP = ("File date, not a training record. Copying or restoring "
-                   "your data folder resets it.\nModels trained from now on "
-                   "carry their real date inside the file.")
-
-
-def _trained_when(when, source="checkpoint"):
-    """Absolute date with year (gaps here are measured in months); relative
-    only within a week. An "mtime" source is a file date, not a training
-    record, so it gets a ~ and never a relative form."""
-    if not when:
-        return ""
-    stamp = time.localtime(when)
-    on_date = f"{_MONTHS[stamp.tm_mon - 1]} {stamp.tm_mday}, {stamp.tm_year}"
-    if source == "mtime":
-        return f"~{on_date}"
-    days = int((time.time() - when) // 86400)
-    if days <= 0:
-        return "Today"
-    if days == 1:
-        return "Yesterday"
-    if days < 7:
-        return f"{days} days ago"
-    return on_date
-
-
-def _human_size(num_bytes):
-    size = float(num_bytes)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
-            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
-        size /= 1024
-
-
-def _span(values, fmt):
-    """One value, or lowest to highest. Nets that landed on the same number
-    should not be made to look like a range."""
-    low, high = fmt(min(values)), fmt(max(values))
-    return low if low == high else f"{low}-{high}"
-
-
-def _net_scores(meta):
-    """Per-net accuracy span. Never averaged into one figure - the ensemble
-    means probabilities, so its accuracy is not the mean of these."""
-    nets = meta.get("nets") or []
-    scores = [n["accuracy"] for n in nets if n.get("accuracy") is not None]
-    if not scores:
-        return ""
-    return f"{_span(scores, lambda v: f'{v * 100:.1f}')}%"
-
-
-def _best_epochs(meta):
-    """+1 throughout: the trainer counts from zero, every screen from one.
-    Each net's BEST checkpoint lands at its own peak epoch, hence the range."""
-    epochs = [n["epoch"] for n in (meta.get("nets") or [])
-              if n.get("epoch") is not None]
-    if not epochs:
-        return ""
-    return _span(epochs, lambda v: str(v + 1))
-
-
-def _combined_score(meta):
-    """The ensemble's own score - the model's accuracy as it is used. Not
-    bounded by the per-net span (an ensemble can beat every net in it).
-    Highest epoch = the last measurement."""
-    scored = [n for n in (meta.get("nets") or [])
-              if n.get("combined_accuracy") is not None
-              and n.get("epoch") is not None]
-    if not scored:
-        return ""
-    latest = max(scored, key=lambda n: n["epoch"])
-    return f"{latest['combined_accuracy'] * 100:.1f}%"
-
-
-def _training_data(meta):
-    """Roughly how much audio the run trained on, from label_frames.
-
-    Post-balancing, so not the setup screen's "Recorded": repeated frames count
-    every time the trainer sees them, and this can exceed what is on disk.
-    """
-    frames = next((n["label_frames"] for n in (meta.get("nets") or [])
-                   if n.get("label_frames")), None)
-    if not frames:
-        return ""
-    return balance.frames_as_minutes(sum(frames.values()))
-
-
-def _facts_sections(meta, sound_count=None):
-    """[(heading, [(label, value)])], all read out of the model itself; nothing
-    measured off the recordings folder. Sections come up short on old models
-    rather than showing blanks."""
-    t = theme.colors()
-    # The pkl is the answer to "which file is this", even though the weights
-    # are counted in Size alongside it.
-    now = [("File", meta["name"] + ".pkl")]
-    if sound_count:
-        now.append(("Sounds", sound_count))
-    # Models trained before combined_accuracy existed fall back to the per-net
-    # span rather than showing nothing; the networks section then drops its own
-    # copy instead of printing the same range twice.
-    combined = _combined_score(meta)
-    headline = combined or _net_scores(meta)
-    if headline:
-        now.append(("Accuracy", headline))
-    if meta.get("trained_at"):
-        when = _trained_when(meta["trained_at"], meta.get("trained_at_source"))
-        # A file date is not a training date (a copied data dir restamps every
-        # pkl), so lead with "Unknown" and give the date as the related fact.
-        now.append(("Trained",
-                    f"Unknown   <span style='color:{t['text_dim']};'>"
-                    f"({when})</span>"
-                    if meta.get("trained_at_source") == "mtime" else when))
-    now.append(("Size", _human_size(meta["total_size_bytes"])))
-
-    how = []
-    # "Audio", not a bare duration: under "Trained: yesterday" it read as how
-    # long the run took.
-    audio = _training_data(meta)
-    if audio:
-        how.append(("Audio", audio))
-    # Only on models that recorded it. A model runs against whatever mic is
-    # live, so this is the first question when it works on one setup and not
-    # another.
-    mics = library_ops.describe_mics(meta.get("source_mics"))
-    if mics:
-        how.append(("Microphones", mics))
-    # Wording follows the training screen's own controls.
-    run = meta.get("run_settings") or {}
-    if "balance_sounds" in run:
-        how.append(("Balance sounds", "On" if run["balance_sounds"] else "Off"))
-    if run.get("silence"):
-        how.append(("Silence", {"all": "Include all", "balanced": "Balanced",
-                                "none": "Omit"}.get(run["silence"],
-                                                    run["silence"])))
-    # One net is not an ensemble: its score is already the model's, above.
-    # Its best epoch is still its own fact.
-    count = len([n for n in (meta.get("nets") or []) if n.get("accuracy")])
-    each = []
-    if count > 1 and combined:
-        each.append(("Accuracy", _net_scores(meta)))
-    epochs = _best_epochs(meta)
-    if epochs:
-        each.append(("Best epoch", epochs))
-
-    nets = meta["net_count"]
-    heading = f"Neural networks ({nets})" if nets else "Neural networks"
-    # "Training data", not "Recordings": the audio figure is post-balancing and
-    # can exceed what is on disk. Balance and Silence ride here because they
-    # are what made it differ.
-    return [("Model info", now), ("Training data", how), (heading, each)]
-
-
-def facts_html(meta, sound_count=None):
-    """The sections as one table so the columns line up down the whole card.
-    Public because the Integrations tab's model picker shows the same facts."""
-    t = theme.colors()
-    parts = []
-    for heading, facts in _facts_sections(meta, sound_count):
-        if not facts:
-            continue
-        pad = "padding-top:14px;" if parts else ""
-        parts.append(
-            f"<tr><td colspan='2' style='color:{t['text']}; {pad}'>"
-            f"<b>{heading}</b></td></tr>")
-        parts.extend(
-            f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>"
-            f"{label}</td><td style='color:{t['text']};'>{value}</td></tr>"
-            for label, value in facts)
-    return "<table cellspacing='0' cellpadding='3'>" + "".join(parts) + "</table>"
-
-
-def label_scores(meta):
-    """Per sound, what each net scored on the held-back split: {label: (text,
-    worst)}. Empty on models trained before the field existed."""
-    per_net = [n["label_accuracy"] for n in (meta.get("nets") or [])
-               if n.get("label_accuracy")]
-    if not per_net:
-        return {}
-    out = {}
-    for label in per_net[0]:
-        scores = [p[label] for p in per_net if label in p]
-        if scores:
-            out[label] = (f"{_span(scores, lambda v: f'{v * 100:.0f}')}%",
-                          min(scores))
-    return out
-
-
-class SoundItem(QTreeWidgetItem):
-    """Sorts the accuracy column by number. As text, 100% sorts below 97%."""
-
-    def __lt__(self, other):
-        col = self.treeWidget().sortColumn()
-        mine = self.data(col, Qt.ItemDataRole.UserRole)
-        theirs = other.data(col, Qt.ItemDataRole.UserRole)
-        if mine is None or theirs is None:
-            return super().__lt__(other)
-        return mine < theirs
-
-
-class InspectWorker(QThread):
-    """Load the heavy model metadata (labels/accuracy from joblib + torch) off
-    the UI thread."""
-    loaded = pyqtSignal(object)
-
-    def __init__(self, app_state, name, parent=None):
-        super().__init__(parent)
-        self.app_state = app_state
-        self.name = name
-
-    def run(self):
-        try:
-            meta = self.app_state.get_model_metadata(self.name, load_weights=True)
-        except Exception:
-            meta = None
-        self.loaded.emit(meta)
-
-
-class FactsWorker(QThread):
-    """Read what a checkpoint knows - sounds, and when it was trained - off the
-    UI thread, emitting one model at a time so the columns fill in from the top
-    rather than all at the end."""
-    counted = pyqtSignal(str, list, object, object)
-
-    def __init__(self, app_state, names, parent=None):
-        super().__init__(parent)
-        self.app_state = app_state
-        self.names = list(names)
-
-    def run(self):
-        for name in self.names:
-            try:
-                facts = self.app_state.get_model_facts(name)
-            except Exception:
-                facts = {"labels": [], "trained_at": None,
-                         "trained_at_source": None}
-            self.counted.emit(name, facts["labels"], facts["trained_at"],
-                              facts["trained_at_source"])
+MODEL_COLUMN, TRAINED_COLUMN, SOUNDS_COLUMN, NETS_COLUMN = 0, 1, 2, 3
+SOUND_COLUMN, ACCURACY_COLUMN, NOTE_COLUMN = 0, 1, 2
 
 
 class ModelsPage(QWidget):
+    """
+    ┌ model_list ──────────────────────┐┌ model_header ───────────────────────────────────┐
+    │                                  ││ model_title                                     │
+    │                                  ││ model_stats                                     │
+    │                                  ││ stale_label                                     │
+    │                                  ││ test actions, then management actions           │
+    │                                  │├ details ────────────────────────────────────────┤
+    │                                  ││ ┌ sound_tree ────────────────┐┌ facts ─────────┐│
+    │                                  ││ │                            ││                ││
+    │                                  ││ │                            ││                ││
+    │                                  ││ └────────────────────────────┘│                ││
+    │                                  ││ unused_label                  └────────────────┘│
+    ├ train_btn ───────────────────────┤│                                                 │
+    └──────────────────────────────────┘└─────────────────────────────────────────────────┘
+    """
     train_requested = pyqtSignal()   # open the training sub-view
     navigate = pyqtSignal(str)       # jump to another tab
 
     def __init__(self, app_state, parent=None):
         super().__init__(parent)
         self.app_state = app_state
-        self.inspect_worker = None
+        self.reader = ModelDetailsReader(app_state, self)
+        self.reader.model_read.connect(self._on_model_read)
+        self.reader.all_read.connect(self._on_all_read)
         self.combine_worker = None
-        self.count_worker = None
-        self._current = None
-        self._dates_moved = False
-        self._loaded = {}     # model name -> labels ([] = unreadable)
-        self._inspected = {}  # model name -> full metadata, accuracy included
-        self._items = {}      # model name -> its row
-
+        self._items = {}
         self._setup_ui()
-        self._populate_models()
+        self._model_show(None)
         self.app_state.models_changed.connect(self._on_models_changed)
-        self.app_state.recordings_changed.connect(self._refresh_details)
-
-    # ---- ui ------------------------------------------------------------
+        self.app_state.recordings_changed.connect(self._on_recordings_changed)
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter)
 
-        # Left: the models, with the one action that creates another.
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 12, 8, 12)
         title_row = QHBoxLayout()
-        title = components.heading("Models", "card")
-        title_row.addWidget(title)
+        self.left_title = QLabel("Models")
+        title_row.addWidget(self.left_title)
         title_row.addStretch()
         title_row.addWidget(help_dialog.help_button(self, "train"))
         left_layout.addLayout(title_row)
         self.model_list = QTreeWidget()
-        self.model_list.setColumnCount(4)
-        self.model_list.setHeaderLabels(
-            ["Model", "Trained", "Sounds", "Nets"])
+        self.model_list.setAccessibleName("Models")
+        self.model_list.setHeaderLabels(["Model", "Trained", "Sounds", "Nets"])
         self.model_list.setRootIsDecorated(False)
         self.model_list.setUniformRowHeights(True)
-        self.model_list.setAllColumnsShowFocus(True)
-        head = self.model_list.headerItem()
-        head.setToolTip(2, "How many sounds this model can tell apart")
-        head.setToolTip(3, content.short("nets"))
         header = self.model_list.header()
-        # Left to itself the header stretches the *last* section as well as the
-        # one asked for, and the two together overflow the pane - the last
-        # column ends up past the right edge behind a scrollbar.
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for col in (1, 2, 3):
-            header.setSectionResizeMode(col,
-                                        QHeaderView.ResizeMode.ResizeToContents)
-        self.model_list.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.model_list.currentItemChanged.connect(self._on_select)
-        self.model_list.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu)
-        self.model_list.customContextMenuRequested.connect(
-            self._on_list_context_menu)
+        header.setSectionResizeMode(MODEL_COLUMN, QHeaderView.ResizeMode.Stretch)
+        for column in (TRAINED_COLUMN, SOUNDS_COLUMN, NETS_COLUMN):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        self.model_list.currentItemChanged.connect(self._on_model_selected)
+        self.model_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.model_list.customContextMenuRequested.connect(self._on_model_list_context_menu)
         left_layout.addWidget(self.model_list)
+        self.setFocusProxy(self.model_list)
 
         # Plain, like "+ New sound": the accent marks the panel's main action
         # (Test live here, Start training on the training page).
@@ -345,258 +103,250 @@ class ModelsPage(QWidget):
         self.train_btn.clicked.connect(self.train_requested.emit)
         left_layout.addWidget(self.train_btn)
 
-        # Wider than the Sounds tab's pane: more columns.
-        left.setMinimumWidth(320)
+        left.setMinimumWidth(340)
         splitter.addWidget(left)
 
-        # Right: per-model header panel + scrollable detail body.
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
-        right_layout.addWidget(self._build_header())
-
-        # Sounds beside their facts, the shape the training setup page uses:
-        # the long list carries the width, a fixed card holds what it adds up to.
-        body = QWidget()
-        self.body_layout = QVBoxLayout(body)
-        self.body_layout.setContentsMargins(20, 16, 24, 16)
-        self.body_layout.setSpacing(12)
-
-        self.columns = QWidget()
-        columns = QHBoxLayout(self.columns)
-        columns.setContentsMargins(0, 0, 0, 0)
-        columns.setSpacing(22)
-        columns.addWidget(self._build_sound_column(), 1)
-        columns.addWidget(self._build_facts_column(), 0)
-        self.body_layout.addWidget(self.columns, 1)
-
-        # The empty panel lives inside its own springy wrapper so it sits in the
-        # middle of the card area; with it hidden the wrapper collapses and the
-        # trailing stretch keeps the model details at the top.
-        self.empty_panel = self._build_empty_panel()
-        self.empty_wrapper = QWidget()
-        wrap = QVBoxLayout(self.empty_wrapper)
-        wrap.setContentsMargins(0, 0, 0, 0)
-        wrap.addStretch()
-        wrap.addWidget(self.empty_panel, 0, Qt.AlignmentFlag.AlignHCenter)
-        wrap.addStretch()
-        self.body_layout.addWidget(self.empty_wrapper, 1)
-        right_layout.addWidget(body)
+        right_layout.addWidget(self._model_header_build())
+        right_layout.addWidget(self._details_build(), 1)
+        self.empty_state = QWidget()
+        empty_layout = QVBoxLayout(self.empty_state)
+        empty_layout.addStretch()
+        components.center_in(empty_layout, components.EmptyState("No models yet"))
+        right_layout.addWidget(self.empty_state, 1)
         splitter.addWidget(right)
 
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([400, 800])
+        splitter.setSizes([380, 820])
 
-    def _build_sound_column(self):
         t = theme.colors()
-        col = QWidget()
-        v = QVBoxLayout(col)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(6)
-        self.sound_tree = self._build_sound_tree()
-        v.addWidget(self.sound_tree, 1)
-        self.unused_label = QLabel("")
-        self.unused_label.setWordWrap(True)
+        self.left_title.setStyleSheet(components.heading_style("card"))
+        self.model_title.setStyleSheet(components.heading_style("title"))
+        self.model_stats.setStyleSheet(f"color: {t['text_dim']};")
+        # Not a warning: recording more is what the app asks for everywhere
+        # else, so being told about it in amber punishes doing the right thing.
+        self.stale_label.setStyleSheet(f"color: {t['text_dim']}; margin-top: 2px;")
         self.unused_label.setStyleSheet(f"color: {t['text_dim']};")
-        v.addWidget(self.unused_label)
-        return col
-
-    def _build_facts_column(self):
-        t = theme.colors()
-        col = QWidget()
-        col.setFixedWidth(310)
-        outer = QVBoxLayout(col)
-        outer.setContentsMargins(0, 0, 0, 0)
-        card, v = components.card_frame("factsCard")
-        self.detail_body = QLabel("")
-        self.detail_body.setWordWrap(True)
-        self.detail_body.setTextFormat(Qt.TextFormat.RichText)
-        self.detail_body.setStyleSheet(f"color: {t['text']};")
-        self.detail_body.setAlignment(Qt.AlignmentFlag.AlignTop)
-        v.addWidget(self.detail_body)
-        outer.addWidget(card)
-        outer.addStretch()
-        return col
-
-    def _build_sound_tree(self):
-        """The sounds a model knows. A real tree rather than rich text because
-        the accuracy column is worth sorting on."""
-        tree = QTreeWidget()
-        tree.setColumnCount(3)
-        tree.setHeaderLabels(["Sound", "Accuracy", ""])
-        tree.setRootIsDecorated(False)
-        tree.setUniformRowHeights(True)
-        tree.setAllColumnsShowFocus(True)
-        tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
-        tree.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        tree.setSortingEnabled(True)
-        tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-        tree.headerItem().setToolTip(
-            1, "What each network scored on this sound, on the samples the\n"
-               "trainer held back. Blank on models trained before it was kept.")
-        header = tree.header()
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        return tree
-
-    def _fill_sound_tree(self, rows):
-        t = theme.colors()
-        tree = self.sound_tree
-        # Sorting off while filling, or every insert re-sorts the tree.
-        tree.setSortingEnabled(False)
-        tree.clear()
-        for label, score, worst, note, colour in rows:
-            item = SoundItem([label, score, note])
-            item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight
-                                  | Qt.AlignmentFlag.AlignVCenter)
-            if worst is not None:
-                item.setData(1, Qt.ItemDataRole.UserRole, worst)
-            item.setForeground(2, QColor(colour or t["text_dim"]))
-            tree.addTopLevelItem(item)
-        tree.setSortingEnabled(True)
-        tree.setVisible(bool(rows))
-
-    def _build_header(self):
-        """The selected model's identity, then its actions in two ranks: the two
-        that answer 'does it work?' first, management second."""
-        t = theme.colors()
-        header = QFrame()
-        header.setObjectName("modelHeader")
-        header.setStyleSheet(
+        self.model_header.setStyleSheet(
             f"QFrame#modelHeader {{ background-color: {t['toolbar']}; "
             f"border-bottom: 1px solid {t['border']}; }}")
-        self.header_frame = header
+        self.open_folder_btn.setStyleSheet(components.ghost_button_style())
+
+    def _model_header_build(self):
+        """The selected model's identity, then its actions in two ranks: the two
+        that answer 'does it work?' first, management second."""
+        header = QFrame()
+        header.setObjectName("modelHeader")
+        self.model_header = header
         v = QVBoxLayout(header)
         v.setContentsMargins(16, 12, 16, 12)
         v.setSpacing(2)
 
-        name_row = QHBoxLayout()
-        name_row.setSpacing(10)
-        self.detail_title = components.heading("", "title")
-        name_row.addWidget(self.detail_title)
-        name_row.addStretch()
-        v.addLayout(name_row)
-        # Not a warning: recording more is what the app asks for everywhere
-        # else, so being told about it in amber punishes doing the right thing.
+        self.model_title = QLabel("")
+        self.model_title.setTextFormat(Qt.TextFormat.PlainText)
+        v.addWidget(self.model_title)
+        self.model_stats = QLabel("")
+        v.addWidget(self.model_stats)
         self.stale_label = QLabel("")
         self.stale_label.setWordWrap(True)
-        self.stale_label.setStyleSheet(
-            f"color: {t['text_dim']}; margin-top: 2px;")
         v.addWidget(self.stale_label)
 
-        actions = QHBoxLayout()
-        actions.setContentsMargins(0, 10, 0, 0)
+        tests = QHBoxLayout()
+        tests.setContentsMargins(0, 10, 0, 0)
         self.live_test_btn = components.primary_button("Test live")
         self.live_test_btn.setToolTip(
             "Make each sound into the mic and watch the raw per-sound probabilities")
         self.live_test_btn.clicked.connect(self._on_test_live)
-        actions.addWidget(self.live_test_btn)
+        tests.addWidget(self.live_test_btn)
         self.accuracy_btn = QPushButton("Test accuracy")
         self.accuracy_btn.setMinimumHeight(34)
         self.accuracy_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.accuracy_btn.setToolTip(
-            "Classify every sound's recorded segments with this model")
+        self.accuracy_btn.setToolTip("Classify every sound's recorded segments with this model")
         self.accuracy_btn.clicked.connect(self._on_test_accuracy)
-        actions.addWidget(self.accuracy_btn)
-        actions.addStretch()
-        v.addLayout(actions)
+        tests.addWidget(self.accuracy_btn)
+        tests.addStretch()
+        v.addLayout(tests)
 
-        secondary = QHBoxLayout()
-        secondary.setContentsMargins(0, 4, 0, 0)
-        self._secondary_btns = []
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 4, 0, 0)
         for text, slot, tip in (
                 ("Rename", self._on_rename, "Rename this model"),
                 ("Clone", self._on_clone, "Make a copy under a new name"),
-                ("Combine…", self._on_combine,
-                 "Merge two or more models into one ensemble"),
-                ("Open folder", self._on_open_folder, "Reveal data/models"),
-                ("Delete", self._on_delete, "Delete this model and its files")):
-            btn = components.ghost_button(text, slot, tip)
-            secondary.addWidget(btn)
-            self._secondary_btns.append(btn)
-        secondary.addStretch()
-        v.addLayout(secondary)
+                ("Combine…", self._on_combine, "Merge two or more models into one ensemble")):
+            actions.addWidget(components.ghost_button(text, slot, tip))
+        self.open_folder_btn = QPushButton("Open models folder")
+        self.open_folder_btn.setObjectName("secondaryAction")
+        self.open_folder_btn.setFlat(True)
+        self.open_folder_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.open_folder_btn.setToolTip(os.path.normpath(os.path.abspath(CLASSIFIER_FOLDER)))
+        self.open_folder_btn.clicked.connect(self._on_open_models_folder)
+        actions.addWidget(self.open_folder_btn)
+        actions.addWidget(components.ghost_button(
+            "Delete", self._on_delete, "Delete this model and its files"))
+        actions.addStretch()
+        v.addLayout(actions)
         return header
 
-    def _build_empty_panel(self):
-        """Centered title/body/action, the same widget the Sounds tab uses. Its
-        text is filled in per case by _show_empty_state."""
-        self.empty_panel_widget = components.EmptyState()
-        return self.empty_panel_widget
+    def _details_build(self):
+        """sound_tree carries the width, facts beside it is fixed."""
+        self.details = QWidget()
+        columns = QHBoxLayout(self.details)
+        columns.setContentsMargins(20, 16, 24, 16)
+        columns.setSpacing(22)
+        sounds = QVBoxLayout()
+        sounds.setSpacing(6)
+        sounds.addWidget(self._sound_tree_build(), 1)
+        self.unused_label = QLabel("")
+        self.unused_label.setWordWrap(True)
+        sounds.addWidget(self.unused_label)
+        columns.addLayout(sounds, 1)
+        self.facts = QLabel("")
+        self.facts.setTextFormat(Qt.TextFormat.RichText)
+        self.facts.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.facts.setFixedWidth(300)
+        columns.addWidget(self.facts, 0)
+        return self.details
+
+    def _sound_tree_build(self):
+        """A tree rather than rich text, so accuracy sorts."""
+        tree = QTreeWidget()
+        self.sound_tree = tree
+        tree.setAccessibleName("Sounds in this model")
+        tree.setHeaderLabels(["Sound", "Accuracy", ""])
+        tree.setRootIsDecorated(False)
+        tree.setUniformRowHeights(True)
+        tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
+        # Nothing in it to act on
+        tree.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tree.setSortingEnabled(True)
+        tree.sortByColumn(SOUND_COLUMN, Qt.SortOrder.AscendingOrder)
+        header = tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(SOUND_COLUMN, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(ACCURACY_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(NOTE_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        return tree
 
     def refresh_theme(self):
         pass
 
     # ---- model list ----------------------------------------------------
 
+    def showEvent(self, event):
+        """A model trained from the command line while the app is open shows
+        on the next visit."""
+        super().showEvent(event)
+        self._model_list_refresh()
+        self._train_btn_update()
+
     def _on_models_changed(self):
-        self._loaded.clear()
-        self._inspected.clear()
-        self._populate_models()
+        """AppState has dropped its cache, so every row is read again."""
+        self._model_list_populate(self.app_state.get_models_newest_first())
 
-    def _order(self, meta):
-        # The rule itself lives on AppState: the training page's "use sounds
-        # from" menu lists the same models and has to agree with this.
-        return self.app_state.model_sort_key(meta["name"])
+    def _on_recordings_changed(self):
+        self._train_btn_update()
+        self._model_show(self._current_model_name())
 
-    def _populate_models(self):
-        """Newest first: the one made last."""
-        prev = self._current
-        t = theme.colors()
-        details = sorted(self.app_state.get_all_model_details(),
-                         key=self._order)
+    def _train_btn_update(self):
+        """A model tells sounds apart, so it needs two."""
+        self.train_btn.setEnabled(len(self.app_state.get_sound_labels()) >= 2)
 
+    def _model_list_refresh(self):
+        """Only if the models or their order changed."""
+        models_newest_first = self.app_state.get_models_newest_first()
+        names = [name for name, _trained_at in models_newest_first]
+        if names != list(self._items):
+            self._model_list_populate(models_newest_first)
+
+    def _model_list_populate(self, models_newest_first):
+        current = self._current_model_name()
+        now = datetime.now()
         self.model_list.blockSignals(True)
         self.model_list.clear()
         self._items = {}
-        for meta in details:
-            name = meta["name"]
-            item = QTreeWidgetItem([
-                name,
-                _trained_when(meta["trained_at"], meta["trained_at_source"]),
-                str(len(self._loaded[name])) if name in self._loaded else "…",
-                str(meta["net_count"]) if meta["net_count"] else "",
-            ])
-            item.setData(0, Qt.ItemDataRole.UserRole, name)
-            for col in (2, 3):
-                item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight
-                                      | Qt.AlignmentFlag.AlignVCenter)
-            for col in (1, 2, 3):
-                item.setForeground(col, QColor(t["text_dim"]))
-            # A long name is elided in this column, so keep the whole one
-            # reachable on hover.
-            item.setToolTip(0, name)
-            if meta["trained_at_source"] == "mtime":
-                item.setToolTip(1, UNSURE_DATE_TIP)
-            self.model_list.addTopLevelItem(item)
+        for name, trained_at in models_newest_first:
+            item = QTreeWidgetItem([name, "", "", ""])
+            item.setData(MODEL_COLUMN, Qt.ItemDataRole.UserRole, name)
+            # Long names are cut off in the column
+            item.setToolTip(MODEL_COLUMN, name)
+            for column in (SOUNDS_COLUMN, NETS_COLUMN):
+                item.setTextAlignment(column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._items[name] = item
+            self._model_row_update(name, now, trained_at)
+            self.model_list.addTopLevelItem(item)
         self.model_list.blockSignals(False)
 
-        if self.model_list.topLevelItemCount() == 0:
-            self._current = None
-            self._refresh_details()
+        if not self._items:
+            self._model_show(None)
             return
-        target = self._items.get(prev) or self.model_list.topLevelItem(0)
-        self.model_list.setCurrentItem(target)
-        self._start_counting([m["name"] for m in details])
+        self._reader_start(list(self._items))
+        # Fires the selection handler, which shows the model
+        self.model_list.setCurrentItem(self._items.get(current) or self.model_list.topLevelItem(0))
+
+    def _model_row_update(self, name, now, trained_at=(None, None)):
+        """Sounds is "…" until the checkpoints are read, "?" if they can't be.
+        trained_at (replay csv or file date) shows until then."""
+        item = self._items[name]
+        details = self.app_state.get_model_details_if_read(name)
+        when, source = details.trained_at if details else trained_at
+        net_count = details.net_count if details else self.app_state.get_net_count(name)
+        if details is None:
+            sounds = "…"
+        else:
+            sounds = str(_sound_count(details.labels)) if details.labels else "?"
+        trained = trained_when(when, source, now) if when else ""
+        item.setText(TRAINED_COLUMN, trained)
+        item.setText(SOUNDS_COLUMN, sounds)
+        item.setText(NETS_COLUMN, str(net_count) if net_count else "")
+        # A screen reader reads only the first column otherwise
+        item.setData(MODEL_COLUMN, Qt.ItemDataRole.AccessibleTextRole,
+                     f"{name}, trained {trained or 'unknown'}, {sounds} sounds, {net_count} nets")
+
+    def _reader_start(self, names):
+        # Before the reader's first torch.load: torch imported off the main
+        # thread has segfaulted alongside Qt. Already loaded on Windows.
+        try:
+            import torch  # noqa: F401
+        except Exception:
+            pass  # Models with checkpoints then read as unreadable
+        self.reader.read([name for name in names
+                          if self.app_state.get_model_details_if_read(name) is None])
+
+    def _current_model_name(self):
+        item = self.model_list.currentItem()
+        return item.data(MODEL_COLUMN, Qt.ItemDataRole.UserRole) if item else None
 
     def select_model(self, name):
-        """Called after training so the fresh model is the one on screen."""
+        """After training, renaming or combining, so the new model is the one
+        on screen."""
+        if name not in self._items:
+            self._model_list_refresh()
         item = self._items.get(name)
         if item is not None:
             self.model_list.setCurrentItem(item)
 
-    def _on_select(self, current, _prev=None):
-        self._current = (current.data(0, Qt.ItemDataRole.UserRole)
-                         if current is not None else None)
-        self._refresh_details()
+    def _on_model_selected(self, item, _previous=None):
+        name = item.data(MODEL_COLUMN, Qt.ItemDataRole.UserRole) if item else None
+        if name:
+            self.reader.read_first(name)
+        self._model_show(name)
 
-    def _on_list_context_menu(self, pos):
+    def _on_model_read(self, name):
+        if name in self._items:
+            self._model_row_update(name, datetime.now())
+        if name == self._current_model_name():
+            self._model_show(name)
+
+    def _on_all_read(self):
+        """Checkpoint dates can reorder the list. Once, at the end, so rows
+        don't jump while being read."""
+        self._model_list_refresh()
+
+    def _on_model_list_context_menu(self, pos):
         """Same actions as the header. Right-clicking selects the row first,
         so the panel behind the menu is the model the menu is about."""
         item = self.model_list.itemAt(pos)
@@ -610,227 +360,115 @@ class ModelsPage(QWidget):
         menu.addAction("Rename…", self._on_rename)
         menu.addAction("Clone…", self._on_clone)
         menu.addAction("Combine…", self._on_combine)
-        menu.addAction("Open folder", self._on_open_folder)
+        menu.addAction("Open models folder", self._on_open_models_folder)
         menu.addSeparator()
         menu.addAction("Delete model", self._on_delete)
         menu.exec(self.model_list.viewport().mapToGlobal(pos))
 
-    # ---- the Sounds and Trained columns ---------------------------------
+    # ---- details -------------------------------------------------------
 
-    def _start_counting(self, names):
-        """Fill the Sounds column, and correct Trained, off-thread. Both come
-        out of a file read, so they arrive after the list rather than holding
-        it up."""
-        pending = [n for n in names if n not in self._loaded]
-        if not pending:
+    def _model_show(self, name):
+        self.model_header.setVisible(name is not None)
+        self.details.setVisible(name is not None)
+        self.empty_state.setVisible(name is None)
+        if name is None:
             return
-        if self.count_worker is not None and self.count_worker.isRunning():
-            return
-        self._dates_moved = False
-        self.count_worker = FactsWorker(self.app_state, pending, self)
-        self.count_worker.counted.connect(self._on_counted)
-        self.count_worker.finished.connect(self._on_counting_done)
-        self.count_worker.start()
-
-    def _on_counted(self, name, labels, trained_at, source):
-        self._loaded[name] = labels
-        item = self._items.get(name)
-        if item is not None:
-            item.setText(2, str(len(labels)) if labels else "?")
-            was = item.text(1)
-            now = _trained_when(trained_at, source)
-            if now and now != was:
-                item.setText(1, now)
-                item.setToolTip(1, UNSURE_DATE_TIP if source == "mtime" else "")
-                self._dates_moved = True
-        if name == self._current:
-            self._refresh_details()
-
-    def _on_counting_done(self):
-        self.count_worker = None
-        if self._dates_moved:
-            # A checkpoint knew better than the mtime the rows were sorted on.
-            # Re-sort once, at the end, rather than letting rows jump about as
-            # each read lands.
-            self._dates_moved = False
-            self._populate_models()
-            return
-        # Models can appear while a sweep is running (training finishes), and
-        # that populate found the worker busy. Sweep again for whatever is left.
-        self._start_counting(list(self._items))
-
-    # ---- details --------------------------------------------------------
-
-    def _refresh_details(self):
-        if self._current is None:
-            self._show_empty_state()
-            return
-        self.header_frame.setVisible(True)
-        self.empty_wrapper.setVisible(False)
-        self.columns.setVisible(True)
-        self.train_btn.setEnabled(True)
-
-        # The accuracy only exists once the checkpoints have been read, so use
-        # the inspected copy when it has arrived and the cheap one until then -
-        # asking for load_weights here would block the UI on every click, and
-        # asking for the fast copy alone meant the accuracy never showed at all.
-        meta = self._inspected.get(self._current)
-        if meta is None:
-            meta = self.app_state.get_model_metadata(self._current)
-            self._start_inspect(self._current)
-        self.detail_title.setText(meta["name"])
-        html, stale, sounds, unused = self._detail_html(meta)
-        self.detail_body.setText(html)
-        self._fill_sound_tree(sounds)
-        self.unused_label.setText(
-            f"Recorded but not in this model: {', '.join(unused)}"
-            if unused else "")
-        self.unused_label.setVisible(bool(unused))
-        if stale:
-            takes = sum(count for _, count in stale)
-            names = [label for label, _ in stale]
-            shown = ", ".join(names[:4]) + ("…" if len(names) > 4 else "")
-            noun = "recording" if takes == 1 else "recordings"
-            self.stale_label.setText(
-                f"{takes} new {noun} since this model was trained: {shown}")
-        else:
+        self.model_title.setText(name)
+        details = self.app_state.get_model_details_if_read(name)
+        if details is None or not details.labels:
+            self.model_stats.setText("Reading…" if details is None else "Couldn't read this model")
+            self.facts.setText(self._facts_html(name, details) if details else "")
+            self.sound_tree.clear()
             self.stale_label.setText("")
+            self.unused_label.setVisible(False)
+            return
+        self.model_stats.setText(self._model_stats_text(details))
+        self.facts.setText(self._facts_html(name, details))
+        new_since = self._recordings_since_training(details)
+        self._sound_tree_fill(details, new_since)
+        self.stale_label.setText(_stale_text(new_since))
+        unused = [label for label in self.app_state.get_sound_labels()
+                  if label not in details.labels]
+        self.unused_label.setText(f"Recorded but not in this model: {', '.join(unused)}")
+        self.unused_label.setVisible(bool(unused))
 
-    def _model_mtime(self):
-        """When the model was trained, for comparing against recording dates.
-        Not the pkl mtime first: copying a data dir restamps every pkl, which
-        would mark every sound as newer than the model."""
-        return self.app_state.get_model_trained_at(self._current) or 0
+    def _model_stats_text(self, details):
+        count = _sound_count(details.labels)
+        sounds = f"{count} {'sound' if count == 1 else 'sounds'}"
+        if BACKGROUND_LABEL in details.labels:
+            sounds += f" + {BACKGROUND_LABEL}"
+        if not details.net_count:
+            return sounds
+        nets = f"{details.net_count} {'net' if details.net_count == 1 else 'nets'}"
+        return f"{sounds}   ·   {nets}"
 
-    def _detail_html(self, meta):
-        """What this model knows, next to what's been recorded since - the two
-        facts that decide whether it's worth retraining. Returns (html, stale
-        labels, sound rows, unused labels)."""
-        t = theme.colors()
-        name = meta["name"]
-        # Labels live inside the pkl/weights, so reading them is slow enough to
-        # stutter the UI. The list's Sounds column fills this cache off-thread;
-        # until it reaches this model, say so.
-        if name not in self._loaded:
-            return (f"<span style='color:{t['text_dim']};'>Reading its sounds…"
-                    f"</span>", [], [], [])
-        labels = self._loaded[name]
-        if not labels:
-            return (f"<span style='color:{t['text_dim']};'>Couldn't read this "
-                    f"model's sound list.</span>", [], [], [])
+    def _recordings_since_training(self, details):
+        """{label: (takes recorded since, newest take or None if none left)}.
+        By training date, not pkl mtime: copying a data dir restamps every
+        pkl, which would mark every sound as newer than the model."""
+        trained_at = details.trained_at[0] or 0
+        return {label: library_ops.recordings_since(label, trained_at)
+                for label in details.labels if label != BACKGROUND_LABEL}
 
-        mtime = self._model_mtime()
-        recorded = self.app_state.get_sound_labels()
-        per_sound = label_scores(meta)
+    def _facts_rows(self, name, details):
+        """[(label, value)], only the ones the model's files record."""
         rows = []
-        stale = []
-        for label in labels:
-            score, worst = per_sound.get(label, ("", None))
-            if label == BACKGROUND_LABEL:
-                # Has no recordings folder, so the checks below would call it
-                # missing. The model does answer with it, so it stays listed.
-                rows.append((label, score, worst,
-                             "built from the quiet parts of the others", None))
-                continue
-            new_takes, newest = library_ops.recordings_since(label, mtime)
-            note, colour = "", None
-            if newest is None:
-                note = "no recordings any more"
-            elif new_takes:
-                stale.append((label, new_takes))
-                note = f"{new_takes} new since"
-            # Score column is the model's own; nothing measured off today's
-            # recordings folder goes there.
-            rows.append((label, score, worst, note, colour))
+        accuracy = _model_accuracy(details.checkpoints, details.net_count)
+        if accuracy is not None:
+            rows.append(("Accuracy", percent_span([accuracy], 1)))
+        when, source = details.trained_at
+        if when:
+            trained = trained_when(when, source, datetime.now())
+            rows.append(("Trained", f"{trained} (file date)" if source == "mtime" else trained))
+        rows.append(("File", html.escape(f"{name}.pkl")))
+        if details.pkl_bytes:
+            rows.append(("Size", file_size_text(details.pkl_bytes)))
+        net_accuracies = _net_accuracies(details.checkpoints)
+        if len(net_accuracies) > 1:
+            rows.append(("Each net", percent_span(net_accuracies, 1)))
+        epochs = _best_epochs_text(details.checkpoints)
+        if epochs:
+            rows.append(("Best epoch", epochs))
+        return rows
 
-        # A class, not a sound anyone made. Counting it overstates by one.
-        spoken = [l for l in labels if l != BACKGROUND_LABEL]
-        plus = f" + {BACKGROUND_LABEL}" if len(spoken) != len(labels) else ""
-        html = facts_html(meta, f"{len(spoken)}{plus}")
-        return (html, stale, rows, [l for l in recorded if l not in labels])
+    def _facts_html(self, name, details):
+        """The model's own rows, then how it was trained, as one table so the
+        columns line up down the whole card."""
+        t = theme.colors()
+        rows = self._facts_rows(name, details)
+        training_rows = _training_data_rows(details.checkpoints)
+        if training_rows:
+            rows.append((f"<b style='color:{t['text']};'>Training data</b>", ""))
+            rows += training_rows
+        return "<table cellspacing='0' cellpadding='3'>" + "".join(
+            f"<tr><td style='color:{t['text_dim']}; padding-right:20px;'>{label}</td>"
+            f"<td style='color:{t['text']};'>{value}</td></tr>"
+            for label, value in rows) + "</table>"
 
-    def _start_inspect(self, name):
-        if self.inspect_worker is not None and self.inspect_worker.isRunning():
-            return
-        self.inspect_worker = InspectWorker(self.app_state, name, self)
-        self.inspect_worker.loaded.connect(self._on_inspected)
-        self.inspect_worker.start()
-
-    def _on_inspected(self, meta):
-        self.inspect_worker = None
-        if not meta:
-            return
-        self._inspected[meta["name"]] = meta
-        # [] = unreadable, so we don't retry forever
-        self._loaded[meta["name"]] = meta["labels"] or []
-        item = self._items.get(meta["name"])
-        if item is not None:
-            item.setText(2, str(len(meta["labels"])) if meta["labels"] else "?")
-        if meta["name"] == self._current:
-            self._refresh_details()
-        elif self._current is not None and self._current not in self._inspected:
-            # The selection moved on while this one was loading, and that click
-            # found the worker busy and gave up. Pick the current one up now.
-            self._start_inspect(self._current)
-
-    # ---- empty states ---------------------------------------------------
-
-    def _show_empty_state(self):
-        """Three dead ends, three answers: nothing recorded, one sound, or
-        ready with no model - name what they have, then what's missing."""
-        self.header_frame.setVisible(False)
-        self.columns.setVisible(False)
-        self.stale_label.setText("")
-        self.empty_wrapper.setVisible(True)
-
-        labels = self.app_state.get_sound_labels()
-        panel = self.empty_panel_widget
-        if len(labels) < 2:
-            self.train_btn.setEnabled(False)
-            if labels:
-                only = labels[0]
-                # Seconds, not the rating: a first sound scoring "Not enough"
-                # reads as a failure rather than a start.
-                seconds = self.app_state.get_label_duration_ms(only) / 1000.0
-                title = "One more sound and you can train"
-                body = (
-                    f"You've recorded “{only}” - {seconds:.0f}s of detected sound "
-                    f"so far. A model works by telling sounds apart, so it needs "
-                    f"a second one to compare against. Record another in the "
-                    f"Sounds tab and come back.")
-            else:
-                title = "Record some sounds first"
-                body = (
-                    "A model learns to tell your sounds apart, so it needs at "
-                    "least two of them to compare. Record a couple in the Sounds "
-                    "tab and come back.")
-            panel.set_state(title, body, "Go to Sounds",
-                            lambda: self.navigate.emit("Sounds"))
-            return
-
-        self.train_btn.setEnabled(True)
-        pairs = [(label, self.app_state.get_label_duration_ms(label))
-                 for label in labels]
-        summary = help_dialog.quantity_summary(pairs)
-        thin = sum(1 for _l, ms in pairs
-                   if get_quantity_rating(ms)[0] == "Not enough")
-
-        body = f"You have {len(labels)} sounds - {summary}."
-        if thin:
-            body += " " + help_dialog.thin_data_warning(thin, len(labels))
-        body += (" Training reads every recording of the sounds you pick and "
-                 "produces one model file. It runs unattended for hours - you "
-                 "can stop it early for a rough first model, and retrain "
-                 "whenever you record more.")
-        panel.set_state("Train your first model", body, "+ New model",
-                        self.train_requested.emit)
+    def _sound_tree_fill(self, details, new_since):
+        t = theme.colors()
+        accuracies = _sound_accuracies(details.checkpoints)
+        # Off while filling, or every insert re-sorts
+        self.sound_tree.setSortingEnabled(False)
+        self.sound_tree.clear()
+        for label in details.labels:
+            scores = accuracies.get(label)
+            item = SoundItem([label, percent_span(scores, 0) if scores else "",
+                              _sound_note(label, new_since.get(label))])
+            item.setTextAlignment(ACCURACY_COLUMN, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if scores:
+                item.setData(ACCURACY_COLUMN, Qt.ItemDataRole.UserRole, min(scores))
+            item.setForeground(NOTE_COLUMN, QColor(t["text_dim"]))
+            self.sound_tree.addTopLevelItem(item)
+        self.sound_tree.setSortingEnabled(True)
 
     # ---- actions -------------------------------------------------------
 
     def _model_pkl_path(self):
-        if not self._current:
+        name = self._current_model_name()
+        if not name:
             return None
-        path = models.get_model_path(self._current)
+        path = models.get_model_path(name)
         return path if os.path.isfile(path) else None
 
     def _on_test_accuracy(self):
@@ -838,7 +476,7 @@ class ModelsPage(QWidget):
         if not path:
             return
         from gui.widgets.model_test_dialogs import AccuracyDialog
-        AccuracyDialog(self, self._current, path,
+        AccuracyDialog(self, self._current_model_name(), path,
                        self.app_state.get_sound_labels()).exec()
 
     def _on_test_live(self):
@@ -847,55 +485,54 @@ class ModelsPage(QWidget):
             return
         from gui.services import audio_devices
         from gui.widgets.model_test_dialogs import LiveTestDialog
-        LiveTestDialog(self, self._current, path, audio_devices.input_index).exec()
+        LiveTestDialog(self, self._current_model_name(), path, audio_devices.input_index).exec()
 
     def _on_rename(self):
-        if not self._current:
+        name = self._current_model_name()
+        if not name:
             return
-        new, ok = QInputDialog.getText(self, "Rename model", "New name:",
-                                       text=self._current)
+        new, ok = QInputDialog.getText(self, "Rename model", "New name:", text=name)
         if not ok:
             return
         try:
-            self._current = self.app_state.rename_model(self._current, new)
+            self.select_model(self.app_state.rename_model(name, new))
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Rename failed", str(exc))
 
     def _on_clone(self):
-        if not self._current:
+        name = self._current_model_name()
+        if not name:
             return
         new, ok = QInputDialog.getText(self, "Clone model", "Name for the copy:",
-                                       text=f"{self._current}_copy")
+                                       text=f"{name}_copy")
         if not ok:
             return
         try:
-            self.app_state.clone_model(self._current, new)
+            self.app_state.clone_model(name, new)
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Clone failed", str(exc))
 
-    def _on_open_folder(self):
+    def _on_open_models_folder(self):
         try:
-            library_ops.open_in_file_manager(
-                models.get_model_path(self._current))
+            library_ops.open_in_file_manager(CLASSIFIER_FOLDER)
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Couldn't open folder", str(exc))
 
     def _on_delete(self):
-        if not self._current:
+        name = self._current_model_name()
+        if not name:
             return
-        files = models.get_model_files(self._current)
+        files = models.get_model_files(name)
         detail = "\n".join(os.path.basename(f) for f in files)
         if confirm_destructive(
                 self,
-                title=f"Delete model '{self._current}'?",
-                body=f"This permanently deletes the model and its "
-                     f"{len(files)} file(s).",
+                title=f"Delete model '{name}'?",
+                body=f"This permanently deletes the model and its {len(files)} file(s).",
                 detail=detail,
-                confirm_text=self._current,
+                confirm_text=name,
                 confirm_label="Delete model"):
             try:
-                self.app_state.delete_model(self._current)
-                self._current = None
+                self.app_state.delete_model(name)
             except library_ops.LibraryOpError as exc:
                 QMessageBox.warning(self, "Delete failed", str(exc))
 
@@ -914,12 +551,10 @@ class ModelsPage(QWidget):
             return
         chosen = dialog.selected_models()
         if len(chosen) < 2:
-            QMessageBox.information(self, "Combine models",
-                                    "Pick at least two models.")
+            QMessageBox.information(self, "Combine models", "Pick at least two models.")
             return
         try:
-            new_name = library_ops.sanitize_name(dialog.new_name(),
-                                                 kind="model name")
+            new_name = library_ops.sanitize_name(dialog.new_name(), kind="model name")
         except library_ops.LibraryOpError as exc:
             QMessageBox.warning(self, "Combine models", str(exc))
             return
@@ -934,12 +569,169 @@ class ModelsPage(QWidget):
 
     def _on_combined(self, name):
         self.combine_worker = None
-        self._current = name
         self.app_state.models_changed.emit()
+        self.select_model(name)
 
     def _on_combine_failed(self, message):
         self.combine_worker = None
         QMessageBox.warning(self, "Combine failed", message)
+
+
+def _sound_count(labels):
+    """Silence is a class the trainer makes, not a sound anyone recorded."""
+    return len([label for label in labels if label != BACKGROUND_LABEL])
+
+
+def _sound_note(label, since):
+    """since: (takes recorded since training, newest take or None)."""
+    if label == BACKGROUND_LABEL:
+        return "from all your recordings"
+    new_takes, newest = since
+    if newest is None:
+        return "no recordings any more"
+    if new_takes:
+        return f"{new_takes} new since"
+    return ""
+
+
+def _stale_text(new_since):
+    stale = [(label, takes) for label, (takes, _newest) in new_since.items() if takes]
+    if not stale:
+        return ""
+    takes = sum(count for _label, count in stale)
+    names = [label for label, _count in stale]
+    shown = ", ".join(names[:4]) + ("…" if len(names) > 4 else "")
+    noun = "recording" if takes == 1 else "recordings"
+    return f"{takes} new {noun} since this model was trained: {shown}"
+
+
+def _model_accuracy(checkpoints, net_count):
+    """combined_accuracy from the net whose best epoch came last, else a lone
+    net's accuracy. None if not recorded."""
+    scored = [c for c in checkpoints
+              if c.get("combined_accuracy") is not None and c.get("epoch") is not None]
+    if scored:
+        return max(scored, key=lambda c: c["epoch"])["combined_accuracy"]
+    if net_count == 1 and checkpoints:
+        return checkpoints[0].get("accuracy")
+    return None
+
+
+def _net_accuracies(checkpoints):
+    return [c["accuracy"] for c in checkpoints if c.get("accuracy") is not None]
+
+
+def _best_epochs_text(checkpoints):
+    """'12' or '9-14'. +1: the trainer counts epochs from zero."""
+    epochs = [c["epoch"] + 1 for c in checkpoints if c.get("epoch") is not None]
+    if not epochs:
+        return ""
+    low, high = min(epochs), max(epochs)
+    return str(low) if low == high else f"{low}-{high}"
+
+
+def _sound_accuracies(checkpoints):
+    """{label: [each net's accuracy on it]}, on the samples the trainer held
+    back. Empty for models trained before label_accuracy was saved."""
+    scores = {}
+    for checkpoint in checkpoints:
+        for label, accuracy in (checkpoint.get("label_accuracy") or {}).items():
+            scores.setdefault(label, []).append(accuracy)
+    return scores
+
+
+def _training_data_rows(checkpoints):
+    """[(label, value)] for how the run was set up. One run made every net,
+    so the first checkpoint to carry a field speaks for the model. Empty on
+    models trained before the fields existed."""
+    def first(key):
+        return next((c[key] for c in checkpoints if c.get(key)), None)
+
+    rows = []
+    # Post-balancing, so not the setup screen's "Recorded": repeated frames
+    # count every time the trainer sees them, and this can exceed what is on
+    # disk. "Audio", not a bare duration: under "Trained" it read as how long
+    # the run took.
+    label_frames = first("label_frames")
+    if label_frames:
+        rows.append(("Audio", balance.frames_as_minutes(sum(label_frames.values()))))
+    # A model runs against whatever mic is live, so this is the first
+    # question when it works on one setup and not another.
+    mics = library_ops.describe_mics(first("source_mics"))
+    if mics:
+        rows.append(("Microphones", mics))
+    # Wording follows the training screen's own controls
+    run = first("run_settings") or {}
+    if "balance_sounds" in run:
+        rows.append(("Balance sounds", "On" if run["balance_sounds"] else "Off"))
+    if run.get("silence"):
+        rows.append(("Silence", {"all": "Include all", "balanced": "Balanced",
+                                 "none": "Omit"}.get(run["silence"], run["silence"])))
+    return rows
+
+
+class SoundItem(QTreeWidgetItem):
+    """Sorts the accuracy column by its lowest net. As text, 100% sorts below 97%."""
+
+    def __lt__(self, other):
+        column = self.treeWidget().sortColumn()
+        mine = self.data(column, Qt.ItemDataRole.UserRole)
+        theirs = other.data(column, Qt.ItemDataRole.UserRole)
+        if mine is None or theirs is None:
+            return super().__lt__(other)
+        return mine < theirs
+
+
+class ModelDetailsReader(QThread):
+    """Reads models' checkpoints off the UI thread, one model at a time so rows
+    fill in from the top. read() queues more, read_first() jumps the queue."""
+    model_read = pyqtSignal(str)
+    all_read = pyqtSignal()
+
+    def __init__(self, app_state, parent):
+        super().__init__(parent)
+        self.app_state = app_state
+        self._pending = []
+        self._lock = threading.Lock()
+        self.finished.connect(self._on_finished)
+        QApplication.instance().aboutToQuit.connect(self._stop)
+
+    def read(self, names):
+        with self._lock:
+            self._pending += [name for name in names if name not in self._pending]
+        if names and not self.isRunning():
+            self.start()
+
+    def read_first(self, name):
+        with self._lock:
+            if name in self._pending:
+                self._pending.remove(name)
+                self._pending.insert(0, name)
+
+    def run(self):
+        while (name := self._pending_pop()) is not None:
+            self.app_state.get_model_details(name)
+            self.model_read.emit(name)
+
+    def _pending_pop(self):
+        with self._lock:
+            return self._pending.pop(0) if self._pending else None
+
+    def _on_finished(self):
+        # read() can arrive after the last pop, while still running, and not restart
+        with self._lock:
+            more = bool(self._pending)
+        if more:
+            self.start()
+        else:
+            self.all_read.emit()
+
+    def _stop(self):
+        """The read in progress finishes, the rest are dropped. A QThread
+        deleted while running aborts the app."""
+        with self._lock:
+            self._pending.clear()
+        self.wait()
 
 
 class _CombineDialog(QDialog):
@@ -981,12 +773,8 @@ class _CombineDialog(QDialog):
         layout.addLayout(buttons)
 
     def selected_models(self):
-        out = []
-        for i in range(self.list.count()):
-            item = self.list.item(i)
-            if item.checkState() == Qt.CheckState.Checked:
-                out.append(item.text())
-        return out
+        return [self.list.item(i).text() for i in range(self.list.count())
+                if self.list.item(i).checkState() == Qt.CheckState.Checked]
 
     def new_name(self):
         return self.name_input.text().strip() or "combined_model"

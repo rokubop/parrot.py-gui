@@ -103,7 +103,7 @@ class ModelSoundsWorker(QThread):
     """Reads which sounds an existing model was trained on. Off-thread: the
     answer lives inside a checkpoint, and the first call pays for importing
     torch."""
-    ready = pyqtSignal(str, object, str)   # model name, labels or None, error
+    ready = pyqtSignal(str, object)   # model name, labels ([] if unreadable)
 
     def __init__(self, app_state, model_name, parent=None):
         super().__init__(parent)
@@ -111,12 +111,8 @@ class ModelSoundsWorker(QThread):
         self.model_name = model_name
 
     def run(self):
-        try:
-            facts = self.app_state.get_model_facts(self.model_name)
-            self.ready.emit(self.model_name, facts["labels"], "")
-        except Exception as exc:
-            self.ready.emit(self.model_name, None,
-                            f"{type(exc).__name__}: {exc}")
+        labels = self.app_state.get_model_details(self.model_name).labels
+        self.ready.emit(self.model_name, labels)
 
 
 class BalanceWorker(QThread):
@@ -407,8 +403,8 @@ class TrainView(QWidget):
         """Newest first, same order the Models tab lists them in. Built on open
         rather than once, because a run can finish while this screen is up."""
         self.copy_menu.clear()
-        names = sorted(self.app_state.get_model_names(),
-                       key=self.app_state.model_sort_key)
+        names = [name for name, _trained_at
+                 in self.app_state.get_models_newest_first()]
         if not names:
             self.copy_menu.addAction("No models yet").setEnabled(False)
             return
@@ -426,14 +422,13 @@ class TrainView(QWidget):
         self._copy_worker.ready.connect(self._on_model_sounds)
         self._copy_worker.start()
 
-    def _on_model_sounds(self, model_name, labels, error):
+    def _on_model_sounds(self, model_name, labels):
         t = theme.colors()
         self._copy_worker = None
-        if error or not labels:
+        if not labels:
             self.copy_note.setStyleSheet(f"color: {_warn()};")
             self.copy_note.setText(
-                f"Could not read which sounds “{model_name}” used."
-                + (f" {error}" if error else ""))
+                f"Could not read which sounds “{model_name}” used.")
             return
 
         wanted = set(labels)

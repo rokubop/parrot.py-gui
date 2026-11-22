@@ -14,7 +14,7 @@ from gui.widgets.output_picker import OutputPicker
 from gui.widgets.confirm_dialog import confirm_destructive
 from gui.services import library_ops
 from gui.widgets import help_dialog
-from gui import components, theme
+from gui import components, keys, theme
 from gui.formatters import duration_text, spoken_duration
 from lib.recordings import get_label_dir
 from lib.print_status import get_quantity_rating, QUANTITIES
@@ -23,10 +23,32 @@ from gui import content
 
 SOUND_COLUMN, DATA_COLUMN, DETECTED_COLUMN = 0, 1, 2
 
+CARD_KEYS = (
+    (keys.unmodified(Qt.Key.Key_Space),   RecordingCard.toggle_play),
+    (keys.is_go_to_start,                 RecordingCard.go_to_start),
+    (keys.unmodified(Qt.Key.Key_Left),    RecordingCard.seek_back),
+    (keys.unmodified(Qt.Key.Key_Right),   RecordingCard.seek_forward),
+    (keys.unmodified(Qt.Key.Key_Z),       RecordingCard.toggle_zoom),
+    (keys.unmodified(Qt.Key.Key_Escape),  RecordingCard.deselect_or_go_to_start),
+    (keys.unmodified(Qt.Key.Key_D),       RecordingCard.deselect_or_go_to_start),
+)
+CARD_ACTIONS_THAT_REPEAT = (RecordingCard.seek_back, RecordingCard.seek_forward)
 
-def _is_space(event):
-    return (event.key() == Qt.Key.Key_Space
-            and event.modifiers() == Qt.KeyboardModifier.NoModifier)
+KEYBINDING_HINT = (f"Space play  ·  ←→ seek  ·  {keys.go_to_start_key_name()} start  ·  "
+                   "Z zoom  ·  D/Esc deselect/start  ·  A normalize  ·  S spectrogram  ·  "
+                   "V expand  ·  R add recording  ·  ↑↓ select")
+
+
+def _card_action(event):
+    for matches, action in CARD_KEYS:
+        if matches(event):
+            return action
+    return None
+
+
+def _sound_list_keeps(event):
+    """Home for its first sound, and letters so typing a name finds it."""
+    return event.key() == Qt.Key.Key_Home or event.text().isalnum()
 
 
 class SoundsPage(QWidget):
@@ -46,8 +68,6 @@ class SoundsPage(QWidget):
     │                     ││ └──────────────────────────────────────────────────────┘ │
     └─────────────────────┘└──────────────────────────────────────────────────────────┘
     """
-
-    SEEK_STEP = 2.0  # seconds for arrow-key seeking
 
     # Requests for the full-screen sub-views, handled by MainWindow.
     record_requested = pyqtSignal(str)   # "" = new sound, else add to this label
@@ -390,6 +410,8 @@ class SoundsPage(QWidget):
                     card.set_normalized(self._normalized)
                     card.playback_started.connect(self._on_card_playback_started)
                     card.picked.connect(self._select_card)
+                    card.range_selected.connect(self._on_card_range_selected)
+                    card.play_btn.installEventFilter(self)
                     card.playback_failed.connect(self._on_card_playback_failed)
                     card.action.connect(self._on_card_action)
                     self._cards.append(card)
@@ -519,6 +541,14 @@ class SoundsPage(QWidget):
                 other.stop()
         self._active_card = card
 
+    def _on_card_range_selected(self, card):
+        """One selection on the page at a time."""
+        for other in self._cards:
+            if other is not card:
+                other.deselect()
+        # deselect() restarts a card that was playing, which selects it
+        self._select_card(card)
+
     def _on_card_playback_failed(self, message):
         QMessageBox.warning(self, "Playback", message)
 
@@ -553,12 +583,13 @@ class SoundsPage(QWidget):
         return focused
 
     def eventFilter(self, obj, event):
-        # the card area would scroll on Space and the arrows; the page's keys win.
-        # The list keeps its arrows, but Space still plays
+        # The card area would scroll on Space and the arrows; the page's keys
+        # win. The list and a card's Play button pass on the card keys only
         if event.type() == QEvent.Type.KeyPress and (
                 (obj is self.cards_scroll
                  and event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab))
-                or (obj is self.sound_list and _is_space(event))):
+                or (obj is not self.cards_scroll and _card_action(event)
+                    and not (obj is self.sound_list and _sound_list_keeps(event)))):
             event.accept()
             self.keyPressEvent(event)
             return event.isAccepted()
@@ -568,25 +599,20 @@ class SoundsPage(QWidget):
         if not self._cards:
             super().keyPressEvent(event)
             return
+        action = _card_action(event)
+        # The list passes up its own keys it has no use for, like Home on the first sound
+        if action is not None and not (self.sound_list.hasFocus() and _sound_list_keeps(event)):
+            card = self._card_for_keys()
+            if card is not None and not (event.isAutoRepeat()
+                                         and action not in CARD_ACTIONS_THAT_REPEAT):
+                action(card)
+            return
         key = event.key()
         target = self._selected_card or self._cards[0]
-        if _is_space(event):
-            if not event.isAutoRepeat():
-                self._toggle_play()
-        elif key == Qt.Key.Key_Left and self._selected_card:
-            self._selected_card.seek_relative(-self.SEEK_STEP)
-        elif key == Qt.Key.Key_Right and self._selected_card:
-            self._selected_card.seek_relative(self.SEEK_STEP)
-        elif key in (Qt.Key.Key_Down, Qt.Key.Key_Up):
+        if key in (Qt.Key.Key_Down, Qt.Key.Key_Up):
             self._step_selection(1 if key == Qt.Key.Key_Down else -1)
-        elif key == Qt.Key.Key_F:
-            target.fit_view()                  # toggle fit (selection / all)
         elif key == Qt.Key.Key_V:
             target.toggle_expanded()           # expand/collapse (taller) view
-        elif key in (Qt.Key.Key_D, Qt.Key.Key_Escape):
-            target.deselect_or_start()         # deselect, or jump to start
-        elif key == Qt.Key.Key_Home:
-            target.go_to_start()
         elif key == Qt.Key.Key_A:
             if self.normalize_btn.isEnabled():     # off for spectrograms
                 self.normalize_btn.toggle()
@@ -599,22 +625,19 @@ class SoundsPage(QWidget):
         # Note: no X/Delete here - deleting a whole recording is deliberate and
         # only via the button/menu, not a single keypress on a read-only view.
 
-    def _toggle_play(self):
+    def _card_for_keys(self):
         """The selected card. If it's unreadable, the one playing, else the
         first that can play."""
         card = self._selected_card
-        if card is None or not card.playable():
-            playing = self._active_card if self._active_card in self._cards else None
-            if playing is not None and playing._playing:
-                card = playing
-            else:
-                card = next((c for c in self._cards if c.playable()), None)
-        if card is not None:
-            card.toggle_play()
+        if card is not None and card.playable():
+            return card
+        playing = self._active_card if self._active_card in self._cards else None
+        if playing is not None and playing._playing:
+            return playing
+        return next((c for c in self._cards if c.playable()), None)
 
     def keybinding_hint(self):
-        return ("Space play  ·  F fit  ·  A normalize  ·  S spectrogram  ·  "
-                "D deselect/start  ·  V expand  ·  R add recording  ·  ↑↓ select")
+        return KEYBINDING_HINT
 
     def _toggle_graph_display(self):
         graph_display = (GRAPH_DISPLAY_SPECTROGRAM if self._graph_display == GRAPH_DISPLAY_WAVEFORM

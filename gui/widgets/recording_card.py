@@ -51,16 +51,18 @@ def _unreadable(exc):
 
 class RecordingCard(QFrame):
     """One recording: when it was made, how long it is, a waveform or
-    spectrogram with detection overlaid, and playback. Seeks, and fits,
+    spectrogram with detection overlaid, and playback. Seeks, and zooms,
     starts or expands from its controls."""
 
     AUDIO_GRAPH_HEIGHT = 150
     AUDIO_GRAPH_EXPANDED_HEIGHT = 440
+    SEEK_FRACTION_OF_VIEW = 0.1
 
     playback_started = pyqtSignal(object)
     playback_failed = pyqtSignal(str)
     picked = pyqtSignal(object)
     action = pyqtSignal(object, str)  # (card, action_name) for menu actions
+    range_selected = pyqtSignal(object)
 
     def __init__(self, session_name, wav_path, srt_path, thresholds_path, parent=None):
         super().__init__(parent)
@@ -79,11 +81,9 @@ class RecordingCard(QFrame):
         self._duration = 0.0
         self._playhead_position = 0.0   # kept across pause
         self._play_start_position = 0.0
+        self._play_end_position = 0.0
         self._playing = False
         self._output_latency = 0.0     # of the current play
-        self._sel_start = None     # selected range (seconds), or None
-        self._sel_end = None
-        self._stop_at = None       # playback stop bound for the current play
 
         self._playhead_timer = QTimer(self)
         self._playhead_timer.setInterval(16)
@@ -135,19 +135,11 @@ class RecordingCard(QFrame):
         self.audio_graph.set_normalized(self._normalized)
         self.audio_graph.seek_requested.connect(self._on_seek_requested)
         self.audio_graph.pressed.connect(lambda: self.picked.emit(self))
-        self.audio_graph.selection_changed.connect(self._on_selection_changed)
-        self.audio_graph.selection_cleared.connect(self._on_selection_cleared)
+        self.audio_graph.range_selected.connect(self._on_range_selected)
         self._layout.replaceWidget(self._placeholder, self.audio_graph)
         self._placeholder.setParent(None)
         self._placeholder.deleteLater()
         self._placeholder = None
-
-    def _on_selection_changed(self, start, end):
-        self._sel_start, self._sel_end = start, end
-        self.picked.emit(self)
-
-    def _on_selection_cleared(self):
-        self._sel_start = self._sel_end = None
 
     def _icon_button(self, label, tooltip, slot):
         # No fixed width: the global 16px button padding clipped short fixed-width
@@ -172,8 +164,8 @@ class RecordingCard(QFrame):
         self.play_btn.installEventFilter(self)
         row.addWidget(self.play_btn)
 
-        # Play + Edit are the primary actions; fit / go-to-start / expand are
-        # keyboard-only (F / Home / V) and the rest lives behind the … menu.
+        # Play + Edit are the primary actions; zoom / go-to-start / expand are
+        # keyboard-only (Z / Home / V) and the rest lives behind the … menu.
         if self._edit_enabled:
             self.edit_btn = self._icon_button(
                 "Edit", "Edit this recording - trim, re-detect, append", self._on_edit)
@@ -311,23 +303,6 @@ class RecordingCard(QFrame):
 
     # ---- quick controls ------------------------------------------------
 
-    def fit_view(self):
-        self.picked.emit(self)
-        self.build_audio_graph()
-        if self.audio_graph is not None:
-            self.audio_graph.toggle_fit()
-
-    def go_to_start(self):
-        self.picked.emit(self)
-        self.build_audio_graph()
-        if self.audio_graph is None:
-            return
-        if self._playing:
-            self.play(from_position=0.0)
-        else:
-            self._playhead_position = 0.0
-            self.audio_graph.set_playhead(0.0)
-
     def toggle_expanded(self):
         self._expanded = not self._expanded
         height = self.AUDIO_GRAPH_EXPANDED_HEIGHT if self._expanded else self.AUDIO_GRAPH_HEIGHT
@@ -335,19 +310,6 @@ class RecordingCard(QFrame):
         if self.audio_graph is not None:
             self.audio_graph.setFixedHeight(height)
         self.picked.emit(self)
-
-    def clear_selection(self):
-        if self.audio_graph is not None:
-            self.audio_graph.clear_selection()
-
-    def deselect_or_start(self):
-        """D/Esc: drop the selection if there is one, else jump to the start."""
-        self.picked.emit(self)
-        self.build_audio_graph()
-        if self.audio_graph is not None and self.audio_graph.current_selection() is not None:
-            self.audio_graph.clear_selection()
-        else:
-            self.go_to_start()
 
     # ---- playback ------------------------------------------------------
 
@@ -362,9 +324,8 @@ class RecordingCard(QFrame):
             self.play()
 
     def play(self, from_position=None):
-        """Play from the playhead, or from `from_position`. With a selection,
-        Space / Play plays just that range, resuming if paused inside it. An
-        explicit position ignores the selection."""
+        """From the playhead, or from `from_position`. With a selection, just the
+        selection, from its start if the position is outside it."""
         self.build_audio_graph()
         if self.audio_graph is None:
             return      # unreadable, the card already says why
@@ -372,24 +333,22 @@ class RecordingCard(QFrame):
             self._samples, self._sample_rate = self.audio_graph.playback_audio()
             self._duration = self.audio_graph.duration()
 
-        playing_selection = from_position is None and self._sel_start is not None
         if from_position is not None:
             self._playhead_position = from_position
-        elif playing_selection and not (self._sel_start <= self._playhead_position < self._sel_end):
-            self._playhead_position = self._sel_start
-        if self._playhead_position >= self._duration:
-            self._playhead_position = 0.0
-        self._playhead_position = max(0.0, self._playhead_position)
+        start, end = self._play_range()
+        if not start <= self._playhead_position < end:
+            self._playhead_position = start
         # Emit before playback.play(), so another card stops first and doesn't stop this stream
         self.picked.emit(self)
         self.playback_started.emit(self)
 
         self._play_start_position = self._playhead_position
-        self._stop_at = self._sel_end if playing_selection else None
-        start = int(self._playhead_position * self._sample_rate)
-        end = int(self._stop_at * self._sample_rate) if self._stop_at is not None else None
+        self._play_end_position = end
+        start_sample = int(self._playhead_position * self._sample_rate)
+        end_sample = int(end * self._sample_rate)
         try:
-            self._output_latency = playback.play(self._samples[start:end], self._sample_rate)
+            self._output_latency = playback.play(
+                self._samples[start_sample:end_sample], self._sample_rate)
         except playback.PlaybackError:
             self._show_stopped()
             self.playback_failed.emit("That playback device would not open. "
@@ -400,13 +359,14 @@ class RecordingCard(QFrame):
         self.play_btn.setIcon(self._pause_icon)
         self.play_btn.setText(" Pause")
         self.audio_graph.set_playhead(self._playhead_position)
+        self.audio_graph.reveal_playhead()
         self._play_clock.restart()
         self._playhead_timer.start()
 
     def pause(self):
         if self._playing:
             playback.stop()
-            self._playhead_position = min(self._heard_position(), self._duration)
+            self._playhead_position = min(self._heard_position(), self._play_end_position)
         self._show_stopped()
         if self.audio_graph is not None:
             self.audio_graph.set_playhead(self._playhead_position)
@@ -417,15 +377,77 @@ class RecordingCard(QFrame):
             playback.stop()
         self._show_stopped()
 
+    def _play_range(self):
+        """The selection, else the whole recording, as (start, end) seconds."""
+        return self.audio_graph.selection() or (0.0, self.audio_graph.duration())
+
+    def _finish_play(self):
+        """Back to the range's start, so Space plays it again."""
+        self._show_stopped()
+        self._playhead_position = self._play_range()[0]
+        self.audio_graph.set_playhead(self._playhead_position)
+
+    def _keep_playing_in_new_range(self):
+        """The selection changed mid-play: carry on from where playback has reached."""
+        if self._playing:
+            self.play(from_position=self._heard_position())
+
+    def _on_range_selected(self):
+        self.picked.emit(self)
+        self.range_selected.emit(self)
+        self._keep_playing_in_new_range()
+
+    def go_to_start(self):
+        if self.playable():
+            self._on_seek_requested(self._play_range()[0])
+
+    def toggle_zoom(self):
+        if self.playable():
+            self.audio_graph.toggle_zoom()
+
+    def deselect(self):
+        if self.audio_graph is not None and self.audio_graph.selection():
+            self.audio_graph.clear_selection()
+            self._keep_playing_in_new_range()
+
+    def deselect_or_go_to_start(self):
+        if self.playable() and self.audio_graph.selection():
+            self.deselect()
+        else:
+            self.go_to_start()
+
+    def seek_back(self):
+        self._seek(-1)
+
+    def seek_forward(self):
+        self._seek(1)
+
+    def _seek(self, direction):
+        """A step that shrinks as you zoom in. Like a click: plays on from there
+        only if playing."""
+        if not self.playable():
+            return
+        seconds = direction * self.audio_graph.visible_duration() * self.SEEK_FRACTION_OF_VIEW
+        position = self._heard_position() if self._playing else self._playhead_position
+        start, end = self._play_range()
+        if start <= position <= end:
+            target = max(start, min(position + seconds, end))
+        else:
+            target = start
+        if self._playing and target >= end:
+            # Parked at the end, so a held Right doesn't wrap and walk the range again
+            self.stop()
+            self._playhead_position = end
+            self.audio_graph.set_playhead(end)
+            self.audio_graph.reveal_playhead()
+            return
+        self._on_seek_requested(target)
+
     def _show_stopped(self):
         self._playing = False
         self._playhead_timer.stop()
         self.play_btn.setIcon(self._play_icon)
         self.play_btn.setText(" Play")
-
-    def seek_relative(self, delta_seconds):
-        position = self._heard_position() if self._playing else self._playhead_position
-        self.play(from_position=max(0.0, position + delta_seconds))
 
     def eventFilter(self, obj, event):
         if obj is self.play_btn and event.type() == QEvent.Type.FocusIn:
@@ -436,6 +458,7 @@ class RecordingCard(QFrame):
         self.picked.emit(self)
         self._playhead_position = position
         self.audio_graph.set_playhead(position)
+        self.audio_graph.reveal_playhead()
         if self._playing or playback.is_playing():
             self.play(from_position=position)
 
@@ -449,17 +472,12 @@ class RecordingCard(QFrame):
 
     def _tick(self):
         heard_position = self._heard_position()
-        limit = self._stop_at if self._stop_at is not None else self._duration
-        if heard_position >= limit:
+        if heard_position >= self._play_end_position:
             # The playback thread finishes the stream itself. Aborting here would race it
-            self._show_stopped()
-            # Park at the selection start, to loop it, or the clip start
-            looping = self._stop_at is not None and self._sel_start is not None
-            self._playhead_position = self._sel_start if looping else 0.0
-            self.audio_graph.set_playhead(self._playhead_position)
+            self._finish_play()
             return
         self._playhead_position = heard_position
-        self.audio_graph.set_playhead(heard_position)
+        self.audio_graph.follow_playhead(heard_position)
         if playback.failed_mid_play():
             self._show_stopped()
 
