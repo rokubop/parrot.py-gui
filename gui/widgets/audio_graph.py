@@ -43,8 +43,30 @@ Z_PLAYHEAD = 14
 Z_CURSOR = 15
 Z_READOUT = 16
 Z_SELECTION_DURATION_LABEL = 17
+Z_SCRIM = 30
+Z_PENDING_CUT = 31
+Z_SEAM = 32
+Z_BUSY_LABEL = 33
 
-pg.setConfigOptions(antialias=True)
+
+def view_after_cut(view, cut_start, removed, new_duration):
+    """Where a visible X window lands once ``removed`` seconds are cut out at
+    ``cut_start``.
+
+    The span is kept, so the zoom level survives the edit, and audio left of the
+    cut stays exactly where it was. Reloading at full range instead is what makes
+    a cut feel like it threw you out of the clip.
+    """
+    if new_duration <= 0:
+        return (0.0, 0.0)
+    x0, x1 = view
+    span = min(max(x1 - x0, 0.0), new_duration)
+    if span <= 0:
+        return (0.0, new_duration)
+    if x0 > cut_start:                      # the window sat after the cut
+        x0 = max(cut_start, x0 - removed)
+    x0 = max(0.0, min(x0, new_duration - span))
+    return (x0, x0 + span)
 
 
 def _mel_bands(sample_rate, nfft, rows):
@@ -73,6 +95,13 @@ def _to_mel_rows(db, bands):
     return rows
 
 
+def _pass_clicks_through(region):
+    """A band the mouse goes through, so a click lands on the plot under it."""
+    region.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+    for line in getattr(region, "lines", []):
+        line.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+
+
 class AudioGraph(QWidget):
     """One recording on a time axis, as a waveform or spectrogram, with
     detection, a playhead and a selection drawn over it.
@@ -81,6 +110,7 @@ class AudioGraph(QWidget):
     """
 
     seek_requested = pyqtSignal(float)   # position in seconds, from a click
+    pressed = pyqtSignal()                # user interacted; picks the card
     range_selected = pyqtSignal(float, float)  # start, end in seconds, when a drag ends
 
     SPECTROGRAM_FRAME_S = 0.032
@@ -111,6 +141,9 @@ class AudioGraph(QWidget):
         self._graph_display = GRAPH_DISPLAY_WAVEFORM
         self._spectrogram = None  # cached (image, levels, nfft, hop)
         self._regions = []
+        self._seam_anim = None    # fade of the mark left by a cut
+        self._busy = False        # an edit is running; the plot is inert
+        self._busy_message = ""
         self._selection = None    # (start, end) seconds, or None
         self._selection_anchor = None  # where the drag began, None between drags
         self._colors = theme.colors()
@@ -123,6 +156,9 @@ class AudioGraph(QWidget):
         self._add_spectrogram_image()
         self._add_selection()
         self._add_playhead()
+        self._add_seam()
+        self._add_busy_scrim()
+        self._add_pending_cut()
         self._add_hover_cursor_and_readout()
         self._add_zoom_animation()
         self._connect_view_and_mouse()
@@ -197,6 +233,8 @@ class AudioGraph(QWidget):
             values=[0, 0], movable=False, brush=fill, pen=pg.mkPen(accent, width=1))
         self.selection_band.setZValue(Z_SELECTION_BAND)
         self.selection_band.setVisible(False)
+        # Clicks pass through to the plot, so a click dismisses it
+        _pass_clicks_through(self.selection_band)
         self.plot.addItem(self.selection_band)
 
         self.selection_duration_label = pg.TextItem(color=accent, anchor=(0.5, 0))
@@ -205,11 +243,56 @@ class AudioGraph(QWidget):
         self.plot.addItem(self.selection_duration_label)
 
     def _add_playhead(self):
+        # Grab it to scrub. Hover widens it, so it's easy to catch.
         color = QColor(*self._colors["playhead"])
-        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=False,
+        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True,
                                         pen=pg.mkPen(color, width=2))
+        self.playhead.setHoverPen(pg.mkPen(color, width=4))
         self.playhead.setZValue(Z_PLAYHEAD)
+        self._dragging_playhead = False
+        self.playhead.sigDragged.connect(self._on_playhead_dragged)
+        self.playhead.sigPositionChangeFinished.connect(self._on_playhead_released)
         self.plot.addItem(self.playhead)
+
+    def _add_seam(self):
+        # Where a cut closed the audio up. Flashed after an edit and faded
+        # out, so "did that land, and where?" is answered without leaving a
+        # permanent line on a clip that no longer has a cut in it.
+        self.seam = pg.InfiniteLine(pos=0, angle=90, movable=False,
+                                    pen=pg.mkPen(QColor(self._colors["warn"]), width=2))
+        self.seam.setZValue(Z_SEAM)
+        self.seam.setVisible(False)
+        self.plot.addItem(self.seam)
+
+    def _add_busy_scrim(self):
+        # An edit rewrites the wav and then re-detects, and the plot is a lie
+        # in between: stale overlay, half-updated waveform. Dimming it and
+        # taking the mouse away says so, instead of inviting a drag whose
+        # coordinates are about to mean something else.
+        scrim = QColor(self._colors["plot_bg"]); scrim.setAlpha(175)
+        self.scrim = pg.LinearRegionItem(values=[0, 0], movable=False,
+                                         brush=scrim, pen=pg.mkPen(None))
+        self.scrim.setZValue(Z_SCRIM)
+        self.scrim.setVisible(False)
+        _pass_clicks_through(self.scrim)
+        self.plot.addItem(self.scrim)
+
+        self.busy_label = pg.TextItem(color=QColor(self._colors["text_bright"]), anchor=(0.5, 0.5))
+        self.busy_label.setZValue(Z_BUSY_LABEL)
+        self.busy_label.setVisible(False)
+        self.plot.addItem(self.busy_label)
+
+    def _add_pending_cut(self):
+        # What a pending cut is about to remove, drawn above the scrim so it is
+        # the one thing still at full strength while the edit runs.
+        bad = QColor(self._colors["bad"])
+        doomed = QColor(bad); doomed.setAlpha(80)
+        self.pending_item = pg.LinearRegionItem(
+            values=[0, 0], movable=False, brush=doomed, pen=pg.mkPen(bad, width=1))
+        self.pending_item.setZValue(Z_PENDING_CUT)
+        self.pending_item.setVisible(False)
+        _pass_clicks_through(self.pending_item)
+        self.plot.addItem(self.pending_item)
 
     def _add_hover_cursor_and_readout(self):
         cursor_pen = pg.mkPen(QColor(self._colors["text_dim"]), width=1,
@@ -239,31 +322,49 @@ class AudioGraph(QWidget):
             self._render_waveform, wait_ms=15, owner=self)
         self._vb.sigXRangeChanged.connect(self._render_when_settled)
         self._vb.sigXRangeChanged.connect(lambda *_: self._sync_scrollbar())
+        self._vb.sigXRangeChanged.connect(lambda *_: self._position_overlays())
         self._vb.sigYRangeChanged.connect(lambda *_: self._place_selection_duration_label())
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
         self.plot.scene().sigMouseClicked.connect(self._on_clicked)
 
     # ---- loading -------------------------------------------------------
 
-    def load(self, wav_path, srt_path, label):
-        """The UnreadableWav if it can't be read, or None once it's on the plot."""
+    def load(self, wav_path, srt_path, label, view=None):
+        """The UnreadableWav if it can't be read, or None once it's on the plot.
+
+        ``view`` pins the visible X window in seconds; by default the whole
+        clip is shown. An edit passes the window mapped through its own change
+        (see ``view_after_cut``) so the zoom level survives."""
         self._spectrogram = None
+        self._stop_seam()
         try:
             self._samples, self._sample_rate = read_wav(wav_path)
         except UnreadableWav as exc:
+            self._samples = None
+            self._duration = 0.0
             return exc
         self._peak = float(np.abs(self._samples).max()) if len(self._samples) else 0.0
         self._duration = len(self._samples) / self._sample_rate if self._sample_rate else 0.0
 
         self.plot.setLimits(xMin=0, xMax=self._duration)
-        self._vb.setXRange(0.0, self._duration, padding=0)
+        x0, x1 = view if view is not None else (0.0, self._duration)
+        x0 = max(0.0, min(x0, self._duration))
+        x1 = max(x0, min(x1, self._duration))
+        if x1 - x0 <= 0:
+            x0, x1 = 0.0, self._duration
+        self._vb.setXRange(x0, x1, padding=0)
+        self.playhead.setBounds([0, self._duration])
         self._apply_y_range()
         self.load_regions(srt_path, label)
         self._render_waveform()
+        # Any pending-cut range was in the old clip's coordinates.
+        self.clear_pending_cut()
+        self._position_overlays()
         return None
 
     def load_regions(self, srt_path, label):
-        """Draw the detection overlay."""
+        """Redraw just the detection overlay. Separate from ``load`` so work that
+        only re-detects never re-decodes the wav or disturbs the view."""
         for region in self._regions:
             self.plot.removeItem(region)
         self._regions = []
@@ -412,6 +513,9 @@ class AudioGraph(QWidget):
         return x1 - x0
 
     def set_playhead(self, position):
+        # Don't fight the user while they're dragging the line.
+        if self._dragging_playhead:
+            return
         self.playhead.setPos(position)
 
     def reveal_playhead(self):
@@ -458,6 +562,99 @@ class AudioGraph(QWidget):
     def _position_at(self, scene_pos):
         return self._vb.mapSceneToView(scene_pos).x()
 
+    def _on_playhead_dragged(self):
+        # Live drag: keep the readout visible at the playhead and mark us as the
+        # selected card, but defer the actual seek until the drag finishes.
+        self._dragging_playhead = True
+        x = self._clamp_to_clip(self.playhead.value())
+        self.cursor.setVisible(False)
+        self.readout.setText(f"{x:.3f}s")
+        self.readout.setPos(x, self._vb.viewRange()[1][1])
+        self.readout.setVisible(True)
+        self.pressed.emit()
+
+    def _on_playhead_released(self):
+        if not self._dragging_playhead:
+            return
+        self._dragging_playhead = False
+        self.readout.setVisible(False)
+        x = self._clamp_to_clip(self.playhead.value())
+        self.seek_requested.emit(x)
+
+    # ---- seam mark -----------------------------------------------------
+
+    def _stop_seam(self):
+        if self._seam_anim is not None:
+            self._seam_anim.stop()
+            self._seam_anim = None
+        self.seam.setVisible(False)
+
+    def flash_seam(self, seconds, ms=1200):
+        """Mark where a cut joined the audio back together, then fade out."""
+        if self._duration <= 0:
+            return
+        self._stop_seam()
+        base = QColor(self._colors["warn"])
+        self.seam.setPos(self._clamp_to_clip(seconds))
+        self.seam.setVisible(True)
+
+        anim = QVariantAnimation(self)
+        anim.setStartValue(255)
+        anim.setEndValue(0)
+        anim.setDuration(ms)
+        anim.setEasingCurve(QEasingCurve.Type.InCubic)
+
+        def step(alpha):
+            color = QColor(base)
+            color.setAlpha(int(alpha))
+            self.seam.setPen(pg.mkPen(color, width=2))
+
+        anim.valueChanged.connect(step)
+        anim.finished.connect(lambda: self.seam.setVisible(False))
+        anim.start()
+        self._seam_anim = anim
+
+    # ---- busy state ----------------------------------------------------
+
+    def set_busy(self, busy, message=""):
+        """Dim the plot and take the mouse away while an edit is in flight.
+
+        Survives a ``load`` in the middle of the edit, so the wav can be swapped
+        under the scrim without the graph briefly going live again.
+        """
+        self._busy = busy
+        self._busy_message = message
+        self.busy_label.setText(message)
+        self.plot.setMouseEnabled(x=not busy, y=False)
+        self.playhead.setMovable(not busy)
+        self.hscroll.setEnabled(not busy)
+        if busy:
+            self.cursor.setVisible(False)
+            self.readout.setVisible(False)
+        else:
+            self.clear_pending_cut()
+        self._position_overlays()
+
+    def mark_pending_cut(self, start, end):
+        """Colour the range an edit is about to remove. Held until the audio is
+        rewritten, so the keystroke and the region it hit are tied together."""
+        self.pending_item.setRegion((start, end))
+        self.pending_item.setVisible(True)
+
+    def clear_pending_cut(self):
+        self.pending_item.setVisible(False)
+
+    def _position_overlays(self):
+        """Keep the scrim over the whole clip and its label centred in view."""
+        visible = self._busy and self._duration > 0
+        self.scrim.setVisible(visible)
+        self.busy_label.setVisible(visible and bool(self._busy_message))
+        if not visible:
+            return
+        self.scrim.setRegion((0.0, self._duration))
+        (x0, x1), (y0, y1) = self._vb.viewRange()
+        self.busy_label.setPos((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+
     # ---- selection -----------------------------------------------------
 
     def selection(self):
@@ -495,7 +692,7 @@ class AudioGraph(QWidget):
         return (x1 - x0) / max(1, self.plot.width())
 
     def _on_vb_drag(self, event, axis=None):
-        if event.button() != Qt.MouseButton.LeftButton:
+        if self._busy or event.button() != Qt.MouseButton.LeftButton:
             event.ignore()
             return
         event.accept()
@@ -509,6 +706,7 @@ class AudioGraph(QWidget):
         x = (self._clamp_to_clip(position) if self._drag_reached_plot
              else self._clamp_to_view(position))
         if event.isStart():
+            self.pressed.emit()
             self.clear_selection()
             # Where pressed: pyqtgraph reports a drag only once the mouse has moved
             self._selection_anchor = self._clamp_to_view(
@@ -549,6 +747,11 @@ class AudioGraph(QWidget):
         self._set_selection(*sorted((self._selection_anchor, x)))
 
     # ---- zoom ----------------------------------------------------------
+
+    def view_range(self):
+        """The visible (start, end) X window in seconds."""
+        x0, x1 = self._vb.viewRange()[0]
+        return (x0, x1)
 
     def toggle_zoom(self):
         """Zoom to the selection, or the whole clip if already zoomed to it."""
@@ -625,6 +828,7 @@ class AudioGraph(QWidget):
         self._render_when_settled.cancel()
         self._drag_autoscroll_timer.stop()
         self._zoom_animation.stop()
+        self._stop_seam()
         for signal in (self._vb.sigXRangeChanged, self._vb.sigYRangeChanged,
                        self.plot.scene().sigMouseMoved, self.plot.scene().sigMouseClicked):
             try:
@@ -640,7 +844,7 @@ class AudioGraph(QWidget):
         super().leaveEvent(event)
 
     def _on_mouse_moved(self, scene_pos):
-        if self._samples is None:
+        if self._samples is None or self._busy:
             return
         if not self._vb.sceneBoundingRect().contains(scene_pos):
             self.cursor.setVisible(False)
@@ -656,6 +860,9 @@ class AudioGraph(QWidget):
         self.readout.setVisible(True)
 
     def _on_clicked(self, event):
+        if self._busy:
+            return
+        self.pressed.emit()
         if event.button() != Qt.MouseButton.LeftButton:
             return
         self.clear_selection()

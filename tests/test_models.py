@@ -192,5 +192,48 @@ class TestGetNewestFirstKey(ModelsFolder):
                          ["c", "a", "b"])
 
 
+class TestGetFreeName(ModelsFolder):
+
+    def test_free(self):
+        self.assertEqual(models.get_free_name("model_a"), "model_a")
+
+    def test_next_number(self):
+        self.touch(self.models_dir, "model_a.pkl")
+        self.touch(self.models_dir, "model_a_2.pkl")
+        self.assertEqual(models.get_free_name("model_a"), "model_a_3")
+        self.assertEqual(models.get_free_name("model_a_2"), "model_a_3")
+
+
+class TestModelFileOps(ModelsFolder):
+
+    def setUp(self):
+        super().setUp()
+        self.touch(self.models_dir, "model_a.pkl")
+        self.touch(self.models_dir, "model_a.pkl_1-BEST-weights.pth.tar")
+        self.touch(self.models_dir, "model_a.pkl_2.pkl")
+
+    def test_delete(self):
+        models.delete_model("model_a")
+        self.assertEqual(os.listdir(self.models_dir), ["model_a.pkl_2.pkl"])
+        self.assertEqual(models.delete_model("model_a"), [])
+
+    def test_rename(self):
+        models.rename_model("model_a", "model_b")
+        self.assertEqual(sorted(os.listdir(self.models_dir)),
+                         ["model_a.pkl_2.pkl", "model_b.pkl", "model_b.pkl_1-BEST-weights.pth.tar"])
+
+    def test_clone(self):
+        models.clone_model("model_a", "model_b")
+        self.assertEqual(len(models.get_model_files("model_a")), 2)
+        self.assertEqual([os.path.basename(path) for path in models.get_model_files("model_b")],
+                         ["model_b.pkl", "model_b.pkl_1-BEST-weights.pth.tar"])
+
+    def test_never_overwrites(self):
+        self.touch(self.models_dir, "model_b.pkl")
+        with self.assertRaises(FileExistsError):
+            models.rename_model("model_a", "model_b")
+        self.assertTrue(models.model_exists("model_a"))
+
+
 if __name__ == "__main__":
     unittest.main()

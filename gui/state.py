@@ -2,6 +2,8 @@ import contextlib
 import os
 from dataclasses import dataclass
 from typing import List
+from PyQt6.QtCore import QObject, pyqtSignal
+from gui.services import library_ops
 from lib import models, recordings
 from lib.typing import Checkpoint, TrainedAt
 
@@ -17,14 +19,21 @@ class ModelDetails:
     pkl_bytes: int
 
 
-class AppState:
-    """What the pages show, read off data/. Never writes. Detected time and
-    model details are cached, so a recording made or a model retrained while
-    the app is open shows after a restart."""
+class AppState(QObject):
+    """What the pages show, read off data/, and the edits that change it.
+    Detected time and model details are cached; each edit emits the signal
+    that clears them."""
+    recordings_changed = pyqtSignal()
+    models_changed = pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self._duration_cache = {}
         self._model_details_cache = {}
+        self.models_changed.connect(self._invalidate_model_cache)
+        # Recording, trimming and re-segmenting all change these, and all of
+        # them emit recordings_changed.
+        self.recordings_changed.connect(self._invalidate_duration_cache)
 
     def get_sound_labels(self):
         return recordings.get_labels()
@@ -95,3 +104,77 @@ class AppState:
                 name, next((c for c in checkpoints if c.get("trained_at")), None)),
             pkl_bytes=os.path.getsize(pkl_path) if os.path.isfile(pkl_path) else 0,
         )
+
+    def get_latest_model(self):
+        """(name, trained_at) at the top of the Models list, None if there
+        are no models."""
+        return next(iter(self.get_models_newest_first()), None)
+
+    def get_latest_model_name(self):
+        latest = self.get_latest_model()
+        return latest[0] if latest else None
+
+    def is_first_run(self):
+        """True if no recordings AND no models exist."""
+        return len(self.get_sound_labels()) == 0 and len(self.get_model_names()) == 0
+
+    def _invalidate_duration_cache(self):
+        self._duration_cache.clear()
+
+    def _invalidate_model_cache(self):
+        self._model_details_cache.clear()
+
+    def refresh(self):
+        """Emit signals to refresh all views."""
+        self.recordings_changed.emit()
+        self.models_changed.emit()
+
+    # ---- mutations (thin wrappers over library_ops + signal emit) -------
+    # Errors propagate as LibraryOpError for the caller to display.
+
+    def create_sound(self, name):
+        label = library_ops.create_sound(name)
+        self.recordings_changed.emit()
+        return label
+
+    def rename_sound(self, old, new):
+        label = library_ops.rename_sound(old, new)
+        self.recordings_changed.emit()
+        return label
+
+    def clone_sound(self, src, new):
+        label = library_ops.clone_sound(src, new)
+        self.recordings_changed.emit()
+        return label
+
+    def delete_sound(self, label):
+        library_ops.delete_sound(label)
+        self.recordings_changed.emit()
+
+    def delete_recording(self, wav_path):
+        library_ops.delete_recording(wav_path)
+        self.recordings_changed.emit()
+
+    def rename_recording(self, wav_path, new_base):
+        new_wav = library_ops.rename_recording(wav_path, new_base)
+        self.recordings_changed.emit()
+        return new_wav
+
+    def move_recording(self, wav_path, dest_label):
+        new_wav = library_ops.move_recording(wav_path, dest_label)
+        self.recordings_changed.emit()
+        return new_wav
+
+    def delete_model(self, name):
+        library_ops.delete_model(name)
+        self.models_changed.emit()
+
+    def rename_model(self, old, new):
+        name = library_ops.rename_model(old, new)
+        self.models_changed.emit()
+        return name
+
+    def clone_model(self, old, new):
+        name = library_ops.clone_model(old, new)
+        self.models_changed.emit()
+        return name
