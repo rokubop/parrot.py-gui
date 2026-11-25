@@ -18,9 +18,9 @@ class ModelDetails:
 
 
 class AppState:
-    """What the pages show, read off data/. Never writes. Detected time and
-    model details are cached, so a recording made or a model retrained while
-    the app is open shows after a restart."""
+    """What the pages show, read off data/. Never writes. Detected time is
+    cached per label until a recording changes it. Model details are cached, so
+    a model retrained while the app is open shows after a restart."""
 
     def __init__(self):
         self._duration_cache = {}
@@ -37,6 +37,9 @@ class AppState:
         if label not in self._duration_cache:
             self._duration_cache[label] = recordings.get_detected_ms(label)
         return self._duration_cache[label]
+
+    def forget_label_duration(self, label):
+        self._duration_cache.pop(label, None)
 
     def get_model_names(self):
         return models.get_model_names()

@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtCore import Qt, QEvent, QTimer, QElapsedTimer, QSize, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QPushButton
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QSizePolicy, QPushButton
 from gui.widgets.audio_graph import AudioGraph, GRAPH_DISPLAY_WAVEFORM
 from gui.services import playback
 from gui import icons, theme
@@ -30,6 +30,7 @@ class RecordingCard(QFrame):
     playback_failed = pyqtSignal(str)
     picked = pyqtSignal(object)
     range_selected = pyqtSignal(object)
+    delete_requested = pyqtSignal(object)
 
     def __init__(self, name, label, wav_path, srt_path, parent=None):
         super().__init__(parent)
@@ -112,9 +113,23 @@ class RecordingCard(QFrame):
         row.addWidget(self._detection_note)
 
         row.addStretch()
+        self.menu_btn = QPushButton()
+        self.menu_btn.setIcon(icons.dots())
+        self.menu_btn.setFixedWidth(40)
+        self.menu_btn.setAccessibleName("More actions")
+        self.menu_btn.setToolTip("Delete this recording")
+        self.menu_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.menu_btn.clicked.connect(self._menu_show)
+        row.addWidget(self.menu_btn)
         self.play_btn.setAccessibleName(
             f"{title_text}, {duration_text(length)}" if length else title_text)
         return row
+
+    def _menu_show(self):
+        self.picked.emit(self)
+        menu = QMenu(self)
+        menu.addAction("Delete recording", lambda: self.delete_requested.emit(self))
+        menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
 
     def build_audio_graph(self):
         """Build it, or say the file can't be read. Runs once."""

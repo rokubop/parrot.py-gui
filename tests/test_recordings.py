@@ -3,8 +3,11 @@ import shutil
 import sys
 import tempfile
 import unittest
+import wave
 from datetime import datetime
 from unittest import mock
+
+import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -14,7 +17,7 @@ from lib import recordings
 from lib.srt import current_v_ending, manual_ending
 
 
-class TestRecordings(unittest.TestCase):
+class RecordingsFolder(unittest.TestCase):
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -30,6 +33,9 @@ class TestRecordings(unittest.TestCase):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "w").close()
         return path
+
+
+class TestRecordings(RecordingsFolder):
 
     def test_labels_are_folders_in_order(self):
         self.touch("pop", "source", "a.wav")
@@ -90,6 +96,120 @@ class TestRecordedAt(unittest.TestCase):
         for name in ("pop.wav", "mici_1__take2.wav", "mici_1__99999999999999999999.wav"):
             with self.subTest(name=name):
                 self.assertIsNone(recordings.get_recorded_at(name))
+
+
+class TestCleanLabel(unittest.TestCase):
+
+    def test_trimmed(self):
+        self.assertEqual(recordings.clean_label("  pop "), "pop")
+
+    def test_rejected(self):
+        InvalidLabel = recordings.InvalidLabel
+        cases = [(None, InvalidLabel.EMPTY), ("  ", InvalidLabel.EMPTY),
+                 ("a/b", InvalidLabel.ILLEGAL_CHARACTER), ("a\\b", InvalidLabel.ILLEGAL_CHARACTER),
+                 ("a:b", InvalidLabel.ILLEGAL_CHARACTER), ("..", InvalidLabel.STARTS_WITH_DOT),
+                 (".pop", InvalidLabel.STARTS_WITH_DOT)]
+        for name, reason in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(InvalidLabel) as raised:
+                    recordings.clean_label(name)
+                self.assertEqual(raised.exception.reason, reason)
+
+
+class TestCreateLabel(RecordingsFolder):
+
+    def test_source_and_segments(self):
+        self.assertEqual(recordings.create_label(" pop "), "pop")
+        self.assertTrue(os.path.isdir(os.path.join(self.dir, "pop", "source")))
+        self.assertTrue(os.path.isdir(os.path.join(self.dir, "pop", "segments")))
+        self.assertEqual(recordings.get_labels(), ["pop"])
+
+    def test_exists(self):
+        os.makedirs(os.path.join(self.dir, "pop"))
+        with self.assertRaises(recordings.InvalidLabel) as raised:
+            recordings.create_label("pop")
+        self.assertEqual(raised.exception.reason, recordings.InvalidLabel.EXISTS)
+
+
+class TestCreateRecordingPaths(RecordingsFolder):
+
+    def test_read_back_by_get_recordings(self):
+        wav, srt = recordings.create_recording_paths("pop", 1, "1786747776")
+        self.assertEqual(wav, os.path.join(self.dir, "pop", "source", "mici_1__1786747776.wav"))
+        self.assertEqual(srt, os.path.join(self.dir, "pop", "segments", "mici_1__1786747776" + current_v_ending))
+        open(wav, "w").close()
+        open(srt, "w").close()
+        self.assertEqual(recordings.get_recordings("pop"),
+                         [{"filename": "mici_1__1786747776.wav", "wav_path": wav, "srt_path": srt}])
+
+
+
+
+class TestGetRecordingFiles(RecordingsFolder):
+
+    def test_wav_then_segment_files(self):
+        wav = self.touch("pop", "source", "mici_1__17.wav")
+        srt = self.touch("pop", "segments", "mici_1__17" + current_v_ending)
+        manual = self.touch("pop", "segments", "mici_1__17" + manual_ending)
+        thresholds = self.touch("pop", "segments", "mici_1__17_thresholds.txt")
+        self.touch("pop", "source", "mici_1__170.wav")
+        self.touch("pop", "segments", "mici_1__170" + current_v_ending)
+        self.assertEqual(recordings.get_recording_files(wav), [wav, manual, srt, thresholds])
+
+    def test_wav_gone(self):
+        srt = self.touch("pop", "segments", "mici_1__17" + current_v_ending)
+        wav = os.path.join(self.dir, "pop", "source", "mici_1__17.wav")
+        self.assertEqual(recordings.get_recording_files(wav), [srt])
+
+
+class TestDeleteRecording(RecordingsFolder):
+
+    def test_only_its_files(self):
+        wav = self.touch("pop", "source", "mici_1__17.wav")
+        srt = self.touch("pop", "segments", "mici_1__17" + current_v_ending)
+        other = self.touch("pop", "segments", "mici_1__170" + current_v_ending)
+        self.assertEqual(recordings.delete_recording(wav), [wav, srt])
+        self.assertFalse(os.path.exists(wav) or os.path.exists(srt))
+        self.assertTrue(os.path.exists(other))
+
+    def test_already_gone(self):
+        wav = os.path.join(self.dir, "pop", "source", "mici_1__17.wav")
+        self.assertEqual(recordings.delete_recording(wav), [])
+
+
+
+class TestAppendRecording(RecordingsFolder):
+
+    def wav(self, name, samples, rate=16000):
+        path = self.touch("pop", "source", name)
+        with wave.open(path, "wb") as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(rate)
+            f.writeframes(np.asarray(samples, dtype=np.int16).tobytes())
+        return path
+
+    def test_segment_goes_on_the_end(self):
+        take = self.wav("mici_1__17.wav", [1] * 1600)
+        segment = self.wav("mici_1__20.wav", [2] * 800)
+        segment_srt = self.touch("pop", "segments", "mici_1__20" + current_v_ending)
+        srt = recordings.append_recording(take, segment, "pop")
+        with wave.open(take, "rb") as f:
+            audio = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
+        self.assertEqual(audio.tolist(), [1] * 1600 + [2] * 800)
+        self.assertEqual(srt, os.path.join(self.dir, "pop", "segments", "mici_1__17" + current_v_ending))
+        self.assertTrue(os.path.isfile(srt))
+        self.assertFalse(os.path.exists(segment) or os.path.exists(segment_srt))
+
+    def test_different_formats_left_alone(self):
+        take = self.wav("mici_1__17.wav", [1] * 1600)
+        segment = self.wav("mici_1__20.wav", [2] * 800, rate=44100)
+        with self.assertRaises(ValueError):
+            recordings.append_recording(take, segment, "pop")
+        self.assertTrue(os.path.isfile(segment))
+        with wave.open(take, "rb") as f:
+            self.assertEqual(f.getnframes(), 1600)
+
 
 
 if __name__ == "__main__":
